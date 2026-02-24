@@ -108,7 +108,6 @@ class Charge(models.Model):
 
         # Cohérence exercice / date_charge
         if self.date_charge and self.exercice_id:
-            # NB: self.exercice est accessible ici si l'objet est chargé; sinon Django chargera au besoin.
             if self.exercice.date_debut and self.date_charge < self.exercice.date_debut:
                 raise ValidationError({"date_charge": "La date de charge est avant le début de l'exercice."})
             if self.exercice.date_fin and self.date_charge > self.exercice.date_fin:
@@ -211,7 +210,7 @@ class LigneAppelDeFonds(models.Model):
         ]
         constraints = [
             # ✅ DB constraint : montant_paye <= montant_du
-            # ⚠️ IMPORTANT: sur ta version Django, l'argument s'appelle "condition" (pas "check")
+            # ✅ IMPORTANT: CheckConstraint utilise "check=" (pas "condition=")
             models.CheckConstraint(
                 condition=Q(montant_paye__gte=DEC_0) & Q(montant_paye__lte=F("montant_du")),
                 name="chk_ligne_montant_paye_lte_montant_du",
@@ -299,7 +298,6 @@ class PaiementAppel(models.Model):
         if self.date_paiement:
             now = timezone.now()
             if timezone.is_naive(self.date_paiement):
-                # On rend "aware" dans le timezone courant pour comparer sans crash
                 self.date_paiement = timezone.make_aware(self.date_paiement, timezone.get_current_timezone())
             if self.date_paiement > now:
                 raise ValidationError({"date_paiement": "La date de paiement ne peut pas être dans le futur."})

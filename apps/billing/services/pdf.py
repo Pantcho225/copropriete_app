@@ -3,7 +3,7 @@
 import base64
 from decimal import Decimal
 from io import BytesIO
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import qrcode
 from django.conf import settings
@@ -20,8 +20,7 @@ def generate_relance_pdf(relance, request=None):
     Génère un PDF de relance (WeasyPrint) + QR code de vérification.
 
     ✅ Inclus :
-    - URL de vérification correcte: /api/billing/public/relances/<id>/verify/
-    - token dans l'URL: ?token=<qr_token>
+    - URL de vérification recommandée (sécurisée) : /api/billing/public/qr/<uuid>/
     - montant_paye_affiche (capé) : min(montant_paye_brut, montant_du)
     - trop_percu (si payé > dû)
     - option show_brut (settings.PDF_SHOW_BRUT_PAYMENT) pour afficher ou non le brut dans le PDF
@@ -71,23 +70,28 @@ def generate_relance_pdf(relance, request=None):
             montant_paye_affiche = paye_cape
             montant_paye_brut = paye_brut
 
-    # --- URL de vérification (AVEC token) ---
+    # --- URL publique de vérification (QR) ---
     # Route réelle dans apps/billing/urls.py :
-    # /api/billing/public/relances/<int:pk>/verify/
-    path = f"/api/billing/public/relances/{relance.id}/verify/"
-
+    # /api/billing/public/qr/<uuid:token>/
     token = getattr(relance, "qr_token", None)
-    query = urlencode({"token": str(token)}) if token else ""
-
-    if request:
-        verify_url = request.build_absolute_uri(path)
+    if not token:
+        # Si jamais (cas très rare), on fallback sur l'ancienne route pk+token
+        # mais normalement qr_token est toujours présent.
+        legacy_path = f"/api/billing/public/relances/{relance.id}/verify/"
+        if request:
+            verify_url = request.build_absolute_uri(legacy_path)
+        else:
+            base_url = getattr(settings, "PUBLIC_BASE_URL", "") or "http://127.0.0.1:8002"
+            verify_url = f"{base_url}{legacy_path}"
+        verify_url = f"{verify_url}?token="
     else:
-        # ✅ fallback configurable (recommandé en prod)
-        base_url = getattr(settings, "PUBLIC_BASE_URL", "") or "http://127.0.0.1:8002"
-        verify_url = f"{base_url}{path}"
-
-    if query:
-        verify_url = f"{verify_url}?{query}"
+        path = f"/api/billing/public/qr/{token}/"
+        if request:
+            verify_url = request.build_absolute_uri(path)
+        else:
+            # ✅ fallback configurable (recommandé en prod)
+            base_url = getattr(settings, "PUBLIC_BASE_URL", "") or "http://127.0.0.1:8002"
+            verify_url = f"{base_url}{path}"
 
     # --- QR code en base64 ---
     qr_img = qrcode.make(verify_url)

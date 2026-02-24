@@ -2,11 +2,12 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
-from django.db import models, transaction
+from django.db import models, transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.lots.models import Lot, LotTantieme
@@ -40,8 +41,48 @@ def _require_copro_id(request) -> str:
     return copro_id
 
 
+# =========================================================
+# PUBLIC (QR VERIFY) — PAS DE HEADER, AllowAny
+# =========================================================
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def public_qr_verify(request, token):
+    """
+    GET /api/billing/public/qr/<uuid:token>/
+
+    Endpoint public pour vérifier une relance via QR token.
+    AUCUN header X-Copropriete-Id requis (middleware doit exempter /api/billing/public/).
+    """
+    relance = get_object_or_404(
+        RelanceLot.objects.select_related("lot", "appel", "appel__exercice"),
+        qr_token=token,
+    )
+
+    # On renvoie un payload "safe" (tu peux enrichir au besoin)
+    return Response(
+        {
+            "relance_id": relance.id,
+            "numero": relance.numero,
+            "statut": relance.statut,
+            "canal": relance.canal,
+            "created_at": relance.created_at,
+            "updated_at": relance.updated_at,
+            "lot": {
+                "id": relance.lot_id,
+                "reference": getattr(relance.lot, "reference", None),
+            },
+            "appel": {
+                "id": relance.appel_id,
+                "libelle": getattr(relance.appel, "libelle", None),
+                "date_echeance": getattr(relance.appel, "date_echeance", None),
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 # =========================
-# RELANCES
+# RELANCES (privé)
 # =========================
 class RelanceLotViewSet(viewsets.ModelViewSet):
     serializer_class = RelanceLotSerializer
@@ -78,53 +119,46 @@ class RelanceLotViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="generer")
     def generer_relances(self, request):
         """
-        POST /api/billing/relances/generer/?days=7
+        POST /api/billing/relances/generer/?appel=<appel_id>
 
         Génère des relances pour toutes les lignes IMPAYE/PARTIEL
-        de la copropriété courante, avec anti-doublon sur fenêtre (days).
-
-        Concurrence-safe: transaction + verrous sur lignes.
+        de la copropriété courante.
+        ✅ Idempotent: si la relance existe déjà pour (lot, appel), on la réutilise.
+        ✅ Concurrency-safe: transaction + gestion IntegrityError (unique lot+appel).
         """
-        from django.utils import timezone
-
         copro_id = _require_copro_id(request)
 
-        try:
-            days = int(request.query_params.get("days", 7))
-        except (TypeError, ValueError):
-            days = 7
-        days = max(days, 0)
-
-        since = timezone.now() - timedelta(days=days)
-
-        # Lock lignes pour éviter 2 générateurs simultanés qui créent double relances
-        lignes = (
-            LigneAppelDeFonds.objects
-            .select_for_update()
-            .select_related("lot", "appel")
-            .filter(lot__copropriete_id=copro_id, statut__in=["IMPAYE", "PARTIEL"])
-        )
-
-        created = 0
-        skipped = 0
-        created_ids = []
+        appel_id = request.query_params.get("appel")
+        if appel_id:
+            # Vérifie que l'appel appartient à la copro (sinon 404)
+            _ = get_object_or_404(
+                AppelDeFonds.objects.select_related("exercice").filter(exercice__copropriete_id=copro_id),
+                pk=appel_id,
+            )
 
         with transaction.atomic():
+            # On verrouille les lignes cibles pour éviter 2 générateurs simultanés
+            lignes_qs = (
+                LigneAppelDeFonds.objects
+                .select_for_update()
+                .select_related("lot", "appel")
+                .filter(lot__copropriete_id=copro_id, statut__in=["IMPAYE", "PARTIEL"])
+            )
+            if appel_id:
+                lignes_qs = lignes_qs.filter(appel_id=appel_id)
+
+            lignes = list(lignes_qs)
+
+            created_ids = []
+            existing_ids = []
+            skipped = 0
+
             for ligne in lignes:
                 if not ligne.appel_id:
                     skipped += 1
                     continue
 
-                # Anti-doublon fenêtre
-                exists = RelanceLot.objects.filter(
-                    lot_id=ligne.lot_id,
-                    appel_id=ligne.appel_id,
-                    created_at__gte=since,
-                ).exists()
-                if exists:
-                    skipped += 1
-                    continue
-
+                # Message généré (tu peux le rendre plus "template")
                 msg = (
                     f"Bonjour, nous constatons un impayé/solde restant pour le lot {ligne.lot.reference} "
                     f"concernant l'appel \"{ligne.appel.libelle}\". "
@@ -132,27 +166,47 @@ class RelanceLotViewSet(viewsets.ModelViewSet):
                     f"Merci de régulariser dans les meilleurs délais."
                 )
 
-                relance = RelanceLot.objects.create(
-                    lot_id=ligne.lot_id,
-                    appel_id=ligne.appel_id,
-                    canal="WHATSAPP",
-                    statut="ENVOYEE",
-                    message=msg,
-                )
-                created += 1
-                created_ids.append(relance.id)
+                defaults = {
+                    "canal": "WHATSAPP",
+                    "statut": "ENVOYEE",
+                    "message": msg,
+                }
 
-        return Response(
-            {
-                "copropriete_id": int(copro_id),
-                "days_window": days,
-                "lignes_ciblees": lignes.count(),
-                "created": created,
-                "skipped_existing_or_invalid": skipped,
-                "created_ids": created_ids,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+                # ✅ Avec ta contrainte unique (lot, appel), on fait get_or_create
+                # et on gère une course possible via IntegrityError.
+                try:
+                    relance, was_created = RelanceLot.objects.get_or_create(
+                        lot_id=ligne.lot_id,
+                        appel_id=ligne.appel_id,
+                        defaults=defaults,
+                    )
+                except IntegrityError:
+                    # Une autre transaction l'a créée entre-temps
+                    relance = RelanceLot.objects.get(lot_id=ligne.lot_id, appel_id=ligne.appel_id)
+                    was_created = False
+
+                if was_created:
+                    created_ids.append(relance.id)
+                else:
+                    # Option: mettre à jour le message si tu veux “rafraîchir”
+                    # (sinon, laisse tel quel)
+                    if relance.statut != "REGLE":
+                        RelanceLot.objects.filter(pk=relance.pk).update(message=msg)
+                    existing_ids.append(relance.id)
+
+            return Response(
+                {
+                    "copropriete_id": int(copro_id),
+                    "appel_id": int(appel_id) if appel_id else None,
+                    "lignes_ciblees": len(lignes),
+                    "created": len(created_ids),
+                    "existing": len(existing_ids),
+                    "skipped_invalid": skipped,
+                    "created_ids": created_ids,
+                    "existing_ids": existing_ids,
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request):
@@ -210,7 +264,6 @@ class RelanceLotViewSet(viewsets.ModelViewSet):
 
         relance = self.get_object()
         if str(relance.lot.copropriete_id) != str(copro_id):
-            # Normalement déjà filtré par get_queryset, mais on garde une défense en profondeur
             raise PermissionDenied("Accès interdit à cette relance pour la copropriété courante.")
 
         relance.statut = "REGLE"
@@ -245,7 +298,6 @@ class AppelDeFondsViewSet(viewsets.GenericViewSet):
     def generer_lignes(self, request, pk=None):
         copro_id = _require_copro_id(request)
 
-        # ✅ Vérifie que l'appel appartient à la copro courant (sinon 404)
         appel = get_object_or_404(self.get_queryset(), pk=pk)
 
         lots = Lot.objects.filter(copropriete_id=copro_id).order_by("id")
@@ -340,16 +392,7 @@ class PaiementAppelViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        """
-        Durcissement: on évite de modifier des paiements existants
-        (sinon recalculs difficiles et risques d'incohérence).
-        Si tu veux autoriser, on peut le faire mais il faut gérer proprement.
-        """
         raise ValidationError({"detail": "La modification d’un paiement est désactivée. Créez un nouveau paiement."})
 
     def perform_destroy(self, instance):
-        """
-        Même logique: suppression dangereuse.
-        (Si tu veux l'autoriser, il faut recalculer la ligne + statut dans une transaction.)
-        """
         raise ValidationError({"detail": "La suppression d’un paiement est désactivée. Contactez un administrateur."})
