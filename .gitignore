@@ -19,3 +19,10 @@ staticfiles/
 
 # OS
 .DS_Store
+# Secrets
+.env
+.env.*
+
+# Fichiers générés
+*.pdf
+*.log
