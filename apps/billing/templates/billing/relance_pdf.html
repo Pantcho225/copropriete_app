@@ -1,0 +1,181 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+
+<style>
+    @page { size: A4; margin: 2cm; }
+
+    body { 
+        font-family: Arial, sans-serif; 
+        font-size: 12.5px; 
+        color: #000;
+    }
+
+    /* ============================= */
+    /* 🔴 CACHEt ROUGE OFFICIEL     */
+    /* ============================= */
+    .stamp {
+        position: fixed;
+        top: 45%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-25deg);
+
+        font-size: 85px;
+        font-weight: 900;
+        letter-spacing: 6px;
+
+        color: #c00000;
+        border: 6px solid #c00000;
+        padding: 18px 40px;
+
+        text-transform: uppercase;
+        opacity: 0.18;
+
+        z-index: 9999;
+        pointer-events: none;
+    }
+
+    .header { font-size: 11px; margin-bottom: 10px; }
+    .header strong { font-size: 12px; }
+    hr { border: none; border-top: 1px solid #000; margin: 10px 0 16px 0; }
+
+    h1 { text-align: center; margin: 0 0 18px 0; font-size: 18px; letter-spacing: 0.5px; }
+
+    .topline { display: flex; justify-content: space-between; margin-bottom: 16px; align-items: flex-start; }
+    .muted { color: #222; font-size: 12px; }
+
+    .box { border: 1px solid #000; padding: 12px; margin-bottom: 14px; }
+    .row { margin: 6px 0; }
+    .label { font-weight: 700; display: inline-block; min-width: 135px; }
+
+    .qrwrap { text-align:right; max-width: 240px; }
+    .qrcaption { font-size: 9px; margin-top: 4px; word-wrap: break-word; }
+
+    .legal { font-size: 10px; margin-top: 18px; color: #111; }
+    .signature { margin-top: 30px; text-align: right; }
+    .signline { margin-top: 50px; }
+
+</style>
+</head>
+
+<body>
+
+<!-- 🔴 Cachet affiché uniquement si REGLE -->
+{% if relance.statut == "REGLE" %}
+    <div class="stamp">PAYÉ</div>
+{% endif %}
+
+<!-- En-tête -->
+<div class="header">
+    <strong>{{ relance.lot.copropriete.nom|default:"Copropriété" }}</strong><br>
+    Syndic de copropriété<br>
+    Adresse : _______________________________<br>
+    Téléphone : ______________________________
+</div>
+<hr>
+
+<h1>
+{% if relance.statut == "REGLE" %}
+AVIS DE RÉGULARISATION
+{% else %}
+RELANCE DE PAIEMENT
+{% endif %}
+</h1>
+
+<!-- TOPLINE + QR -->
+<div class="topline">
+    <div class="muted">
+        <div><span class="label">N° Document :</span> {{ relance.numero|default:"-" }}</div>
+        <div style="margin-top:6px;"><span class="label">Date :</span> {{ relance.created_at|date:"d/m/Y" }}</div>
+    </div>
+
+    {% if qr %}
+    <div class="qrwrap">
+        <div>
+            <img src="{{ qr }}" alt="QR de vérification" style="width:95px; height:95px; border:1px solid #000; padding:4px;">
+        </div>
+        {% if verify_url %}
+        <div class="qrcaption">Vérification : {{ verify_url }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="box">
+    <div class="row"><span class="label">Copropriété :</span> {{ relance.lot.copropriete.nom }}</div>
+    <div class="row"><span class="label">Lot :</span> {{ relance.lot.reference }}</div>
+    <div class="row"><span class="label">Appel :</span> {{ relance.appel.libelle }}</div>
+    <div class="row"><span class="label">Canal :</span> {{ relance.get_canal_display }}</div>
+    <div class="row"><span class="label">Statut :</span> {{ relance.get_statut_display }}</div>
+
+    {% if ligne %}
+      <div class="row"><span class="label">Montant dû :</span> {{ ligne.montant_du|floatformat:0|intcomma }} FCFA</div>
+
+      <div class="row">
+          <span class="label">Montant payé :</span>
+          {{ montant_paye_affiche|floatformat:0|intcomma }} FCFA
+      </div>
+
+      <div class="row">
+          <span class="label">Reste à payer :</span>
+          {{ restant|floatformat:0|intcomma }} FCFA
+      </div>
+
+      {% if trop_percu and trop_percu > 0 %}
+        <div class="row">
+            <span class="label">Trop-perçu :</span>
+            {{ trop_percu|floatformat:0|intcomma }} FCFA
+        </div>
+      {% endif %}
+    {% endif %}
+</div>
+
+<div class="box">
+    <div class="row"><span class="label">Message :</span></div>
+
+    {% if relance.statut == "REGLE" %}
+        <div class="row">
+            Nous confirmons la bonne réception de votre paiement relatif à l'appel de fonds
+            <strong>{{ relance.appel.libelle }}</strong> pour le lot
+            <strong>{{ relance.lot.reference }}</strong>.
+        </div>
+
+        {% if ligne %}
+        <div class="row">
+            Solde restant :
+            <strong>{{ restant|floatformat:0|intcomma }} FCFA</strong>.
+        </div>
+        {% endif %}
+
+        <div class="row">
+            Nous vous remercions pour votre régularisation.
+        </div>
+    {% else %}
+        <div class="row">
+            {{ relance.message }}
+        </div>
+
+        {% if ligne %}
+        <div class="row">
+            Nous vous prions de régulariser le solde restant
+            (<strong>{{ restant|floatformat:0|intcomma }} FCFA</strong>)
+            dans les meilleurs délais.
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+
+<div class="legal">
+    Document généré automatiquement par le système de gestion de copropriété.
+    Toute modification manuelle n’a pas valeur officielle.
+</div>
+
+<div class="signature">
+    <div>Le Syndic</div>
+    <div class="signline">___________________________</div>
+</div>
+
+</body>
+</html>
