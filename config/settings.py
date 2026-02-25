@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'apps.owners',
     'apps.documents',
     "apps.billing.apps.BillingConfig",
+    "apps.ag",
     
 ]
 
@@ -148,3 +149,5 @@ PUBLIC_BASE_URL = "https://ton-domaine.com"
 
 PDF_SHOW_BRUT_PAYMENT = False  # recommandé
 # PDF_SHOW_BRUT_PAYMENT = True  # si tu veux afficher le brut
+
+TEMPLATES[0]["DIRS"] = [BASE_DIR / "templates"]

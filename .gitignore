@@ -26,3 +26,13 @@ staticfiles/
 # Fichiers générés
 *.pdf
 *.log
+
+# Certificats sensibles
+*.p12
+*.pfx
+*.pem
+
+# Certificats sensibles
+*.p12
+*.pfx
+*.pem

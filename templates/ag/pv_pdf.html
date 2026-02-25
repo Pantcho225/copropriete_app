@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>PV AG</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 14mm;
+
+      @bottom-right {
+        content: "Page " counter(page) " / " counter(pages);
+        font-size: 10px;
+        color: #666;
+      }
+    }
+
+    body {
+      font-family: DejaVu Sans, Arial, sans-serif;
+      font-size: 12px;
+      color: #111;
+      line-height: 1.35;
+    }
+
+    h1 { font-size: 18px; margin: 0 0 6px 0; }
+    h2 { font-size: 14px; margin: 0 0 6px 0; }
+
+    .muted { color: #666; }
+    .small { font-size: 11px; }
+
+    .box {
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+    }
+
+    /* ===== Entête ===== */
+    .header {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+      margin: 10px 0 12px 0;
+    }
+
+    .header-top {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    .header-col {
+      display: table-cell;
+      vertical-align: top;
+      width: 50%;
+    }
+
+    .header-col.right { text-align: right; }
+
+    .pades-note {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #ddd;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px 7px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f5f5f5;
+      text-align: left;
+      font-weight: bold;
+    }
+
+    .right { text-align: right; }
+    .center { text-align: center; }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid #ddd;
+      font-weight: 700;
+    }
+    .pill.ok { border-color: #0a7a0a; color: #0a7a0a; }
+    .pill.bad { border-color: #a00000; color: #a00000; }
+
+    /* ===== Formule "Fait à ..." ===== */
+    .fait {
+      margin-top: 18px;
+      text-align: right;
+      font-size: 12px;
+    }
+
+    /* ===== Signatures ===== */
+    .signature { margin-top: 12px; }
+
+    .sig-grid {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+    }
+
+    .sig-row {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+      margin-top: 10px;
+    }
+
+    .sig-col {
+      display: table-cell;
+      vertical-align: top;
+      padding: 8px;
+      width: 50%;
+    }
+
+    .sig-title { font-weight: 700; margin-bottom: 4px; }
+    .sig-name { margin-bottom: 6px; }
+
+    .sigimg {
+      height: 70px;
+      margin-top: 6px;
+      display: block;
+    }
+
+    .stamp {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed #ddd;
+    }
+
+    .stamp img {
+      height: 85px;
+      display: block;
+      margin-top: 6px;
+    }
+
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+
+<body>
+
+  <h1>Procès-verbal d’Assemblée Générale</h1>
+  <div class="muted small">
+    Généré le {{ generated_at|date:"d/m/Y H:i" }}
+  </div>
+
+  <!-- ✅ Entête "pro" -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-col">
+        <div><strong>Copropriété :</strong> {{ copropriete_label|default:"-" }}</div>
+        <div><strong>Exercice :</strong> {{ exercice_label|default:"-" }}</div>
+      </div>
+      <div class="header-col right">
+        <div><strong>Référence AG :</strong> AG #{{ ag.id }}</div>
+        <div><strong>Date AG :</strong> {{ ag.date_ag|date:"d/m/Y H:i" }}</div>
+      </div>
+    </div>
+
+    <div class="pades-note muted small">
+      {% if pv_signed_at %}
+        Document signé numériquement (PAdES) le <strong>{{ pv_signed_at|date:"d/m/Y H:i" }}</strong>
+        {% if pv_signer_subject %} — Signataire : <strong>{{ pv_signer_subject }}</strong>{% endif %}
+      {% else %}
+        Document non signé numériquement (PAdES). La version signée fait foi après signature.
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="box">
+    <div><strong>{{ ag.titre }}</strong></div>
+    <div>Date : {{ ag.date_ag|date:"d/m/Y H:i" }}</div>
+    <div>Lieu : {{ ag.lieu|default:"-" }}</div>
+    <div>
+      Statut :
+      {% if ag.get_statut_display %}{{ ag.get_statut_display }}{% else %}{{ ag.statut }}{% endif %}
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>Quorum</h2>
+    <div>Total tantièmes copropriété : <strong>{{ total_tantiemes_copro }}</strong></div>
+    <div>Tantièmes présents/représentés : <strong>{{ tantiemes_presents }}</strong></div>
+    <div>
+      Quorum :
+      {% if quorum_ok %}
+        <span class="pill ok">ATTEINT</span>
+      {% else %}
+        <span class="pill bad">NON ATTEINT</span>
+      {% endif %}
+      <span class="muted small"> (seuil 50%)</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>Liste des présences</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Lot</th>
+          <th class="right">Tantièmes</th>
+          <th class="center">Présent / Représenté</th>
+          <th>Représentant</th>
+          <th>Commentaire</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in presences %}
+          <tr>
+            <td>{{ p.lot.reference }}</td>
+            <td class="right">{{ p.tantiemes }}</td>
+            <td class="center">{% if p.present_ou_represente %}Oui{% else %}Non{% endif %}</td>
+            <td>{{ p.representant_nom|default:"" }}</td>
+            <td>{{ p.commentaire|default:"" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="center muted">Aucune présence enregistrée.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="box">
+    <h2>Résolutions & Résultats</h2>
+    <table>
+      <thead>
+        <tr>
+          <th class="center">#</th>
+          <th>Résolution</th>
+          <th>Majorité</th>
+          <th class="right">Pour</th>
+          <th class="right">Contre</th>
+          <th class="right">Abst.</th>
+          <th class="right">Exprimés</th>
+          <th class="center">Décision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in resolutions_rows %}
+          <tr>
+            <td class="center">{{ r.ordre }}</td>
+            <td>
+              <div><strong>{{ r.titre }}</strong></div>
+              {% if r.texte %}
+                <div class="muted small">{{ r.texte }}</div>
+              {% endif %}
+              {% if r.cloturee %}
+                <div class="muted small">Résolution clôturée</div>
+              {% endif %}
+            </td>
+            <td>{{ r.type_majorite_label }}</td>
+            <td class="right">{{ r.pour }}</td>
+            <td class="right">{{ r.contre }}</td>
+            <td class="right">{{ r.abstention }}</td>
+            <td class="right">{{ r.exprimes }}</td>
+            <td class="center">
+              {% if r.decision == "ADOPTEE" %}
+                <span class="pill ok">ADOPTÉE</span>
+              {% else %}
+                <span class="pill bad">REJETÉE</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="center muted">Aucune résolution.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ✅ Formule finale -->
+  <div class="fait">
+    Fait à <strong>{{ ag.lieu|default:"-" }}</strong>,
+    le <strong>{{ generated_at|date:"d/m/Y" }}</strong>.
+  </div>
+
+  <!-- ===== SIGNATURES ===== -->
+  <div class="signature">
+    <div class="sig-grid">
+      <h2 style="margin:0 0 6px 0;">Signatures</h2>
+      <div class="muted small">
+        Les signatures manuscrites sont affichées à titre indicatif. La signature numérique PAdES fait foi.
+      </div>
+
+      <div class="sig-row">
+        <!-- Président -->
+        <div class="sig-col">
+          <div class="sig-title">Président de séance</div>
+          <div class="sig-name">Nom : <strong>{{ president_nom|default:"-" }}</strong></div>
+          {% if signature_president_url %}
+            <img class="sigimg" src="{{ signature_president_url }}" alt="Signature Président">
+          {% else %}
+            <div class="muted small">(Signature non fournie)</div>
+          {% endif %}
+        </div>
+
+        <!-- Secrétaire -->
+        <div class="sig-col">
+          <div class="sig-title">Secrétaire de séance</div>
+          <div class="sig-name">Nom : <strong>{{ secretaire_nom|default:"-" }}</strong></div>
+          {% if signature_secretaire_url %}
+            <img class="sigimg" src="{{ signature_secretaire_url }}" alt="Signature Secrétaire">
+          {% else %}
+            <div class="muted small">(Signature non fournie)</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Cachet -->
+      <div class="stamp">
+        <div class="sig-title">Cachet / Tampon</div>
+        {% if cachet_image_url %}
+          <img src="{{ cachet_image_url }}" alt="Cachet">
+        {% else %}
+          <div class="muted small">(Cachet non fourni)</div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

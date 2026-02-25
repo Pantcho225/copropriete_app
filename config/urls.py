@@ -33,6 +33,7 @@ urlpatterns = [
    # Charges / Appels de fonds
    # API v1
    path("api/", include("apps.core.urls")),
+   path("api/ag/", include("apps.ag.urls")),
     
 ]
 
