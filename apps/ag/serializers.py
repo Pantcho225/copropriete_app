@@ -31,10 +31,6 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
     signature_secretaire_url = serializers.SerializerMethodField(read_only=True)
     cachet_image_url = serializers.SerializerMethodField(read_only=True)
 
-    # ✅ Phase 2.4 (optionnel selon ton model : hasattr côté Meta impossible)
-    # On les expose seulement si champs existent (voir get_fields()).
-    # closed_at / closed_by => lecture seule via API
-
     class Meta:
         model = AssembleeGenerale
         fields = [
@@ -98,8 +94,6 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
 
         if hasattr(AssembleeGenerale, "closed_at"):
             fields["closed_at"] = serializers.DateTimeField(read_only=True)
-            # On l’ajoute aussi à fields Meta dynamiquement :
-            # (DRF n'aime pas trop modifier Meta.fields, donc on le met via get_fields)
         if hasattr(AssembleeGenerale, "closed_by"):
             fields["closed_by"] = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -181,7 +175,6 @@ class PresenceLotSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
-        # AG à contrôler : instance.ag (update) ou attrs.ag (create)
         ag = None
         if instance and getattr(instance, "ag", None):
             ag = instance.ag
@@ -195,9 +188,46 @@ class PresenceLotSerializer(serializers.ModelSerializer):
 
 
 class ResolutionSerializer(serializers.ModelSerializer):
+    # ✅ champs pratiques (front) — n’explose pas si travaux_dossier n’existe pas encore
+    travaux_dossier_id = serializers.IntegerField(source="travaux_dossier.id", read_only=True)
+    travaux_dossier_titre = serializers.CharField(source="travaux_dossier.titre", read_only=True)
+
     class Meta:
         model = Resolution
-        fields = "__all__"
+        fields = [
+            "id",
+            "ag",
+            "ordre",
+            "titre",
+            "texte",
+            "type_majorite",
+            "tantieme_categorie",
+            "cloturee",
+
+            # ✅ Phase 3.2 (si présent dans ton model)
+            "travaux_dossier",
+            "travaux_dossier_id",
+            "travaux_dossier_titre",
+            "budget_vote",
+        ]
+        read_only_fields = ["id"]
+
+    def get_fields(self):
+        """
+        Si le modèle Resolution n’a pas encore les champs Phase 3.2 (avant migration),
+        on les retire dynamiquement pour éviter les erreurs.
+        """
+        fields = super().get_fields()
+
+        # Si travaux_dossier / budget_vote n'existent pas encore, on enlève
+        if not hasattr(Resolution, "travaux_dossier"):
+            fields.pop("travaux_dossier", None)
+            fields.pop("travaux_dossier_id", None)
+            fields.pop("travaux_dossier_titre", None)
+        if not hasattr(Resolution, "budget_vote"):
+            fields.pop("budget_vote", None)
+
+        return fields
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
@@ -210,6 +240,28 @@ class ResolutionSerializer(serializers.ModelSerializer):
 
         if ag:
             _assert_ag_writable(ag, what="création/modification des résolutions")
+
+        # ✅ Phase 3.2 : contrôles si résolution liée à un dossier travaux
+        # (uniquement si le champ existe)
+        if hasattr(Resolution, "travaux_dossier"):
+            travaux_dossier = attrs.get("travaux_dossier")
+            # en update, si non fourni, on garde l’existant
+            if travaux_dossier is None and instance is not None:
+                travaux_dossier = getattr(instance, "travaux_dossier", None)
+
+            if travaux_dossier is not None:
+                # 1) cohérence copropriété
+                if ag and str(getattr(travaux_dossier, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
+                    raise serializers.ValidationError(
+                        {"travaux_dossier": "Le dossier travaux doit appartenir à la même copropriété que l'AG."}
+                    )
+
+                # 2) workflow : doit être SOUMIS_AG
+                statut = getattr(travaux_dossier, "statut", None)
+                if statut != "SOUMIS_AG":
+                    raise serializers.ValidationError(
+                        {"travaux_dossier": "Le dossier travaux doit être SOUMIS_AG avant d’être lié à une résolution."}
+                    )
 
         return attrs
 
@@ -240,7 +292,6 @@ class VoteSerializer(serializers.ModelSerializer):
 
             ag = getattr(resolution, "ag", None)
             if ag:
-                # Vote interdit si AG clôturée ou PV verrouillé
                 if _is_ag_closed(ag):
                     raise serializers.ValidationError({"resolution": "AG clôturée : aucun vote accepté."})
                 if _is_ag_locked(ag):

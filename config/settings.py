@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.documents',
     "apps.billing.apps.BillingConfig",
     "apps.ag",
+    "apps.travaux",
     
 ]
 

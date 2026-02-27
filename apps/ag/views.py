@@ -1,10 +1,11 @@
 # apps/ag/views.py
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
+import os
 import tempfile
-from typing import Any
+from typing import Any, Optional, Iterable, List
 
 from django.core.files.base import ContentFile
 from django.db import transaction
@@ -27,6 +28,42 @@ from .serializers import (
     ResolutionSerializer,
     VoteSerializer,
 )
+
+# =========================================================
+# ✅ Wrappers (pour patcher facilement en tests)
+# =========================================================
+def generate_ag_pv_pdf_bytes(ag: AssembleeGenerale, *, request) -> bytes:
+    """
+    Wrapper patchable: tests peuvent patcher apps.ag.views.generate_ag_pv_pdf_bytes
+    au lieu de viser le module service.
+    """
+    from .services.pdf import generate_ag_pv_pdf_bytes as _impl
+
+    return _impl(ag, request=request)
+
+
+def sign_pdf_pades(
+    *,
+    pdf_bytes: bytes,
+    pfx_path: str,
+    pfx_password: str,
+    reason: str,
+    location: str,
+):
+    """
+    Wrapper patchable: tests peuvent patcher apps.ag.views.sign_pdf_pades
+    au lieu de viser le module service.
+    """
+    from .services.pades import sign_pdf_pades as _impl
+
+    return _impl(
+        pdf_bytes=pdf_bytes,
+        pfx_path=pfx_path,
+        pfx_password=pfx_password,
+        reason=reason,
+        location=location,
+    )
+
 
 # =========================
 # Helpers sécurité / headers
@@ -79,6 +116,330 @@ def _assert_ag_closable(ag: AssembleeGenerale):
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _parse_decimal(value: Any, field_name: str) -> Decimal:
+    """
+    Parse robuste Decimal depuis JSON/form-data.
+    """
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValidationError({field_name: "Format invalide. Exemple: 1400000.00"})
+    return d
+
+
+def _compute_resolution_result(res: Resolution) -> dict:
+    """
+    Retourne un dict homogène:
+    {decision, pour, contre, abstention, exprimes, ratio_pour_exprimes, type_majorite}
+    """
+    agg = (
+        Vote.objects.filter(resolution_id=res.id)
+        .values("choix")
+        .annotate(t=Sum("tantiemes"))
+    )
+    by = {row["choix"]: Decimal(str(row["t"] or 0)) for row in agg}
+
+    pour = by.get("POUR", Decimal("0"))
+    contre = by.get("CONTRE", Decimal("0"))
+    abst = by.get("ABSTENTION", Decimal("0"))
+    exprimes = pour + contre
+
+    def ratio(x: Decimal, denom: Decimal) -> float:
+        return float(x / denom) if denom and denom > 0 else 0.0
+
+    decision = "REJETEE"
+    maj = res.type_majorite
+
+    if maj == "SIMPLE":
+        if pour > contre:
+            decision = "ADOPTEE"
+    elif maj == "ABSOLUE":
+        if exprimes > 0 and pour > (exprimes * Decimal("0.50")):
+            decision = "ADOPTEE"
+    elif maj == "QUALIFIEE_2_3":
+        if exprimes > 0 and pour >= (exprimes * Decimal("0.6667")):
+            decision = "ADOPTEE"
+    elif maj == "UNANIMITE":
+        if exprimes > 0 and contre == 0 and pour == exprimes:
+            decision = "ADOPTEE"
+
+    return {
+        "resolution_id": res.id,
+        "type_majorite": maj,
+        "tantiemes": {
+            "pour": float(pour),
+            "contre": float(contre),
+            "abstention": float(abst),
+            "exprimes": float(exprimes),
+            "ratio_pour_exprimes": ratio(pour, exprimes),
+        },
+        "decision": decision,
+    }
+
+
+def _safe_uploaded_filename(name: str) -> str:
+    """
+    Pour log/meta uniquement (évite de persister des chemins).
+    """
+    if not name:
+        return ""
+    return os.path.basename(name)
+
+
+# =========================
+# Helpers robustesse (anti-500)
+# =========================
+def _model_field_names(obj) -> set[str]:
+    try:
+        # ⚠️ get_fields inclut aussi des reverse relations; update_fields tolère
+        # mais on filtre sur les noms existants => évite "unknown field" 500
+        return {f.name for f in obj._meta.get_fields()}
+    except Exception:
+        return set()
+
+
+def _has_model_field(obj, field_name: str) -> bool:
+    """
+    ✅ Ajout: permet de vérifier si un champ existe réellement dans le modèle (DB),
+    pour éviter de raisonner sur des attributs python non persistés.
+    """
+    return field_name in _model_field_names(obj)
+
+
+def _safe_save(obj, update_fields: Iterable[str] | None = None):
+    """
+    Évite les 500 fréquents quand update_fields contient un champ qui n'existe pas
+    dans le modèle réel.
+    """
+    if not update_fields:
+        obj.save()
+        return
+    names = _model_field_names(obj)
+    filtered = [f for f in update_fields if f in names]
+    if filtered:
+        obj.save(update_fields=filtered)
+    else:
+        obj.save()
+
+
+def _getattr_any(obj, candidates: List[str], default=None):
+    for name in candidates:
+        if hasattr(obj, name):
+            return getattr(obj, name)
+    return default
+
+
+# =========================
+# Helpers Travaux (stabilisation liaison)
+# =========================
+def _fetch_dossier_travaux_for_resolution(*, res: Resolution):
+    """
+    Retourne un dossier travaux lié à la résolution via :
+    1) DossierTravaux.resolution_validation_id == res.id (OneToOne "validation") => vérité métier
+    2) Resolution.travaux_dossier_id (FK miroir) UNIQUEMENT si le champ existe réellement
+    Lock DB requis : appeler dans transaction.atomic() et utiliser select_for_update().
+    """
+    try:
+        from apps.travaux.models import DossierTravaux
+    except Exception:
+        return None, None
+
+    # 1) OneToOne validation = source de vérité
+    dossier = (
+        DossierTravaux.objects.select_for_update()
+        .filter(copropriete_id=res.ag.copropriete_id, resolution_validation_id=res.id)
+        .first()
+    )
+
+    # 2) FK miroir (optionnel)
+    if dossier is None and _has_model_field(res, "travaux_dossier") and getattr(res, "travaux_dossier_id", None):
+        dossier = (
+            DossierTravaux.objects.select_for_update()
+            .filter(pk=res.travaux_dossier_id, copropriete_id=res.ag.copropriete_id)
+            .first()
+        )
+
+    return dossier, DossierTravaux
+
+
+def _sync_resolution_dossier_links(*, res: Resolution, dossier):
+    """
+    Assure cohérence des liens:
+    - dossier.resolution_validation == res (OBLIGATOIRE)
+    - res.travaux_dossier == dossier (OPTIONNEL: uniquement si champ existe)
+    """
+    # ---- OneToOne vérité métier ----
+    if getattr(dossier, "resolution_validation_id", None) not in (None, res.id):
+        raise ValidationError(
+            {"detail": "Incohérence: le dossier est déjà lié (resolution_validation) à une autre résolution."}
+        )
+
+    if getattr(dossier, "resolution_validation_id", None) != res.id:
+        dossier.resolution_validation_id = res.id
+        _safe_save(dossier, update_fields=["resolution_validation"])
+
+    # ---- FK miroir optionnel ----
+    if not _has_model_field(res, "travaux_dossier"):
+        return  # ✅ ne touche pas à un champ qui n'existe pas
+
+    if getattr(res, "travaux_dossier_id", None) not in (None, dossier.id):
+        raise ValidationError(
+            {"detail": "Incohérence: cette résolution est déjà liée à un autre dossier (travaux_dossier)."}
+        )
+    if getattr(res, "travaux_dossier_id", None) != dossier.id:
+        res.travaux_dossier_id = dossier.id
+        _safe_save(res, update_fields=["travaux_dossier"])
+
+
+def _validate_and_lock_dossier_if_adoptee(
+    *,
+    request,
+    res: Resolution,
+    dossier,
+    DossierTravaux,
+    decision: str,
+    budget_vote: Optional[Decimal],
+) -> Optional[dict]:
+    """
+    Applique la politique:
+    - si ADOPTEE: VALIDE (si SOUMIS_AG), budget_vote, lock (idempotent)
+    - sinon: rien
+    Renvoie un payload dossier pour la réponse.
+    """
+    dossier_statut = _getattr_any(dossier, ["statut", "status"], default=None)
+    locked_flag = bool(getattr(dossier, "is_locked", False))  # property du modèle
+
+    if decision != "ADOPTEE":
+        return {
+            "dossier_id": dossier.id,
+            "statut": dossier_statut,
+            "detail": "Résolution rejetée : dossier non validé.",
+        }
+
+    # déjà verrouillé => idempotent
+    if locked_flag:
+        return {
+            "dossier_id": dossier.id,
+            "statut": dossier_statut,
+            "detail": "Dossier déjà verrouillé : aucune modification.",
+            "budget_vote": str(getattr(dossier, "budget_vote", None))
+            if getattr(dossier, "budget_vote", None) is not None
+            else None,
+            "locked_at": dossier.locked_at.isoformat() if getattr(dossier, "locked_at", None) else None,
+            "locked_by": getattr(dossier, "locked_by_id", None),
+        }
+
+    # TextChoices si dispo, sinon fallback
+    if hasattr(DossierTravaux, "Statut"):
+        SOUMIS_AG = getattr(DossierTravaux.Statut, "SOUMIS_AG", "SOUMIS_AG")
+        VALIDE = getattr(DossierTravaux.Statut, "VALIDE", "VALIDE")
+    else:
+        SOUMIS_AG = "SOUMIS_AG"
+        VALIDE = "VALIDE"
+
+    # Politique "production" : valider uniquement si SOUMIS_AG
+    if dossier_statut != SOUMIS_AG:
+        return {
+            "dossier_id": dossier.id,
+            "statut": dossier_statut,
+            "detail": "Décision ADOPTEE mais dossier non en statut SOUMIS_AG : non validé (politique production).",
+        }
+
+    # 1) statut => VALIDE
+    if hasattr(dossier, "statut"):
+        dossier.statut = VALIDE
+    elif hasattr(dossier, "status"):
+        dossier.status = VALIDE
+
+    # 2) budget_vote
+    if hasattr(dossier, "budget_vote"):
+        if budget_vote is not None:
+            dossier.budget_vote = budget_vote
+        elif getattr(dossier, "budget_vote", None) is None and hasattr(dossier, "budget_estime"):
+            dossier.budget_vote = getattr(dossier, "budget_estime", None)
+
+    # 3) lock: on évite double-save; on pose les champs, puis save 1 fois
+    user = request.user if getattr(request.user, "is_authenticated", False) else None
+    if hasattr(dossier, "lock") and callable(getattr(dossier, "lock")):
+        try:
+            dossier.lock(user=user, save=False)
+        except TypeError:
+            dossier.lock(user=user)
+    else:
+        if hasattr(dossier, "locked_at") and not getattr(dossier, "locked_at", None):
+            dossier.locked_at = timezone.now()
+        if hasattr(dossier, "locked_by") and user and not getattr(dossier, "locked_by_id", None):
+            dossier.locked_by = user
+
+    _safe_save(
+        dossier,
+        update_fields=[
+            "statut",
+            "status",
+            "budget_vote",
+            "locked_at",
+            "locked_by",
+            "resolution_validation",
+        ],
+    )
+
+    # miroir budget_vote côté résolution (utile)
+    if hasattr(res, "budget_vote"):
+        if budget_vote is not None:
+            res.budget_vote = budget_vote
+        elif getattr(res, "budget_vote", None) is None:
+            res.budget_vote = getattr(dossier, "budget_vote", None)
+        _safe_save(res, update_fields=["budget_vote"])
+
+    return {
+        "dossier_id": dossier.id,
+        "statut": _getattr_any(dossier, ["statut", "status"], default=None),
+        "budget_vote": str(getattr(dossier, "budget_vote", None))
+        if getattr(dossier, "budget_vote", None) is not None
+        else None,
+        "locked_at": dossier.locked_at.isoformat() if getattr(dossier, "locked_at", None) else None,
+        "locked_by": getattr(dossier, "locked_by_id", None),
+    }
+
+
+def _close_resolution_and_apply_travaux(
+    *,
+    request,
+    res: Resolution,
+    budget_vote: Optional[Decimal],
+) -> tuple[dict, Optional[dict]]:
+    """
+    Service interne réutilisable :
+    - calcule résultat
+    - clôture la résolution (idempotent)
+    - applique Travaux si dossier lié et décision ADOPTEE
+    Retourne (resultat_resolution_dict, dossier_payload)
+    """
+    result = _compute_resolution_result(res)
+    decision = result["decision"]
+
+    if not res.cloturee:
+        res.cloturee = True
+        _safe_save(res, update_fields=["cloturee"])
+
+    dossier_payload = None
+
+    dossier, DossierTravaux = _fetch_dossier_travaux_for_resolution(res=res)
+    if dossier and DossierTravaux:
+        _sync_resolution_dossier_links(res=res, dossier=dossier)
+
+        dossier_payload = _validate_and_lock_dossier_if_adoptee(
+            request=request,
+            res=res,
+            dossier=dossier,
+            DossierTravaux=DossierTravaux,
+            decision=decision,
+            budget_vote=budget_vote,
+        )
+
+    return result, dossier_payload
 
 
 # =========================
@@ -211,6 +572,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         _assert_same_copro(request, ag)
 
         from .services.pdf import generate_ag_pv_pdf
+
         return generate_ag_pv_pdf(ag, request=request)
 
     # =========================
@@ -227,9 +589,8 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         if ag.pv_locked:
             raise ValidationError({"detail": "PV verrouillé : archivage interdit."})
 
-        from .services.pdf import generate_ag_pv_pdf_bytes
-
         with transaction.atomic():
+            # ✅ appel via wrapper patchable (tests)
             pdf_bytes = generate_ag_pv_pdf_bytes(ag, request=request)
             if not pdf_bytes:
                 raise ValidationError({"detail": "Impossible de générer le PV PDF (bytes vides)."})
@@ -288,9 +649,14 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "PV non archivé. Faites d'abord pv/archive."})
 
         pfx_file = request.FILES.get("pfx")
-        pfx_password = (request.data.get("password") or "").strip()
+        pfx_password = (request.data.get("password") or "")
         if not pfx_file or not pfx_password:
             raise ValidationError({"detail": "Fournir pfx (.p12/.pfx) et password (form-data)."})
+
+        # ✅ protection contre caractères nuls ou espaces "bizarres"
+        pfx_password = str(pfx_password).strip().replace("\x00", "")
+        if not pfx_password:
+            raise ValidationError({"detail": "Mot de passe PKCS#12 invalide (vide après nettoyage)."})
 
         original_pdf_bytes = ag.pv_pdf.read()
         if not original_pdf_bytes:
@@ -301,13 +667,22 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         if ag.pv_pdf_hash and ag.pv_pdf_hash != original_hash:
             raise ValidationError({"detail": "Incohérence hash PV. Réarchivez le PV (pv/archive)."})
 
-        from .services.pades import sign_pdf_pades
+        # Lire le pfx en mémoire une seule fois
+        pfx_bytes = pfx_file.read()
+        if not pfx_bytes:
+            raise ValidationError({"detail": "Fichier PKCS#12 vide ou illisible."})
 
-        with tempfile.NamedTemporaryFile(suffix=".p12", delete=True) as tmp:
-            tmp.write(pfx_file.read())
+        suffix = ".p12"
+        upname = (getattr(pfx_file, "name", "") or "").lower()
+        if upname.endswith(".pfx"):
+            suffix = ".pfx"
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+            tmp.write(pfx_bytes)
             tmp.flush()
 
             try:
+                # ✅ appel via wrapper patchable (tests)
                 sign_result = sign_pdf_pades(
                     pdf_bytes=original_pdf_bytes,
                     pfx_path=tmp.name,
@@ -365,6 +740,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_signed_hash": ag.pv_signed_hash,
                 "pv_signed_pdf": getattr(ag.pv_signed_pdf, "name", ""),
                 "pv_signer_subject": ag.pv_signer_subject,
+                "pfx_uploaded_name": _safe_uploaded_filename(getattr(pfx_file, "name", "")),
             },
         )
 
@@ -394,6 +770,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "PV signé non disponible. Faites pv/sign."})
 
         from django.http import HttpResponse
+
         pdf_bytes = ag.pv_signed_pdf.read()
         filename = f"PV-AG-{ag.id:05d}-SIGNE.pdf"
 
@@ -446,14 +823,13 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         Phase 2.4:
         - exige PV signé + pv_locked
         - exige quorum atteint
-        - clôture les résolutions restantes
+        - clôture les résolutions restantes (EN PASSANT PAR LA LOGIQUE TRAVAUX)
         - met statut=CLOTUREE
         ✅ idempotent: si déjà clôturée => 200 OK
         """
         ag = self.get_object()
         _assert_same_copro(request, ag)
 
-        # ✅ idempotence
         if ag.statut == "CLOTUREE":
             return Response(
                 {"ag_id": ag.id, "statut": ag.statut, "detail": "AG déjà clôturée."},
@@ -465,10 +841,13 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         if not ag.quorum_atteint():
             raise ValidationError({"detail": "Quorum non atteint. Impossible de clôturer l’AG."})
 
+        closed_resolutions = 0
+        dossiers_valides = 0
+        dossiers = []
+
         with transaction.atomic():
             ag = AssembleeGenerale.objects.select_for_update().get(pk=ag.pk)
 
-            # re-check idempotence sous lock DB
             if ag.statut == "CLOTUREE":
                 return Response(
                     {"ag_id": ag.id, "statut": ag.statut, "detail": "AG déjà clôturée."},
@@ -477,21 +856,42 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
             _assert_ag_closable(ag)
 
-            Resolution.objects.filter(ag_id=ag.id, cloturee=False).update(cloturee=True)
+            qs = Resolution.objects.select_for_update().filter(ag_id=ag.id, cloturee=False).order_by("ordre", "id")
+            for res in qs:
+                result, dossier_payload = _close_resolution_and_apply_travaux(
+                    request=request,
+                    res=res,
+                    budget_vote=None,
+                )
+                closed_resolutions += 1
+                if dossier_payload:
+                    dossiers.append(dossier_payload)
+                    if dossier_payload.get("statut") == "VALIDE":
+                        dossiers_valides += 1
 
             ag.statut = "CLOTUREE"
             ag.closed_at = timezone.now()
             ag.closed_by = request.user if getattr(request.user, "is_authenticated", False) else None
 
-            # sécurité: clôture => lock
             ag.pv_locked = True
-
             ag.save(update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
 
-        _log_ag_event(request, ag, event="AG_CLOSED", meta={"statut": ag.statut})
+        _log_ag_event(
+            request,
+            ag,
+            event="AG_CLOSED",
+            meta={"statut": ag.statut, "closed_resolutions": closed_resolutions, "dossiers_count": len(dossiers)},
+        )
 
         return Response(
-            {"ag_id": ag.id, "statut": ag.statut, "detail": "AG clôturée (Phase 2.4)."},
+            {
+                "ag_id": ag.id,
+                "statut": ag.statut,
+                "detail": "AG clôturée (Phase 2.4).",
+                "resolutions_cloturees": closed_resolutions,
+                "dossiers_travaux": dossiers,
+                "dossiers_travaux_valides": dossiers_valides,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -556,72 +956,66 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         res = self.get_object()
         _assert_same_copro(request, res.ag)
 
-        agg = (
-            Vote.objects
-            .filter(resolution_id=res.id)
-            .values("choix")
-            .annotate(t=Sum("tantiemes"))
-        )
-        by = {row["choix"]: Decimal(str(row["t"] or 0)) for row in agg}
-
-        pour = by.get("POUR", Decimal("0"))
-        contre = by.get("CONTRE", Decimal("0"))
-        abst = by.get("ABSTENTION", Decimal("0"))
-
-        exprimes = pour + contre
-
-        def ratio(x: Decimal, denom: Decimal) -> float:
-            return float(x / denom) if denom and denom > 0 else 0.0
-
-        decision = "REJETEE"
-        maj = res.type_majorite
-
-        if maj == "SIMPLE":
-            if pour > contre:
-                decision = "ADOPTEE"
-        elif maj == "ABSOLUE":
-            if exprimes > 0 and pour > (exprimes * Decimal("0.50")):
-                decision = "ADOPTEE"
-        elif maj == "QUALIFIEE_2_3":
-            if exprimes > 0 and pour >= (exprimes * Decimal("0.6667")):
-                decision = "ADOPTEE"
-        elif maj == "UNANIMITE":
-            if exprimes > 0 and contre == 0 and pour == exprimes:
-                decision = "ADOPTEE"
-
-        return Response(
-            {
-                "resolution_id": res.id,
-                "type_majorite": maj,
-                "tantiemes": {
-                    "pour": float(pour),
-                    "contre": float(contre),
-                    "abstention": float(abst),
-                    "exprimes": float(exprimes),
-                    "ratio_pour_exprimes": ratio(pour, exprimes),
-                },
-                "decision": decision,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(_compute_resolution_result(res), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="cloturer")
     def cloturer(self, request, pk=None):
+        """
+        ✅ Clôture résolution + Phase 3.2 Travaux (stabilisée)
+        - gère OneToOne (dossier.resolution_validation) ET FK miroir (resolution.travaux_dossier) si présent
+        - sync des 2 liens avant validation/lock
+        - transforme les erreurs en ValidationError (400) => plus de 500 opaques
+        """
         _require_copro_id(request)
         res = self.get_object()
         _assert_same_copro(request, res.ag)
         _assert_ag_writable(res.ag)
 
-        if res.cloturee:
-            return Response(
-                {"resolution_id": res.id, "cloturee": True, "detail": "Déjà clôturée."},
-                status=status.HTTP_200_OK,
-            )
+        budget_vote: Optional[Decimal] = None
+        if request.data and request.data.get("budget_vote") is not None:
+            budget_vote = _parse_decimal(request.data.get("budget_vote"), "budget_vote")
+            if budget_vote < 0:
+                raise ValidationError({"budget_vote": "Doit être >= 0."})
 
-        res.cloturee = True
-        res.save(update_fields=["cloturee"])
+        try:
+            with transaction.atomic():
+                res = Resolution.objects.select_for_update().select_related("ag").get(pk=res.pk)
 
-        return Response({"resolution_id": res.id, "cloturee": True}, status=status.HTTP_200_OK)
+                if res.cloturee:
+                    result = _compute_resolution_result(res)
+                    return Response(
+                        {
+                            "resolution_id": res.id,
+                            "cloturee": True,
+                            "decision": result["decision"],
+                            "tantiemes": result["tantiemes"],
+                            "detail": "Déjà clôturée.",
+                            "dossier_travaux": None,
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                result, dossier_payload = _close_resolution_and_apply_travaux(
+                    request=request,
+                    res=res,
+                    budget_vote=budget_vote,
+                )
+
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ValidationError({"detail": f"Erreur clôture résolution: {str(e)}"})
+
+        return Response(
+            {
+                "resolution_id": res.id,
+                "cloturee": True,
+                "decision": result["decision"],
+                "tantiemes": result["tantiemes"],
+                "dossier_travaux": dossier_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def perform_create(self, serializer):
         _require_copro_id(self.request)

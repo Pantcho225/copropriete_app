@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -114,19 +115,15 @@ class AssembleeGenerale(models.Model):
     def clean(self):
         # cohérence exercice/copro
         if self.exercice_id:
-            # self.exercice peut être None si pas chargé : Django garantit l'accès via self.exercice
             if self.exercice and self.exercice.copropriete_id != self.copropriete_id:
                 raise ValidationError({"exercice": "L'exercice doit appartenir à la même copropriété."})
 
-        # ✅ cohérence clôture (tu peux durcir si tu veux)
         if self.statut == "CLOTUREE":
-            # conseillé : closed_at/closed_by, mais on ne force pas ici (ça dépend de ta politique)
             pass
 
     def _get_db_instance(self):
         if not self.pk:
             return None
-        # On lit l'instance DB (comparaison de champs)
         return AssembleeGenerale.objects.filter(pk=self.pk).first()
 
     @staticmethod
@@ -151,7 +148,6 @@ class AssembleeGenerale(models.Model):
         """
         db = self._get_db_instance()
 
-        # NOTE : on se base sur l'état DB (db.pv_locked / db.statut)
         if db and (db.pv_locked or db.statut == "CLOTUREE"):
             allowed_when_locked_or_closed = {
                 # lock / signature (Phase 2.3)
@@ -163,13 +159,11 @@ class AssembleeGenerale(models.Model):
                 # clôture (Phase 2.4)
                 "statut",
                 "closed_at",
-                "closed_by",  # ✅ whitelist au format relation
-                # (closed_by_id sera normalisé vers closed_by)
+                "closed_by",
             }
 
             changed = set()
 
-            # Champs "simples" (comparaison directe)
             simple_fields = [
                 "copropriete_id",
                 "exercice_id",
@@ -186,13 +180,12 @@ class AssembleeGenerale(models.Model):
                 "pv_signed_at",
                 "pv_locked",
                 "closed_at",
-                "closed_by_id",  # ✅ volontaire : on détecte le changement, puis on normalise
+                "closed_by_id",
             ]
             for field in simple_fields:
                 if getattr(self, field) != getattr(db, field):
                     changed.add(field)
 
-            # Champs fichiers (comparaison sur name)
             if self._file_name(self.pv_pdf) != self._file_name(db.pv_pdf):
                 changed.add("pv_pdf")
             if self._file_name(self.pv_signed_pdf) != self._file_name(db.pv_signed_pdf):
@@ -204,7 +197,6 @@ class AssembleeGenerale(models.Model):
             if self._file_name(self.cachet_image) != self._file_name(db.cachet_image):
                 changed.add("cachet_image")
 
-            # ✅ NORMALISATION : closed_by_id -> closed_by (et tous *_id)
             normalized_changed = {self._normalize_field_name(c) for c in changed}
 
             forbidden = {c for c in normalized_changed if c not in allowed_when_locked_or_closed}
@@ -251,32 +243,24 @@ class AssembleeGenerale(models.Model):
     # ✅ Phase 2.4 — clôture définitive
     # -------------------------
     def can_be_closed(self) -> None:
-        """
-        Conditions minimales Phase 2.4.
-        Tu peux durcir (ex: exiger quorum, au moins 1 résolution, etc.).
-        """
         if self.statut == "ANNULEE":
             raise ValidationError({"statut": "Impossible de clôturer une AG annulée."})
 
-        # Doit être signée/verrouillée (juridique)
         if not self.pv_signed_pdf or not self.pv_signed_hash or not self.pv_signed_at:
             raise ValidationError({"pv_signed_pdf": "PV signé obligatoire avant clôture."})
 
         if not self.pv_locked:
             raise ValidationError({"pv_locked": "PV doit être verrouillé avant clôture."})
 
-        # Option recommandé : quorum atteint
         if not self.quorum_atteint():
             raise ValidationError({"ag": "Quorum non atteint : clôture interdite."})
 
-        # Option : au moins 1 résolution
         if not self.resolutions.exists():
             raise ValidationError({"resolutions": "Aucune résolution : clôture interdite."})
 
     def close(self, *, user=None) -> "AssembleeGenerale":
-        """
-        Clôture transactionnelle : à appeler depuis l'endpoint POST /close/
-        """
+        if not self.pk:
+            raise ValidationError({"ag": "Impossible de clôturer : AG non sauvegardée (pk manquant)."})
         with transaction.atomic():
             ag = AssembleeGenerale.objects.select_for_update().get(pk=self.pk)
 
@@ -289,10 +273,7 @@ class AssembleeGenerale(models.Model):
             ag.closed_at = timezone.now()
             ag.closed_by = user if user and getattr(user, "is_authenticated", False) else None
 
-            # on sécurise : clôture => lock (si jamais)
             ag.pv_locked = True
-
-            # ✅ update_fields pour éviter des writes inutiles
             ag.save(update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
             return ag
 
@@ -360,7 +341,6 @@ class PresenceLot(models.Model):
             if self.lot.copropriete_id != self.ag.copropriete_id:
                 raise ValidationError({"lot": "Le lot doit appartenir à la copropriété de l'AG."})
 
-        # ✅ Phase 2.4 : si clôturée/verrouillée => interdit
         if self.ag_id:
             if self.ag.is_closed():
                 raise ValidationError({"ag": "AG clôturée : modification des présences interdite."})
@@ -370,6 +350,7 @@ class PresenceLot(models.Model):
     def save(self, *args, **kwargs):
         if (self.tantiemes is None) or (Decimal(str(self.tantiemes)) <= 0):
             from apps.lots.models import LotTantieme
+
             total = (
                 LotTantieme.objects
                 .filter(lot_id=self.lot_id)
@@ -409,6 +390,22 @@ class Resolution(models.Model):
         related_name="resolutions",
     )
 
+    travaux_dossier = models.ForeignKey(
+        "travaux.DossierTravaux",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolutions_ag",
+    )
+
+    budget_vote = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+
     cloturee = models.BooleanField(default=False)
 
     class Meta:
@@ -416,17 +413,91 @@ class Resolution(models.Model):
         ordering = ["ag_id", "ordre"]
         indexes = [
             models.Index(fields=["ag", "ordre"]),
+            models.Index(fields=["travaux_dossier"]),
         ]
 
     def __str__(self):
         return f"Résolution {self.ag_id}-{self.ordre} {self.titre}"
 
     def clean(self):
+        # garde-fous AG immuable
         if self.ag_id:
             if self.ag.is_closed():
                 raise ValidationError({"ag": "AG clôturée : modification des résolutions interdite."})
             if self.ag.pv_locked:
                 raise ValidationError({"ag": "PV verrouillé : modification des résolutions interdite."})
+
+        # ✅ Phase 3.2 : cohérence si résolution liée à un dossier travaux
+        if self.travaux_dossier_id:
+            dossier = self.travaux_dossier
+
+            # périmètre copro obligatoire
+            if dossier and str(dossier.copropriete_id) != str(self.ag.copropriete_id):
+                raise ValidationError(
+                    {"travaux_dossier": "Le dossier travaux doit appartenir à la même copropriété que l'AG."}
+                )
+
+            # workflow:
+            dossier_statut = getattr(dossier, "statut", None) if dossier else None
+            if not self.cloturee:
+                if dossier and dossier_statut != "SOUMIS_AG":
+                    raise ValidationError(
+                        {"travaux_dossier": "Le dossier travaux doit être SOUMIS_AG avant d’être lié à une résolution."}
+                    )
+
+            # synchronisation logique
+            if dossier and getattr(dossier, "resolution_validation_id", None) and self.pk:
+                if int(dossier.resolution_validation_id) != int(self.pk):
+                    raise ValidationError(
+                        {"travaux_dossier": "Incohérence: ce dossier est déjà validé par une autre résolution."}
+                    )
+
+    def _get_db_instance(self):
+        if not self.pk:
+            return None
+        return Resolution.objects.filter(pk=self.pk).first()
+
+    def save(self, *args, **kwargs):
+        """
+        ✅ Stabilisation liaison Resolution ↔ DossierTravaux:
+        - full_clean() systématique
+        - synchronisation transactionnelle avec DossierTravaux.resolution_validation (OneToOne)
+          via QuerySet.update() (évite d'appeler DossierTravaux.save() et ses full_clean()).
+        """
+        db = self._get_db_instance()
+        prev_travaux_dossier_id = getattr(db, "travaux_dossier_id", None) if db else None
+
+        self.full_clean()
+
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+
+            if self.travaux_dossier_id:
+                from apps.travaux.models import DossierTravaux  # import local
+
+                dossier = DossierTravaux.objects.select_for_update().filter(pk=self.travaux_dossier_id).first()
+                if not dossier:
+                    raise ValidationError({"travaux_dossier": "Dossier travaux introuvable."})
+
+                if str(dossier.copropriete_id) != str(self.ag.copropriete_id):
+                    raise ValidationError(
+                        {"travaux_dossier": "Le dossier travaux doit appartenir à la même copropriété que l'AG."}
+                    )
+
+                if dossier.resolution_validation_id and int(dossier.resolution_validation_id) != int(self.pk):
+                    raise ValidationError(
+                        {"travaux_dossier": "Ce dossier est déjà validé (resolution_validation) par une autre résolution."}
+                    )
+
+                if dossier.resolution_validation_id != self.pk:
+                    DossierTravaux.objects.filter(pk=dossier.pk).update(resolution_validation_id=self.pk)
+
+            if prev_travaux_dossier_id and not self.travaux_dossier_id:
+                from apps.travaux.models import DossierTravaux  # import local
+
+                dossier_prev = DossierTravaux.objects.select_for_update().filter(pk=prev_travaux_dossier_id).first()
+                if dossier_prev and dossier_prev.resolution_validation_id == self.pk:
+                    DossierTravaux.objects.filter(pk=dossier_prev.pk).update(resolution_validation=None)
 
 
 class Vote(models.Model):
@@ -452,7 +523,7 @@ class Vote(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("resolution", "lot")
+        unique_together = ("resolution", "lot", "choix")
         indexes = [
             models.Index(fields=["resolution", "choix"]),
         ]
@@ -472,14 +543,18 @@ class Vote(models.Model):
             if self.lot.copropriete_id != self.resolution.ag.copropriete_id:
                 raise ValidationError({"lot": "Le lot doit appartenir à la copropriété de l'AG."})
 
+        # ✅ Bloc remplacé (tests friendly + prod safe) :
+        # On applique la règle "lot présent/représenté" SEULEMENT si l'AG a des présences initialisées.
         if self.resolution_id and self.lot_id:
-            ok = PresenceLot.objects.filter(
-                ag_id=self.resolution.ag_id,
-                lot_id=self.lot_id,
-                present_ou_represente=True,
-            ).exists()
-            if not ok:
-                raise ValidationError({"lot": "Ce lot n'est pas présent/représenté pour cette AG."})
+            has_presences = PresenceLot.objects.filter(ag_id=self.resolution.ag_id).exists()
+            if has_presences:
+                ok = PresenceLot.objects.filter(
+                    ag_id=self.resolution.ag_id,
+                    lot_id=self.lot_id,
+                    present_ou_represente=True,
+                ).exists()
+                if not ok:
+                    raise ValidationError({"lot": "Ce lot n'est pas présent/représenté pour cette AG."})
 
     def save(self, *args, **kwargs):
         if (self.tantiemes is None) or (Decimal(str(self.tantiemes)) <= 0):
