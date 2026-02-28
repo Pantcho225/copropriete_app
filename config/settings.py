@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.ag",
     "apps.travaux",
     "django_extensions",
+    "apps.compta.apps.ComptaConfig",
     
 ]
 
