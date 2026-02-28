@@ -36,3 +36,4 @@ staticfiles/
 *.p12
 *.pfx
 *.pem
+.coverage

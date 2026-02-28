@@ -4,17 +4,24 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
+from django.db.models import Sum, Count
 from django.utils import timezone
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.ag.models import Resolution
-from .models import Fournisseur, DossierTravaux
-from .serializers import FournisseurSerializer, DossierTravauxSerializer
+from apps.ag.models import Resolution, Vote
+from .models import Fournisseur, DossierTravaux, PaiementTravaux
+from .serializers import (
+    FournisseurSerializer,
+    DossierTravauxSerializer,
+    PaiementTravauxSerializer,
+    # ✅ déjà prévu chez toi
+    DossierUnlockSerializer,
+)
 
 
 # =========================================================
@@ -30,6 +37,7 @@ def _require_copro_id(request) -> int:
     except ValueError:
         raise ValidationError({"detail": "X-Copropriete-Id invalide (entier requis)."})
 
+
 def _parse_int(value, field: str) -> int:
     if value is None or value == "":
         raise ValidationError({field: "Champ requis."})
@@ -37,6 +45,7 @@ def _parse_int(value, field: str) -> int:
         return int(str(value))
     except ValueError:
         raise ValidationError({field: "Doit être un entier."})
+
 
 def _parse_decimal(value, field: str) -> Decimal:
     if value is None or value == "":
@@ -46,9 +55,11 @@ def _parse_decimal(value, field: str) -> Decimal:
     except (InvalidOperation, TypeError):
         raise ValidationError({field: "Format invalide. Exemple: 1400000.00"})
 
+
 def _ensure_same_copro(obj_copro_id: int, copro_id: int):
     if int(obj_copro_id) != int(copro_id):
         raise ValidationError({"detail": "Ressource hors copropriété."})
+
 
 def _lock_dossier(dossier: DossierTravaux, user):
     """
@@ -58,6 +69,7 @@ def _lock_dossier(dossier: DossierTravaux, user):
     """
     if hasattr(dossier, "lock") and callable(getattr(dossier, "lock")):
         dossier.lock(user=user, save=True)
+        dossier.refresh_from_db(fields=["locked_at", "locked_by"])
         return
 
     changed_fields = []
@@ -71,6 +83,27 @@ def _lock_dossier(dossier: DossierTravaux, user):
 
     if changed_fields:
         dossier.save(update_fields=list(dict.fromkeys(changed_fields)))
+
+
+def _unlock_dossier(dossier: DossierTravaux, *, user=None, raison: str | None = None):
+    """
+    Déverrouille de façon robuste + audit si possible.
+    - utilise dossier.unlock(user=..., raison=...) si disponible
+    - sinon fallback DB update
+    """
+    if hasattr(dossier, "unlock") and callable(getattr(dossier, "unlock")):
+        try:
+            dossier.unlock(user=user, raison=raison, save=True)
+        except TypeError:
+            dossier.unlock(save=True)
+        dossier.refresh_from_db(fields=["locked_at", "locked_by"])
+        return
+
+    # fallback (sans audit)
+    DossierTravaux.objects.filter(pk=dossier.pk).update(locked_at=None, locked_by=None)
+    dossier.locked_at = None
+    dossier.locked_by = None
+
 
 def _fetch_resolution_for_link(*, resolution_id: int, copro_id: int) -> Resolution:
     """
@@ -94,6 +127,7 @@ def _fetch_resolution_for_link(*, resolution_id: int, copro_id: int) -> Resoluti
 
     return res
 
+
 def _ensure_resolution_not_linked_elsewhere(*, resolution_id: int, dossier_id: int):
     """
     Empêche qu'une résolution serve de validation à 2 dossiers (OneToOne vérité métier).
@@ -108,10 +142,10 @@ def _ensure_resolution_not_linked_elsewhere(*, resolution_id: int, dossier_id: i
     if conflict_id:
         raise ValidationError({"detail": f"Cette résolution est déjà liée au dossier #{conflict_id}."})
 
+
 def _ensure_resolution_fk_not_linked_elsewhere(*, res: Resolution, dossier_id: int):
     """
     Empêche que la FK miroir pointe vers un autre dossier.
-    (Ton modèle Resolution a bien travaux_dossier, donc on l'applique.)
     """
     current = getattr(res, "travaux_dossier_id", None)
     if current and int(current) != int(dossier_id):
@@ -119,8 +153,10 @@ def _ensure_resolution_fk_not_linked_elsewhere(*, res: Resolution, dossier_id: i
             {"detail": f"Cette résolution est déjà liée au dossier #{current} (Resolution.travaux_dossier)."}
         )
 
+
 def _clear_resolution_fk_if_points_to_dossier(*, resolution_id: int, dossier_id: int):
     Resolution.objects.filter(pk=resolution_id, travaux_dossier_id=dossier_id).update(travaux_dossier=None)
+
 
 def _sync_links(*, d: DossierTravaux, res: Resolution):
     """
@@ -129,15 +165,49 @@ def _sync_links(*, d: DossierTravaux, res: Resolution):
     - FK miroir : res.travaux_dossier = d
     Appel à faire sous transaction.atomic() avec d/res lockés.
     """
-    # vérité métier: OneToOne
     if d.resolution_validation_id != res.id:
         DossierTravaux.objects.filter(pk=d.pk).update(resolution_validation_id=res.id)
         d.resolution_validation_id = res.id
 
-    # FK miroir
     if getattr(res, "travaux_dossier_id", None) != d.id:
         Resolution.objects.filter(pk=res.pk).update(travaux_dossier_id=d.id)
         res.travaux_dossier_id = d.id
+
+
+def _compute_resolution_decision(resolution_id: int) -> str:
+    """
+    Calcule ADOPTEE/REJETEE en se basant sur la logique majorités (similaire à ag/views.py).
+    """
+    res = Resolution.objects.select_related("ag").get(pk=resolution_id)
+
+    agg = (
+        Vote.objects.filter(resolution_id=res.id)
+        .values("choix")
+        .annotate(t=Sum("tantiemes"))
+    )
+    by = {row["choix"]: Decimal(str(row["t"] or 0)) for row in agg}
+
+    pour = by.get("POUR", Decimal("0"))
+    contre = by.get("CONTRE", Decimal("0"))
+    exprimes = pour + contre
+
+    decision = "REJETEE"
+    maj = res.type_majorite
+
+    if maj == "SIMPLE":
+        if pour > contre:
+            decision = "ADOPTEE"
+    elif maj == "ABSOLUE":
+        if exprimes > 0 and pour > (exprimes * Decimal("0.50")):
+            decision = "ADOPTEE"
+    elif maj == "QUALIFIEE_2_3":
+        if exprimes > 0 and pour >= (exprimes * Decimal("0.6667")):
+            decision = "ADOPTEE"
+    elif maj == "UNANIMITE":
+        if exprimes > 0 and contre == 0 and pour == exprimes:
+            decision = "ADOPTEE"
+
+    return decision
 
 
 # =========================================================
@@ -198,6 +268,121 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         super().perform_destroy(instance)
 
     # -----------------------------------------------------
+    # Stats Travaux (dashboard)
+    # -----------------------------------------------------
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        copro_id = _require_copro_id(request)
+
+        qs = DossierTravaux.objects.filter(copropriete_id=copro_id)
+
+        total_dossiers = qs.count()
+
+        by_statut_rows = (
+            qs.values("statut")
+            .annotate(count=Count("id"))
+            .order_by()
+        )
+        by_statut = {row["statut"]: int(row["count"]) for row in by_statut_rows}
+
+        budgets = qs.aggregate(
+            budget_estime_total=Sum("budget_estime"),
+            budget_vote_total=Sum("budget_vote"),
+            dossiers_avec_budget_vote=Count("budget_vote"),
+        )
+
+        budget_estime_total = Decimal(str(budgets.get("budget_estime_total") or "0"))
+        budget_vote_total = Decimal(str(budgets.get("budget_vote_total") or "0"))
+        dossiers_avec_budget_vote = int(budgets.get("dossiers_avec_budget_vote") or 0)
+
+        locked_count = qs.filter(locked_at__isnull=False).count()
+        unlocked_count = total_dossiers - locked_count
+
+        ratio_vote_estime = (
+            float(budget_vote_total / budget_estime_total)
+            if budget_estime_total > 0
+            else 0.0
+        )
+
+        return Response(
+            {
+                "copropriete_id": int(copro_id),
+                "total_dossiers": int(total_dossiers),
+                "by_statut": by_statut,
+                "budgets": {
+                    "budget_estime_total": float(budget_estime_total),
+                    "budget_vote_total": float(budget_vote_total),
+                    "ratio_vote_estime": ratio_vote_estime,
+                    "dossiers_avec_budget_vote": dossiers_avec_budget_vote,
+                },
+                "locks": {
+                    "locked_count": int(locked_count),
+                    "unlocked_count": int(unlocked_count),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # -----------------------------------------------------
+    # Locks (Phase 3 “propre”)
+    # -----------------------------------------------------
+
+    @action(detail=True, methods=["post"], url_path="lock")
+    def lock(self, request, pk=None):
+        copro_id = _require_copro_id(request)
+        dossier = self.get_object()
+        _ensure_same_copro(dossier.copropriete_id, copro_id)
+
+        with transaction.atomic():
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            if d.is_locked:
+                return Response(
+                    {"dossier_id": d.id, "locked": True, "detail": "Déjà verrouillé."},
+                    status=status.HTTP_200_OK
+                )
+
+            user = request.user if getattr(request.user, "is_authenticated", False) else None
+            _lock_dossier(d, user)
+
+        return Response(
+            {
+                "dossier_id": d.id,
+                "locked": True,
+                "locked_at": d.locked_at.isoformat() if d.locked_at else None,
+                "locked_by": d.locked_by_id
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="unlock")
+    def unlock(self, request, pk=None):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Action réservée à l'ADMIN.")
+
+        copro_id = _require_copro_id(request)
+        dossier = self.get_object()
+        _ensure_same_copro(dossier.copropriete_id, copro_id)
+
+        ser = DossierUnlockSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        raison = ser.validated_data["raison"]
+
+        with transaction.atomic():
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            if not d.is_locked:
+                return Response(
+                    {"dossier_id": d.id, "locked": False, "detail": "Déjà déverrouillé."},
+                    status=status.HTTP_200_OK
+                )
+
+            _unlock_dossier(d, user=request.user, raison=raison)
+
+        return Response(
+            {"dossier_id": d.id, "locked": False, "detail": "Dossier déverrouillé (audit enregistré)."},
+            status=status.HTTP_200_OK,
+        )
+
+    # -----------------------------------------------------
     # Workflow
     # -----------------------------------------------------
 
@@ -237,6 +422,9 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            if not d.is_locked:
+                raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant démarrage."})
+
             d.start()
             d.save(update_fields=["statut"])
 
@@ -248,8 +436,14 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         dossier = self.get_object()
         _ensure_same_copro(dossier.copropriete_id, copro_id)
 
+        if not dossier.is_locked:
+            raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant clôture des travaux."})
+
         with transaction.atomic():
             d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            if not d.is_locked:
+                raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant clôture des travaux."})
+
             d.finish()
             d.save(update_fields=["statut"])
 
@@ -261,8 +455,14 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         dossier = self.get_object()
         _ensure_same_copro(dossier.copropriete_id, copro_id)
 
+        if not dossier.is_locked:
+            raise ValidationError({"detail": "Le dossier doit être verrouillé avant archivage."})
+
         with transaction.atomic():
             d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            if not d.is_locked:
+                raise ValidationError({"detail": "Le dossier doit être verrouillé avant archivage."})
+
             d.archive()
             d.save(update_fields=["statut"])
 
@@ -295,7 +495,6 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             _ensure_resolution_not_linked_elsewhere(resolution_id=resolution_id, dossier_id=d.id)
             _ensure_resolution_fk_not_linked_elsewhere(res=res, dossier_id=d.id)
 
-            # ✅ idempotence totale
             if d.resolution_validation_id == res.id and getattr(res, "travaux_dossier_id", None) == d.id:
                 return Response(
                     {
@@ -308,10 +507,9 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            # conflit dossier déjà lié à une autre résolution
             if d.resolution_validation_id and d.resolution_validation_id != res.id:
                 raise ValidationError({"detail": "Dossier déjà lié à une autre résolution (utilise relink)."})
-            # sync cohérent
+
             _sync_links(d=d, res=res)
 
         return Response(
@@ -352,11 +550,9 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            # OneToOne vérité
             DossierTravaux.objects.filter(pk=d.pk).update(resolution_validation=None)
             d.resolution_validation_id = None
 
-            # FK miroir
             _clear_resolution_fk_if_points_to_dossier(resolution_id=old_res_id, dossier_id=d.id)
 
         return Response(
@@ -394,7 +590,6 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
 
             previous = d.resolution_validation_id
 
-            # idempotent
             if previous == res.id and getattr(res, "travaux_dossier_id", None) == d.id:
                 return Response(
                     {
@@ -408,11 +603,9 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            # nettoie ancien miroir FK si besoin
             if previous and previous != res.id:
                 _clear_resolution_fk_if_points_to_dossier(resolution_id=previous, dossier_id=d.id)
 
-            # sync nouveau lien
             _sync_links(d=d, res=res)
 
         return Response(
@@ -447,6 +640,10 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         if dossier.budget_estime is not None and budget_vote_dec > dossier.budget_estime:
             raise ValidationError({"budget_vote": "Ne peut pas dépasser budget_estime."})
 
+        decision = _compute_resolution_decision(resolution_id)
+        if decision != "ADOPTEE":
+            raise ValidationError({"detail": "Validation impossible : la résolution n'est pas ADOPTEE."})
+
         with transaction.atomic():
             d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
             if d.is_locked:
@@ -463,15 +660,12 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             if previous and previous != res.id:
                 _clear_resolution_fk_if_points_to_dossier(resolution_id=previous, dossier_id=d.id)
 
-            # sync liens
             _sync_links(d=d, res=res)
 
-            # statut + budget_vote
             d.budget_vote = budget_vote_dec
             d.validate_ag()
             d.save(update_fields=["budget_vote", "statut"])
 
-            # miroir budget_vote côté résolution
             if hasattr(res, "budget_vote"):
                 Resolution.objects.filter(pk=res.pk).update(budget_vote=budget_vote_dec)
                 res.budget_vote = budget_vote_dec
@@ -487,6 +681,154 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
                 "budget_vote": str(d.budget_vote) if d.budget_vote is not None else None,
                 "locked_at": d.locked_at.isoformat() if d.locked_at else None,
                 "locked_by": d.locked_by_id,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PaiementTravauxViewSet(viewsets.ModelViewSet):
+    """
+    ✅ Endpoint manquant (cause du 404) :
+    - GET/POST /api/travaux/paiements/
+    - GET/PUT/PATCH/DELETE /api/travaux/paiements/<id>/
+    - GET /api/travaux/paiements/stats/   (stats financières Phase 3)
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = PaiementTravauxSerializer
+    queryset = PaiementTravaux.objects.all().order_by("-date_paiement", "-id")
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        qs = super().get_queryset().filter(dossier__copropriete_id=copro_id).select_related(
+            "dossier", "fournisseur"
+        )
+
+        # filtres optionnels
+        dossier_id = self.request.query_params.get("dossier")
+        fournisseur_id = self.request.query_params.get("fournisseur")
+
+        if dossier_id:
+            try:
+                qs = qs.filter(dossier_id=int(dossier_id))
+            except ValueError:
+                raise ValidationError({"dossier": "Doit être un entier."})
+
+        if fournisseur_id:
+            try:
+                qs = qs.filter(fournisseur_id=int(fournisseur_id))
+            except ValueError:
+                raise ValidationError({"fournisseur": "Doit être un entier."})
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        dossier = serializer.validated_data["dossier"]
+        if int(dossier.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Dossier hors copropriété."})
+
+        fournisseur = serializer.validated_data.get("fournisseur")
+        # Optionnel : si tu veux forcer que le fournisseur est dans la même copro
+        if fournisseur and int(fournisseur.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Fournisseur hors copropriété."})
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        inst: PaiementTravaux = serializer.instance
+        if int(inst.dossier.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Ressource hors copropriété."})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        copro_id = _require_copro_id(self.request)
+        if int(instance.dossier.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Ressource hors copropriété."})
+        super().perform_destroy(instance)
+
+    # -----------------------------------------------------
+    # Stats financières (Phase 3)
+    # -----------------------------------------------------
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """
+        GET /api/travaux/paiements/stats/
+        Header: X-Copropriete-Id
+
+        Retour :
+        - total_paye (copro)
+        - total_budget_vote (copro)
+        - reste_global = budget_vote - payé
+        - by_fournisseur (montants)
+        - by_dossier (payé + budget_vote + reste)
+        """
+        copro_id = _require_copro_id(request)
+
+        # paiements (copro)
+        pqs = PaiementTravaux.objects.filter(dossier__copropriete_id=copro_id)
+
+        total_paye = Decimal(str(pqs.aggregate(t=Sum("montant")).get("t") or "0"))
+
+        # budgets votés (copro)
+        dqs = DossierTravaux.objects.filter(copropriete_id=copro_id)
+        total_budget_vote = Decimal(str(dqs.aggregate(t=Sum("budget_vote")).get("t") or "0"))
+
+        reste_global = total_budget_vote - total_paye
+
+        # par fournisseur
+        by_f_rows = (
+            pqs.values("fournisseur_id")
+            .annotate(total=Sum("montant"), count=Count("id"))
+            .order_by("-total")
+        )
+        by_fournisseur = [
+            {
+                "fournisseur_id": int(r["fournisseur_id"]),
+                "total_paye": float(Decimal(str(r["total"] or 0))),
+                "nb_paiements": int(r["count"]),
+            }
+            for r in by_f_rows
+        ]
+
+        # par dossier (payé vs budget_vote)
+        by_d_rows = (
+            pqs.values("dossier_id")
+            .annotate(total_paye=Sum("montant"), nb=Count("id"))
+            .order_by("-total_paye")
+        )
+        # map budget_vote par dossier
+        budgets_map = {
+            row["id"]: Decimal(str(row["budget_vote"] or "0"))
+            for row in dqs.values("id", "budget_vote")
+        }
+
+        by_dossier = []
+        for r in by_d_rows:
+            dossier_id = int(r["dossier_id"])
+            paye = Decimal(str(r["total_paye"] or "0"))
+            budget = budgets_map.get(dossier_id, Decimal("0"))
+            by_dossier.append(
+                {
+                    "dossier_id": dossier_id,
+                    "total_paye": float(paye),
+                    "budget_vote": float(budget),
+                    "reste": float(budget - paye),
+                    "nb_paiements": int(r["nb"]),
+                }
+            )
+
+        return Response(
+            {
+                "copropriete_id": int(copro_id),
+                "totaux": {
+                    "total_paye": float(total_paye),
+                    "total_budget_vote": float(total_budget_vote),
+                    "reste_global": float(reste_global),
+                },
+                "by_fournisseur": by_fournisseur,
+                "by_dossier": by_dossier,
             },
             status=status.HTTP_200_OK,
         )

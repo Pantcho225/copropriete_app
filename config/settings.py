@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.billing.apps.BillingConfig",
     "apps.ag",
     "apps.travaux",
+    "django_extensions",
     
 ]
 
