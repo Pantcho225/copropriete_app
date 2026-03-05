@@ -62,7 +62,9 @@ frontend/.env.*
 # --- Local data ---
 compta/
 
-
+# Root accidental node files (frontend has its own)
+package.json
+package-lock.json
 
 
 
