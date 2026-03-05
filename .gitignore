@@ -52,7 +52,15 @@ pnpm-debug.log*
 .env
 .env.*
 
-
+# --- Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.env
+frontend/.env.*
+# --- Local data ---
+compta/
 
 
 
