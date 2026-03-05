@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from decouple import config
 
+# ✅ CORS headers defaults
+from corsheaders.defaults import default_headers
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -26,18 +29,26 @@ SECRET_KEY = 'django-insecure-&pb=-(oxnxt!6mk@&sb=2k076c0ai=@d#+vv!qxvn53gfc$)9b
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# ✅ Dev: autoriser localhost/127.0.0.1 (sinon tu peux avoir des 400/invalid host)
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+]
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    # ✅ CORS (doit être installé)
+    "corsheaders",
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
     'rest_framework',
     'rest_framework_simplejwt',
     "django.contrib.humanize",
@@ -51,13 +62,16 @@ INSTALLED_APPS = [
     "apps.travaux",
     "django_extensions",
     "apps.compta.apps.ComptaConfig",
-    
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+
+    # ✅ IMPORTANT: CorsMiddleware doit être placé AVANT CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.common.CommonMiddleware',
+
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'apps.core.middleware.CoproContextMiddleware',
@@ -70,7 +84,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [],  # ✅ on override plus bas avec BASE_DIR / "templates"
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -104,18 +118,10 @@ DATABASES = {
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 
@@ -123,11 +129,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 
@@ -135,6 +138,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
 
 # ===============================
 # Django REST Framework + JWT
@@ -148,9 +152,52 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
 }
+
+# ===============================
+# ✅ CORS (React/Vite -> Django API)
+# ===============================
+# Ton frontend tourne sur http://localhost:5173
+# Ton backend sur http://127.0.0.1:8002 (ou localhost:8002)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# ✅ Autoriser les méthodes nécessaires (preflight OPTIONS incluse)
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# ✅ Autoriser tes headers custom (X-Copropriete-Id) + Authorization
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "authorization",
+    "x-copropriete-id",
+]
+
+# Optionnel (utile si un jour tu utilises cookies/CSRF entre domaines)
+CORS_ALLOW_CREDENTIALS = True
+
+# ===============================
+# ✅ CSRF / Trusted origins (utile si tu utilises session/cookies)
+# (JWT pur en header => pas obligatoire, mais safe)
+# ===============================
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# ===============================
+# App custom
+# ===============================
 PUBLIC_BASE_URL = "https://ton-domaine.com"
 
 PDF_SHOW_BRUT_PAYMENT = False  # recommandé
 # PDF_SHOW_BRUT_PAYMENT = True  # si tu veux afficher le brut
 
+# Templates
 TEMPLATES[0]["DIRS"] = [BASE_DIR / "templates"]

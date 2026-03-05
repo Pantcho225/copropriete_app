@@ -3,6 +3,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
@@ -210,7 +211,7 @@ class LigneAppelDeFonds(models.Model):
         ]
         constraints = [
             # ✅ DB constraint : montant_paye <= montant_du
-            # ✅ IMPORTANT: CheckConstraint utilise "check=" (pas "condition=")
+            # ✅ IMPORTANT: CheckConstraint utilise "condition=" avec Q (OK)
             models.CheckConstraint(
                 condition=Q(montant_paye__gte=DEC_0) & Q(montant_paye__lte=F("montant_du")),
                 name="chk_ligne_montant_paye_lte_montant_du",
@@ -273,21 +274,36 @@ class PaiementAppel(models.Model):
     commentaire = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # ✅ Soft-cancel / audit
+    is_cancelled = models.BooleanField(default=False, db_index=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="paiements_appel_cancelled",
+    )
+    cancelled_reason = models.CharField(max_length=300, blank=True, default="")
+
     class Meta:
         ordering = ["-date_paiement", "-id"]
         constraints = [
+            # ✅ Unicité reference par ligne (seulement si reference non vide) ET seulement pour paiements actifs
             models.UniqueConstraint(
                 fields=["ligne", "reference"],
-                condition=~Q(reference=""),
-                name="uniq_paiement_reference_par_ligne",
+                condition=~Q(reference="") & Q(is_cancelled=False),
+                name="uniq_paiement_reference_par_ligne_actif",
             ),
         ]
         indexes = [
             models.Index(fields=["ligne", "date_paiement"]),
+            models.Index(fields=["ligne", "is_cancelled"]),
         ]
 
     def __str__(self):
-        return f"Paiement {self.montant} sur ligne {self.ligne_id}"
+        flag = " (ANNULE)" if self.is_cancelled else ""
+        return f"Paiement {self.montant} sur ligne {self.ligne_id}{flag}"
 
     def clean(self):
         # ✅ Normalisation reference (évite doublons visuels)
@@ -307,10 +323,14 @@ class PaiementAppel(models.Model):
         if self.montant < DEC_MIN_PAYMENT:
             raise ValidationError({"montant": f"Le montant doit être ≥ {DEC_MIN_PAYMENT}."})
 
+        # Note: si is_cancelled=True, on n'empêche pas la sauvegarde (annulation / audit)
+
     def _recalcul_ligne_et_relances(self, ligne: "LigneAppelDeFonds"):
-        """Recalcule montant_paye/statut + met relances à REGLE si soldé."""
+        """Recalcule montant_paye/statut + met relances à REGLE si soldé.
+        IMPORTANT: ignore les paiements annulés.
+        """
         total_paye = (
-            type(self).objects.filter(ligne_id=ligne.pk)
+            type(self).objects.filter(ligne_id=ligne.pk, is_cancelled=False)
             .aggregate(total=models.Sum("montant"))
             .get("total")
         ) or DEC_0
@@ -329,6 +349,32 @@ class PaiementAppel(models.Model):
                 appel_id=ligne.appel_id,
             ).exclude(statut="REGLE").update(statut="REGLE")
 
+    def cancel(self, *, user=None, reason: str = ""):
+        """
+        ✅ Soft-cancel:
+        - marque le paiement annulé
+        - recalcule la ligne (en excluant ce paiement)
+        - garde audit (who/when/why)
+        """
+        with transaction.atomic():
+            ligne = (
+                LigneAppelDeFonds.objects.select_for_update()
+                .select_related("lot", "appel")
+                .get(pk=self.ligne_id)
+            )
+
+            if self.is_cancelled:
+                return self
+
+            self.is_cancelled = True
+            self.cancelled_at = timezone.now()
+            self.cancelled_by = user if getattr(user, "is_authenticated", False) else None
+            self.cancelled_reason = (reason or "").strip()
+
+            super().save(update_fields=["is_cancelled", "cancelled_at", "cancelled_by", "cancelled_reason"])
+            self._recalcul_ligne_et_relances(ligne)
+            return self
+
     def save(self, *args, **kwargs):
         """
         1) Anti-dépassement
@@ -337,6 +383,8 @@ class PaiementAppel(models.Model):
         4) Update-safe (exclude self)
         5) Recalcule ligne + statut
         6) Si PAYE -> relances => REGLE
+
+        IMPORTANT: paiements annulés ignorés dans les totaux.
         """
         with transaction.atomic():
             self.full_clean()
@@ -347,7 +395,13 @@ class PaiementAppel(models.Model):
                 .get(pk=self.ligne_id)
             )
 
-            qs = type(self).objects.filter(ligne_id=self.ligne_id)
+            # Si paiement annulé: on sauvegarde et on recalcule (sans lui)
+            if self.is_cancelled:
+                super().save(*args, **kwargs)
+                self._recalcul_ligne_et_relances(ligne)
+                return
+
+            qs = type(self).objects.filter(ligne_id=self.ligne_id, is_cancelled=False)
             if self.pk:
                 qs = qs.exclude(pk=self.pk)
 
