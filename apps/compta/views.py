@@ -95,7 +95,6 @@ def _parse_decimal_fr(value: str) -> Decimal | None:
         return None
     v = v.replace("\u00A0", " ").replace(" ", "")
 
-    # cas "1.234,56" -> remove milliers "."
     if re.search(r"^\-?\d{1,3}(\.\d{3})+,\d{2}$", v):
         v = v.replace(".", "")
 
@@ -155,10 +154,7 @@ def _detect_sens_and_montant(row: dict) -> tuple[str, Decimal]:
 
 def _paiement_travaux_copro_id(pt) -> int | None:
     """
-    ✅ PATCH FINAL : copropriété PaiementTravaux robuste
-    - pt.copropriete_id si existe
-    - sinon pt.dossier.copropriete_id (le plus fréquent)
-    - sinon pt.dossier.copropriete.id
+    copropriété PaiementTravaux robuste
     """
     if pt is None:
         return None
@@ -206,9 +202,6 @@ def _parse_bool(v, default=False) -> bool:
 
 
 def _as_drf_error_from_django_validation(e: DjangoValidationError) -> dict:
-    """
-    Convertit une ValidationError Django en payload DRF propre.
-    """
     md = getattr(e, "message_dict", None)
     if md:
         return md
@@ -216,6 +209,45 @@ def _as_drf_error_from_django_validation(e: DjangoValidationError) -> dict:
     if msgs:
         return {"detail": msgs}
     return {"detail": [str(e)]}
+
+
+def _soft_cancel_rapprochement(rap, *, user=None, reason: str = ""):
+    """
+    Essaie d'abord la méthode métier rap.cancel(...).
+    Sinon, applique un fallback robuste sans casser le flux.
+    """
+    cancel_fn = getattr(rap, "cancel", None)
+    if callable(cancel_fn):
+        cancel_fn(user=user, reason=reason)
+        return
+
+    update_fields = []
+
+    if hasattr(rap, "is_cancelled"):
+        rap.is_cancelled = True
+        update_fields.append("is_cancelled")
+
+    if hasattr(rap, "cancelled_at"):
+        rap.cancelled_at = timezone.now()
+        update_fields.append("cancelled_at")
+
+    if hasattr(rap, "cancelled_by_id") and getattr(user, "id", None):
+        rap.cancelled_by_id = user.id
+        update_fields.append("cancelled_by_id")
+
+    if hasattr(rap, "cancel_reason"):
+        rap.cancel_reason = (reason or "")[:300]
+        update_fields.append("cancel_reason")
+
+    if hasattr(rap, "note") and reason:
+        base_note = (getattr(rap, "note", "") or "").strip()
+        rap.note = (f"{base_note}\nAnnulation: {reason}" if base_note else f"Annulation: {reason}")[:300]
+        update_fields.append("note")
+
+    if update_fields:
+        rap.save(update_fields=list(dict.fromkeys(update_fields)))
+    else:
+        rap.save()
 
 
 # =========================================================
@@ -266,7 +298,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
         sens = self.request.query_params.get("sens")
         dfrom = _parse_date_param(self.request, "from")
         dto = _parse_date_param(self.request, "to")
-        rapproche = self.request.query_params.get("rapproche")  # "1" / "0"
+        rapproche = self.request.query_params.get("rapproche")
 
         if compte:
             try:
@@ -291,12 +323,6 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):
-        """
-        ✅ Ajouts "cockpit financier":
-        - totaux.revenus / totaux.depenses / totaux.solde
-        - compat: totaux.total_credit / totaux.total_debit / totaux.solde_net_mouvements conservés
-        - série journalière optionnelle pour graph (query ?series_days=30)
-        """
         copro_id = _require_copro_id(request)
 
         comptes = CompteBancaire.objects.filter(copropriete_id=copro_id, is_active=True)
@@ -306,7 +332,6 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
         total_debit = Decimal(str(mqs.filter(sens="DEBIT").aggregate(t=Sum("montant")).get("t") or 0))
         nb_non_rapproches = mqs.filter(paiement_travaux__isnull=True, paiement_appel__isnull=True).count()
 
-        # ✅ Cockpit
         revenus = total_credit
         depenses = total_debit
         solde = revenus - depenses
@@ -335,8 +360,6 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
                 }
             )
 
-        # ✅ Série journalière (pour futur graphe)
-        # ex: /api/compta/mouvements/dashboard/?series_days=30
         raw_days = request.query_params.get("series_days", "30")
         try:
             series_days = int(str(raw_days))
@@ -387,11 +410,9 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             {
                 "copropriete_id": int(copro_id),
                 "totaux": {
-                    # ✅ nouveaux champs (cockpit)
                     "revenus": float(revenus),
                     "depenses": float(depenses),
                     "solde": float(solde),
-                    # ✅ compat ancienne structure (ne casse rien)
                     "total_credit": float(total_credit),
                     "total_debit": float(total_debit),
                     "solde_net_mouvements": float(total_credit - total_debit),
@@ -399,7 +420,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
                     "series_days": int(series_days),
                 },
                 "comptes": comptes_out,
-                "series": series,  # prêt pour un graphique (Recharts)
+                "series": series,
             },
             status=status.HTTP_200_OK,
         )
@@ -455,7 +476,9 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             "montant": str(getattr(p, "montant")),
             "date_operation": str(getattr(p, "date_paiement")),
             "reference": (request.data.get("reference") or getattr(p, "reference", "") or "").strip(),
-            "libelle": (request.data.get("libelle") or f"Paiement travaux dossier#{getattr(p, 'dossier_id', '')}").strip(),
+            "libelle": (
+                request.data.get("libelle") or f"Paiement travaux dossier#{getattr(p, 'dossier_id', '')}"
+            ).strip(),
             "note": (request.data.get("note") or getattr(p, "note", "") or "").strip(),
             "paiement_travaux": p.id,
         }
@@ -499,12 +522,10 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
     GET  /api/compta/releves/lignes/
     GET  /api/compta/releves/lignes/<id>/
     POST /api/compta/releves/lignes/<id>/rapprocher/
-        - comportement normal: crée/active rapprochement
-        - si déjà rapprochée: 400
-        - ✅ si déjà rapprochée + force=true => retarget (audit)
     POST /api/compta/releves/lignes/<id>/annuler-rapprochement/
-    GET  /api/compta/releves/lignes/<id>/suggestions/?days=5
+    GET  /api/compta/releves/lignes/<id>/suggestions/?days=30&tol=0
     POST /api/compta/releves/lignes/<id>/creer-mouvement/
+    POST /api/compta/releves/lignes/<id>/ignorer/
     """
     permission_classes = [IsAdminOrSyndicWriteReadOnly]
     serializer_class = ReleveLigneSerializer
@@ -546,7 +567,7 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
         if dto:
             qs = qs.filter(date_operation__lte=dto)
 
-        rapproche = self.request.query_params.get("rapproche")  # "1"/"0"
+        rapproche = self.request.query_params.get("rapproche")
         if rapproche == "1":
             qs = qs.filter(rapprochement__isnull=False, rapprochement__is_cancelled=False)
         elif rapproche == "0":
@@ -555,17 +576,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
     def _retarget_if_allowed(self, *, ligne: ReleveLigne, request) -> RapprochementBancaire | None:
-        """
-        ✅ PATCH: permet de corriger un rapprochement actif (retarget)
-        si force=true (ou allow_retarget=true) et qu'un rapprochement actif existe.
-
-        ✅ NO-OP GUARD: empêche un "retarget" vers la même cible
-        (évite d'incrémenter retarget_count et de polluer l'audit).
-
-        ✅ CONSOLIDATION: toute ValidationError Django levée par le modèle
-        (ex: "cible déjà rapprochée", "paiement annulé", etc.) est convertie
-        en ValidationError DRF => 400 JSON (pas de 500 HTML).
-        """
         force = _parse_bool(request.data.get("force"), default=False)
         allow_retarget = _parse_bool(request.data.get("allow_retarget"), default=False)
         if not (force or allow_retarget):
@@ -616,9 +626,7 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
             if str(getattr(rap_db, "type_cible", "")) == str(type_cible) and int(
                 getattr(rap_db, "cible_id", 0) or 0
             ) == int(cible_id):
-                raise ValidationError(
-                    {"detail": "Cette ligne est déjà rapprochée sur cette cible. Aucun retarget nécessaire."}
-                )
+                raise ValidationError({"detail": "Cette ligne est déjà rapprochée sur cette cible. Aucun retarget nécessaire."})
 
             fn = getattr(rap_db, "retarget_to", None)
             if callable(fn):
@@ -661,17 +669,8 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
 
             return rap_db
 
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="rapprocher",
-        permission_classes=[IsAdminOrSyndicWriteReadOnly],
-    )
+    @action(detail=True, methods=["post"], url_path="rapprocher", permission_classes=[IsAdminOrSyndicWriteReadOnly])
     def rapprocher(self, request, pk=None):
-        """
-        ✅ CONSOLIDATION: toute ValidationError Django levée depuis les modèles
-        est convertie en ValidationError DRF => 400 JSON (pas de 500 HTML).
-        """
         ligne = self.get_object()
 
         try:
@@ -703,7 +702,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
         ligne = self.get_object()
 
         rap = getattr(ligne, "rapprochement", None)
-
         if rap is None:
             rap = (
                 RapprochementBancaire.objects.filter(copropriete_id=copro_id, releve_ligne_id=ligne.id)
@@ -725,7 +723,7 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
             if not rap_db:
                 raise ValidationError({"detail": "Rapprochement introuvable."})
 
-            if rap_db.is_cancelled:
+            if getattr(rap_db, "is_cancelled", False):
                 return Response(
                     {
                         "detail": "Rapprochement déjà annulé.",
@@ -735,7 +733,7 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            rap_db.cancel(user=request.user, reason=reason)
+            _soft_cancel_rapprochement(rap_db, user=request.user, reason=reason)
 
         return Response(
             {
@@ -746,12 +744,57 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="creer-mouvement",
-        permission_classes=[IsAdminOrSyndicWriteReadOnly],
-    )
+    @action(detail=True, methods=["post"], url_path="ignorer", permission_classes=[IsAdminOrSyndicWriteReadOnly])
+    def ignorer(self, request, pk=None):
+        """
+        Marque une ligne comme ignorée sans créer de rapprochement.
+        Compatible même si certains statuts métier diffèrent selon le modèle.
+        """
+        copro_id = _require_copro_id(request)
+        ligne = self.get_object()
+
+        rl_copro = int(getattr(ligne, "copropriete_id", 0) or ligne.releve_import.copropriete_id or 0)
+        if rl_copro != int(copro_id):
+            raise ValidationError({"detail": "Ligne hors copropriété."})
+
+        rap = getattr(ligne, "rapprochement", None)
+        if rap and not getattr(rap, "is_cancelled", False):
+            raise ValidationError({"detail": "Impossible d’ignorer une ligne déjà rapprochée."})
+
+        current_statut = str(getattr(ligne, "statut", "") or "").upper()
+        if current_statut == "IGNORE":
+            return Response(
+                {
+                    "detail": "Ligne déjà ignorée.",
+                    "releve_ligne_id": ligne.id,
+                    "statut": ligne.statut,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        changed = False
+        for candidate in ("IGNORE", "IGNOREE", "IGNORÉE", "IGNORED"):
+            try:
+                ligne.statut = candidate
+                ligne.save(update_fields=["statut"])
+                changed = True
+                break
+            except Exception:
+                continue
+
+        if not changed:
+            raise ValidationError({"detail": "Impossible de marquer cette ligne comme ignorée avec le statut actuel du modèle."})
+
+        return Response(
+            {
+                "detail": "Ligne ignorée.",
+                "releve_ligne_id": ligne.id,
+                "statut": ligne.statut,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="creer-mouvement", permission_classes=[IsAdminOrSyndicWriteReadOnly])
     def creer_mouvement(self, request, pk=None):
         copro_id = _require_copro_id(request)
         auto_rapproche = str(request.query_params.get("auto_rapproche", "1")) != "0"
@@ -846,116 +889,399 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="suggestions")
     def suggestions(self, request, pk=None):
+        """
+        Retourne désormais :
+        - suggestions: LISTE PLATE exploitable directement par le frontend
+        - grouped: regroupement par type pour audit/debug
+        - debug: détails techniques
+        """
         ligne = self.get_object()
 
-        raw_days = request.query_params.get("days", "5")
+        raw_days = request.query_params.get("days", "30")
         try:
             days = int(str(raw_days))
         except Exception:
-            days = 5
-        if days < 1:
-            days = 1
-        if days > 60:
-            days = 60
+            days = 30
+        days = max(1, min(days, 180))
+
+        raw_tol = request.query_params.get("tol", "0")
+        try:
+            tol = Decimal(str(raw_tol)).copy_abs()
+        except Exception:
+            tol = Decimal("0")
 
         from apps.billing.models import PaiementAppel
         from apps.travaux.models import PaiementTravaux
 
         copro_id = _require_copro_id(request)
-        montant = ligne.montant
+
+        montant = (ligne.montant or Decimal("0")).copy_abs()
         d = ligne.date_operation
         dmin = d - timedelta(days=days)
         dmax = d + timedelta(days=days)
 
-        def _try_filters(model, copro_candidates, montant_fields, date_fields):
+        debug = {
+            "releve_ligne_id": ligne.id,
+            "copro_id": int(copro_id),
+            "montant_abs": str(montant),
+            "date_operation": str(d),
+            "window": {"days": days, "dmin": str(dmin), "dmax": str(dmax)},
+            "tol": str(tol),
+            "paiement_appel": {},
+            "paiement_travaux": {},
+            "mouvement": {},
+        }
+
+        def _safe_or_q_from_dicts(model, dicts: list[dict]):
             base = model.objects.all()
-
-            chosen_copro = None
-            base_copro = base
-            for filt in copro_candidates:
+            q = Q()
+            used = []
+            ignored = []
+            for f in dicts:
                 try:
-                    qs_c = base.filter(**filt)
-                    chosen_copro = filt
-                    if qs_c.exists():
-                        base_copro = qs_c
-                        break
+                    base.filter(**f)
+                    q = q | Q(**f)
+                    used.append(f)
                 except FieldError:
-                    continue
+                    ignored.append(f)
+            return q, used, ignored
 
-            chosen_amount_field = None
-            qs_amount = None
-            for field in montant_fields:
+        def _safe_or_amount_q(model, fields: list[str], montant_abs: Decimal, tol_abs: Decimal):
+            base = model.objects.all()
+            q = Q()
+            used = []
+            ignored = []
+            for field in fields:
                 try:
-                    qs_amount = base_copro.filter(**{field: montant})
-                    chosen_amount_field = field
-                    break
+                    if tol_abs and tol_abs > 0:
+                        f = {f"{field}__gte": montant_abs - tol_abs, f"{field}__lte": montant_abs + tol_abs}
+                        base.filter(**f)
+                        q = q | (
+                            Q(**{f"{field}__gte": montant_abs - tol_abs})
+                            & Q(**{f"{field}__lte": montant_abs + tol_abs})
+                        )
+                    else:
+                        f = {field: montant_abs}
+                        base.filter(**f)
+                        q = q | Q(**f)
+                    used.append(field)
                 except FieldError:
-                    continue
+                    ignored.append(field)
+            return q, used, ignored
 
-            if qs_amount is None:
-                return model.objects.none(), "no_amount_field_match"
-
-            chosen_date_field = None
-            qs_date = qs_amount
-            for field in date_fields:
+        def _safe_or_date_q(model, fields: list[str], dmin_, dmax_):
+            base = model.objects.all()
+            q = Q()
+            used = []
+            ignored = []
+            for field in fields:
                 try:
-                    qs_date = qs_amount.filter(**{field: [dmin, dmax]})
-                    chosen_date_field = field
-                    break
+                    f = {f"{field}__range": (dmin_, dmax_)}
+                    base.filter(**f)
+                    q = q | Q(**f)
+                    used.append(field)
                 except FieldError:
+                    ignored.append(field)
+            return q, used, ignored
+
+        def _score_candidate(*, candidate_amount: Decimal | None, candidate_date, reason_rank: int) -> int:
+            score = 0
+
+            if candidate_amount is not None:
+                diff_amount = abs((candidate_amount or Decimal("0")) - montant)
+                if diff_amount == Decimal("0"):
+                    score += 70
+                elif tol > 0 and diff_amount <= tol:
+                    score += 50
+                else:
+                    score += max(0, 30 - int(diff_amount))
+
+            if candidate_date and d:
+                try:
+                    diff_days = abs((candidate_date - d).days)
+                    score += max(0, 25 - diff_days)
+                except Exception:
+                    pass
+
+            score += reason_rank
+            return int(score)
+
+        def _normalize_money(obj, *field_names):
+            for field in field_names:
+                value = getattr(obj, field, None)
+                if value is not None:
+                    try:
+                        return Decimal(str(value)).copy_abs()
+                    except Exception:
+                        continue
+            return None
+
+        def _normalize_date(obj, *field_names):
+            for field in field_names:
+                value = getattr(obj, field, None)
+                if value is None:
                     continue
+                if hasattr(value, "date"):
+                    try:
+                        return value.date()
+                    except Exception:
+                        pass
+                return value
+            return None
 
-            if qs_date.exists():
-                reason = "match: montant"
-                if chosen_copro:
-                    reason += "+copro"
-                if chosen_date_field:
-                    reason += "+date_range"
-                reason += f" (amount_field={chosen_amount_field})"
-                return qs_date.order_by("-id")[:10], reason
+        # -----------------------
+        # PaiementAppel
+        # -----------------------
+        pa_base = PaiementAppel.objects.all()
 
-            reason = "match: montant"
-            if chosen_copro:
-                reason += "+copro"
-            reason += "+fallback_no_date"
-            reason += f" (amount_field={chosen_amount_field})"
-            return qs_amount.order_by("-id")[:10], reason
+        pa_copro_filters = [
+            {"copropriete_id": copro_id},
+            {"ligne__copropriete_id": copro_id},
+            {"ligne__appel__copropriete_id": copro_id},
+            {"ligne__lot__copropriete_id": copro_id},
+        ]
+        pa_copro_q, pa_copro_used, pa_copro_ignored = _safe_or_q_from_dicts(PaiementAppel, pa_copro_filters)
 
-        pa_qs, pa_reason = _try_filters(
+        pa_amount_q, pa_amount_used, pa_amount_ignored = _safe_or_amount_q(
             PaiementAppel,
-            copro_candidates=[
-                {"ligne__lot__copropriete_id": copro_id},
-                {"copropriete_id": copro_id},
-                {"ligne__copropriete_id": copro_id},
-                {"ligne__appel__copropriete_id": copro_id},
-            ],
-            montant_fields=["montant", "montant_paye", "montant_encaisse"],
-            date_fields=["date_paiement__range", "date__range", "created_at__date__range"],
+            fields=["montant", "montant_paye", "montant_encaisse"],
+            montant_abs=montant,
+            tol_abs=tol,
         )
 
-        pt_qs, pt_reason = _try_filters(
+        pa_date_q, pa_date_used, pa_date_ignored = _safe_or_date_q(
+            PaiementAppel,
+            fields=["date_paiement", "date", "created_at__date"],
+            dmin_=dmin,
+            dmax_=dmax,
+        )
+
+        if pa_amount_q:
+            pa_qs_1 = pa_base.filter(pa_amount_q)
+            if pa_copro_q:
+                pa_qs_1 = pa_qs_1.filter(pa_copro_q)
+            pa_qs_1d = pa_qs_1.filter(pa_date_q) if pa_date_q else PaiementAppel.objects.none()
+        else:
+            pa_qs_1 = PaiementAppel.objects.none()
+            pa_qs_1d = PaiementAppel.objects.none()
+
+        pa_qs_2 = pa_qs_1
+        pa_qs_3 = pa_base.filter(pa_amount_q) if pa_amount_q else PaiementAppel.objects.none()
+
+        if pa_qs_1d.exists():
+            pa_qs = pa_qs_1d.order_by("-id")[:10]
+            pa_reason = "match: copro+montant+date_range"
+            pa_reason_rank = 30
+        elif pa_qs_2.exists():
+            pa_qs = pa_qs_2.order_by("-id")[:10]
+            pa_reason = "match: copro+montant (fallback_no_date)"
+            pa_reason_rank = 20
+        elif pa_qs_3.exists():
+            pa_qs = pa_qs_3.order_by("-id")[:10]
+            pa_reason = "match: montant_only (fallback_diagnostic)"
+            pa_reason_rank = 10
+        else:
+            pa_qs = PaiementAppel.objects.none()
+            pa_reason = "no_match"
+            pa_reason_rank = 0
+
+        debug["paiement_appel"] = {
+            "reason": pa_reason,
+            "count_copro_montant_date": int(pa_qs_1d.count()),
+            "count_copro_montant": int(pa_qs_2.count()),
+            "count_montant_only": int(pa_qs_3.count()),
+            "copro_used": pa_copro_used,
+            "copro_ignored": pa_copro_ignored,
+            "amount_fields_used": pa_amount_used,
+            "amount_fields_ignored": pa_amount_ignored,
+            "date_fields_used": pa_date_used,
+            "date_fields_ignored": pa_date_ignored,
+        }
+
+        # -----------------------
+        # PaiementTravaux
+        # -----------------------
+        pt_base = PaiementTravaux.objects.all()
+
+        pt_copro_filters = [
+            {"copropriete_id": copro_id},
+            {"dossier__copropriete_id": copro_id},
+        ]
+        pt_copro_q, pt_copro_used, pt_copro_ignored = _safe_or_q_from_dicts(PaiementTravaux, pt_copro_filters)
+
+        pt_amount_q, pt_amount_used, pt_amount_ignored = _safe_or_amount_q(
             PaiementTravaux,
-            copro_candidates=[{"copropriete_id": copro_id}, {"dossier__copropriete_id": copro_id}],
-            montant_fields=["montant", "montant_paye"],
-            date_fields=["date_paiement__range", "date__range", "created_at__date__range"],
+            fields=["montant", "montant_paye"],
+            montant_abs=montant,
+            tol_abs=tol,
         )
 
+        pt_date_q, pt_date_used, pt_date_ignored = _safe_or_date_q(
+            PaiementTravaux,
+            fields=["date_paiement", "date", "created_at__date"],
+            dmin_=dmin,
+            dmax_=dmax,
+        )
+
+        if pt_amount_q:
+            pt_qs_1 = pt_base.filter(pt_amount_q)
+            if pt_copro_q:
+                pt_qs_1 = pt_qs_1.filter(pt_copro_q)
+            pt_qs_1d = pt_qs_1.filter(pt_date_q) if pt_date_q else PaiementTravaux.objects.none()
+        else:
+            pt_qs_1 = PaiementTravaux.objects.none()
+            pt_qs_1d = PaiementTravaux.objects.none()
+
+        pt_qs_2 = pt_qs_1
+        pt_qs_3 = pt_base.filter(pt_amount_q) if pt_amount_q else PaiementTravaux.objects.none()
+
+        if pt_qs_1d.exists():
+            pt_qs = pt_qs_1d.order_by("-id")[:10]
+            pt_reason = "match: copro+montant+date_range"
+            pt_reason_rank = 30
+        elif pt_qs_2.exists():
+            pt_qs = pt_qs_2.order_by("-id")[:10]
+            pt_reason = "match: copro+montant (fallback_no_date)"
+            pt_reason_rank = 20
+        elif pt_qs_3.exists():
+            pt_qs = pt_qs_3.order_by("-id")[:10]
+            pt_reason = "match: montant_only (fallback_diagnostic)"
+            pt_reason_rank = 10
+        else:
+            pt_qs = PaiementTravaux.objects.none()
+            pt_reason = "no_match"
+            pt_reason_rank = 0
+
+        debug["paiement_travaux"] = {
+            "reason": pt_reason,
+            "count_copro_montant_date": int(pt_qs_1d.count()),
+            "count_copro_montant": int(pt_qs_2.count()),
+            "count_montant_only": int(pt_qs_3.count()),
+            "copro_used": pt_copro_used,
+            "copro_ignored": pt_copro_ignored,
+            "amount_fields_used": pt_amount_used,
+            "amount_fields_ignored": pt_amount_ignored,
+            "date_fields_used": pt_date_used,
+            "date_fields_ignored": pt_date_ignored,
+        }
+
+        # -----------------------
+        # MouvementBancaire
+        # -----------------------
         mv = (
             MouvementBancaire.objects.filter(
                 copropriete_id=copro_id,
-                montant=montant,
-                date_operation__range=[dmin, dmax],
+                montant__gte=(montant - tol) if tol and tol > 0 else montant,
+                montant__lte=(montant + tol) if tol and tol > 0 else montant,
+                date_operation__range=(dmin, dmax),
             )
             .order_by("-id")[:10]
         )
 
-        def _repr(obj, keys, reason=None):
-            out = {"id": obj.id}
-            for k in keys:
-                out[k] = getattr(obj, k, None)
-            if reason:
-                out["_reason"] = reason
-            return out
+        debug["mouvement"] = {
+            "count": int(mv.count()),
+            "reason": "match: montant+date_range (mouvement)",
+        }
+
+        grouped = {
+            "paiement_appel": [],
+            "paiement_travaux": [],
+            "mouvement": [],
+        }
+
+        flat_suggestions = []
+
+        for x in pa_qs:
+            candidate_amount = _normalize_money(x, "montant", "montant_paye", "montant_encaisse")
+            candidate_date = _normalize_date(x, "date_paiement", "date")
+            label = f"Paiement appel #{x.id}"
+
+            item = {
+                "kind": "paiement_appel",
+                "type_cible": "PAIEMENT_APPEL",
+                "cible_id": x.id,
+                "id": x.id,
+                "label": label,
+                "montant": str(candidate_amount) if candidate_amount is not None else None,
+                "date": str(candidate_date) if candidate_date else None,
+                "score": _score_candidate(
+                    candidate_amount=candidate_amount,
+                    candidate_date=candidate_date,
+                    reason_rank=pa_reason_rank,
+                ),
+                "payload": {
+                    "id": x.id,
+                    "montant": str(getattr(x, "montant", "") or ""),
+                    "montant_paye": str(getattr(x, "montant_paye", "") or ""),
+                    "date_paiement": str(getattr(x, "date_paiement", "") or ""),
+                    "created_at": str(getattr(x, "created_at", "") or ""),
+                    "_reason": pa_reason,
+                },
+            }
+            grouped["paiement_appel"].append(item)
+            flat_suggestions.append(item)
+
+        for x in pt_qs:
+            candidate_amount = _normalize_money(x, "montant", "montant_paye")
+            candidate_date = _normalize_date(x, "date_paiement", "date")
+            label = f"Paiement travaux #{x.id}"
+
+            item = {
+                "kind": "paiement_travaux",
+                "type_cible": "PAIEMENT_TRAVAUX",
+                "cible_id": x.id,
+                "id": x.id,
+                "label": label,
+                "montant": str(candidate_amount) if candidate_amount is not None else None,
+                "date": str(candidate_date) if candidate_date else None,
+                "score": _score_candidate(
+                    candidate_amount=candidate_amount,
+                    candidate_date=candidate_date,
+                    reason_rank=pt_reason_rank,
+                ),
+                "payload": {
+                    "id": x.id,
+                    "montant": str(getattr(x, "montant", "") or ""),
+                    "date_paiement": str(getattr(x, "date_paiement", "") or ""),
+                    "created_at": str(getattr(x, "created_at", "") or ""),
+                    "_reason": pt_reason,
+                },
+            }
+            grouped["paiement_travaux"].append(item)
+            flat_suggestions.append(item)
+
+        for x in mv:
+            candidate_amount = _normalize_money(x, "montant")
+            candidate_date = _normalize_date(x, "date_operation")
+            label = f"Mouvement #{x.id}"
+
+            item = {
+                "kind": "mouvement",
+                "type_cible": "MOUVEMENT",
+                "cible_id": x.id,
+                "id": x.id,
+                "label": label,
+                "montant": str(candidate_amount) if candidate_amount is not None else None,
+                "date": str(candidate_date) if candidate_date else None,
+                "score": _score_candidate(
+                    candidate_amount=candidate_amount,
+                    candidate_date=candidate_date,
+                    reason_rank=25,
+                ),
+                "payload": {
+                    "id": x.id,
+                    "sens": x.sens,
+                    "montant": str(x.montant),
+                    "date_operation": str(x.date_operation),
+                    "libelle": x.libelle,
+                    "reference": x.reference,
+                    "_reason": "match: montant+date_range (mouvement)",
+                },
+            }
+            grouped["mouvement"].append(item)
+            flat_suggestions.append(item)
+
+        flat_suggestions.sort(key=lambda item: (item.get("score", 0), item.get("id", 0)), reverse=True)
 
         return Response(
             {
@@ -967,28 +1293,10 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
                     "libelle": ligne.libelle,
                     "reference": ligne.reference,
                 },
-                "suggestions": {
-                    "paiement_appel": [
-                        _repr(x, ["montant", "montant_paye", "date_paiement", "created_at"], reason=pa_reason)
-                        for x in pa_qs
-                    ],
-                    "paiement_travaux": [
-                        _repr(x, ["montant", "date_paiement", "created_at"], reason=pt_reason)
-                        for x in pt_qs
-                    ],
-                    "mouvement": [
-                        {
-                            "id": x.id,
-                            "sens": x.sens,
-                            "montant": str(x.montant),
-                            "date_operation": str(x.date_operation),
-                            "libelle": x.libelle,
-                            "reference": x.reference,
-                            "_reason": "match: montant+date_range (mouvement)",
-                        }
-                        for x in mv
-                    ],
-                },
+                "debug": debug,
+                "suggestions": flat_suggestions,
+                "grouped": grouped,
+                "count": len(flat_suggestions),
             },
             status=status.HTTP_200_OK,
         )
@@ -1018,8 +1326,6 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(methods=["GET"], detail=True, url_path="lignes")
     def lignes(self, request, pk=None):
-        copro_id = _require_copro_id(request)
-
         imp = self.get_queryset().filter(pk=pk).first()
         if not imp:
             raise ValidationError({"detail": "Import introuvable."})
@@ -1034,17 +1340,18 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception:
             pass
 
+        rapproche = request.query_params.get("rapproche")
+        if rapproche == "1":
+            qs = qs.filter(rapprochement__isnull=False, rapprochement__is_cancelled=False)
+        elif rapproche == "0":
+            qs = qs.filter(Q(rapprochement__isnull=True) | Q(rapprochement__is_cancelled=True))
+
         paginator = ReleveLignePagination()
         page = paginator.paginate_queryset(qs, request)
         ser = ReleveLigneSerializer(page, many=True)
         return paginator.get_paginated_response(ser.data)
 
-    @action(
-        methods=["POST"],
-        detail=False,
-        url_path="import-csv",
-        permission_classes=[IsAdminOrSyndicWriteReadOnly],
-    )
+    @action(methods=["POST"], detail=False, url_path="import-csv", permission_classes=[IsAdminOrSyndicWriteReadOnly])
     def import_csv(self, request):
         copro_id = _require_copro_id(request)
 
@@ -1144,7 +1451,7 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
 
                 reference = str(lower.get("reference") or lower.get("ref") or lower.get("id") or "").strip()
 
-                sens, montant = _detect_sens_and_montant(row)
+                sens, montant_row = _detect_sens_and_montant(row)
 
                 solde = None
                 if (lower.get("solde") is not None) or (lower.get("balance") is not None):
@@ -1155,7 +1462,7 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
                     date_operation=date_op,
                     libelle=libelle,
                     sens=sens,
-                    montant=montant,
+                    montant=montant_row,
                     reference=reference,
                 )
 
@@ -1168,7 +1475,7 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
                         libelle=libelle[:500],
                         reference=reference[:120],
                         sens=sens,
-                        montant=montant,
+                        montant=montant_row,
                         solde=solde,
                         hash_unique=h,
                         raw={k: (v if v is not None else "") for k, v in row.items()},
@@ -1202,7 +1509,7 @@ class ReleveImportViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # =========================================================
-# ✅ ViewSet Audit Rapprochements (Phase 5)
+# ViewSet Audit Rapprochements (Phase 5)
 # =========================================================
 class RapprochementBancaireViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -1247,18 +1554,19 @@ class RapprochementBancaireViewSet(viewsets.ReadOnlyModelViewSet):
                 raise ValidationError({"releve_ligne": "Doit être un entier."})
 
         if dfrom:
-            qs = qs.filter(date_operation__gte=dfrom)
+            try:
+                qs = qs.filter(rapproche_at__date__gte=dfrom)
+            except Exception:
+                pass
         if dto:
-            qs = qs.filter(date_operation__lte=dto)
+            try:
+                qs = qs.filter(rapproche_at__date__lte=dto)
+            except Exception:
+                pass
 
         return qs
 
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="cancel",
-        permission_classes=[IsAdminOrSyndicWriteReadOnly],
-    )
+    @action(detail=True, methods=["post"], url_path="cancel", permission_classes=[IsAdminOrSyndicWriteReadOnly])
     def cancel(self, request, pk=None):
         copro_id = _require_copro_id(request)
         reason = (request.data.get("reason") or request.data.get("note") or "").strip()
@@ -1268,10 +1576,10 @@ class RapprochementBancaireViewSet(viewsets.ReadOnlyModelViewSet):
             if not rap:
                 raise ValidationError({"detail": "Rapprochement introuvable."})
 
-            if rap.is_cancelled:
+            if getattr(rap, "is_cancelled", False):
                 return Response({"detail": "Déjà annulé."}, status=status.HTTP_200_OK)
 
-            rap.cancel(user=request.user, reason=reason)
+            _soft_cancel_rapprochement(rap, user=request.user, reason=reason)
 
         return Response({"detail": "Rapprochement annulé (soft-cancel)."}, status=status.HTTP_200_OK)
 

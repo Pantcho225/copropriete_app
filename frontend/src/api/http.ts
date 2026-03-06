@@ -1,8 +1,11 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
-import { API_BASE_URL, ENDPOINTS } from "./endpoints";
+import { ENDPOINTS } from "./endpoints";
 import { authStore } from "../auth/auth.store";
 
 type RefreshResponse = { access: string };
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") || "http://127.0.0.1:8002";
 
 export const http = axios.create({
   baseURL: API_BASE_URL,
@@ -15,6 +18,7 @@ let pending: Array<(token: string | null) => void> = [];
 function subscribe(cb: (token: string | null) => void) {
   pending.push(cb);
 }
+
 function flush(token: string | null) {
   pending.forEach((cb) => cb(token));
   pending = [];
@@ -26,19 +30,26 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
   config.headers = config.headers ?? {};
 
-  if (tokens?.access) config.headers.Authorization = `Bearer ${tokens.access}`;
-  if (coproId) config.headers["X-Copropriete-Id"] = coproId;
+  if (tokens?.access) {
+    config.headers.Authorization = `Bearer ${tokens.access}`;
+  }
+
+  if (coproId) {
+    config.headers["X-Copropriete-Id"] = String(coproId);
+  }
 
   return config;
 });
 
 http.interceptors.response.use(
-  (r) => r,
+  (response) => response,
   async (error: AxiosError) => {
     const status = error.response?.status;
-    const original = error.config as any;
+    const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (status !== 401 || original?._retry) throw error;
+    if (status !== 401 || original?._retry) {
+      throw error;
+    }
 
     const tokens = authStore.getTokens();
     if (!tokens?.refresh) {
@@ -51,7 +62,11 @@ http.interceptors.response.use(
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         subscribe((newToken) => {
-          if (!newToken) return reject(error);
+          if (!newToken) {
+            reject(error);
+            return;
+          }
+
           original.headers = original.headers ?? {};
           original.headers.Authorization = `Bearer ${newToken}`;
           resolve(http(original));
@@ -60,9 +75,12 @@ http.interceptors.response.use(
     }
 
     isRefreshing = true;
+
     try {
+      const refreshUrl = ENDPOINTS.refresh;
+
       const r = await axios.post<RefreshResponse>(
-        `${API_BASE_URL}${ENDPOINTS.refresh}`,
+        `${API_BASE_URL}${refreshUrl}`,
         { refresh: tokens.refresh },
         { timeout: 20000 }
       );
@@ -73,9 +91,11 @@ http.interceptors.response.use(
 
       original.headers = original.headers ?? {};
       original.headers.Authorization = `Bearer ${newAccess}`;
+
       return http(original);
     } catch (e) {
       authStore.clearTokens();
+      authStore.clearCoproId();
       flush(null);
       throw e;
     } finally {
