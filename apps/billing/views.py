@@ -25,11 +25,18 @@ from .services.pdf import generate_relance_pdf
 # HELPERS
 # =========================================================
 
-def _require_copro_id(request) -> str:
-    copro_id = request.headers.get("X-Copropriete-Id")
+def _require_copro_id(request) -> int:
+    copro_id = getattr(request, "copropriete_id", None)
+    if not copro_id:
+        copro_id = request.headers.get("X-Copropriete-Id")
+
     if not copro_id:
         raise ValidationError({"detail": "En-tête X-Copropriete-Id requis."})
-    return copro_id
+
+    try:
+        return int(str(copro_id))
+    except ValueError:
+        raise ValidationError({"detail": "X-Copropriete-Id invalide (entier requis)."})
 
 
 def _parse_date_param(request, key: str):
@@ -37,7 +44,11 @@ def _parse_date_param(request, key: str):
     if not value:
         return None
 
-    d = datetime.strptime(value, "%Y-%m-%d").date()
+    try:
+        d = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValidationError({key: "Format invalide. Attendu: YYYY-MM-DD"})
+
     if key == "from":
         return timezone.make_aware(datetime.combine(d, time.min))
     return timezone.make_aware(datetime.combine(d, time.max))
@@ -56,20 +67,31 @@ def _paiement_appel_is_cancelled(paiement: PaiementAppel) -> bool:
         if hasattr(paiement, field) and bool(getattr(paiement, field)):
             return True
 
+    statut = getattr(paiement, "statut", None)
+    if statut and str(statut).upper() in ("ANNULE", "ANNULÉ", "CANCELLED", "CANCELED"):
+        return True
+
     return False
 
 
 def _paiement_appel_is_rapproche(paiement: PaiementAppel) -> bool:
     """
-    Bloque annulation si:
+    Bloque annulation si :
     - MouvementBancaire lié
     - OU RapprochementBancaire actif vers ce paiement
     """
+    copro_id = getattr(getattr(getattr(paiement, "ligne", None), "lot", None), "copropriete_id", None)
 
     # 1) FK MouvementBancaire
     try:
         MouvementBancaire = apps.get_model("compta", "MouvementBancaire")
-        if MouvementBancaire.objects.filter(paiement_appel_id=paiement.id).exists():
+        qs = MouvementBancaire.objects.filter(paiement_appel_id=paiement.id)
+        if copro_id is not None:
+            try:
+                qs = qs.filter(copropriete_id=copro_id)
+            except Exception:
+                pass
+        if qs.exists():
             return True
     except Exception:
         pass
@@ -81,6 +103,13 @@ def _paiement_appel_is_rapproche(paiement: PaiementAppel) -> bool:
             type_cible="PAIEMENT_APPEL",
             cible_id=paiement.id,
         )
+
+        if copro_id is not None:
+            try:
+                qs = qs.filter(copropriete_id=copro_id)
+            except Exception:
+                pass
+
         if hasattr(RapprochementBancaire, "is_cancelled"):
             qs = qs.filter(is_cancelled=False)
 
@@ -176,13 +205,12 @@ class RelanceLotViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrSyndicWriteReadOnly]
 
     def get_queryset(self):
-        copro_id = self.request.headers.get("X-Copropriete-Id")
-        qs = RelanceLot.objects.select_related("lot", "appel").order_by("-created_at", "-id")
-
-        if copro_id:
-            qs = qs.filter(lot__copropriete_id=copro_id)
-
-        return qs
+        copro_id = _require_copro_id(self.request)
+        return (
+            RelanceLot.objects.select_related("lot", "appel")
+            .filter(lot__copropriete_id=copro_id)
+            .order_by("-created_at", "-id")
+        )
 
 
 # =========================================================
@@ -192,6 +220,23 @@ class RelanceLotViewSet(viewsets.ModelViewSet):
 class AppelDeFondsViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAdminOrSyndicWriteReadOnly]
     queryset = AppelDeFonds.objects.select_related("exercice").all()
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        qs = super().get_queryset()
+
+        # robustesse selon schéma
+        try:
+            return qs.filter(copropriete_id=copro_id)
+        except Exception:
+            pass
+
+        try:
+            return qs.filter(exercice__copropriete_id=copro_id)
+        except Exception:
+            pass
+
+        return qs.none()
 
 
 # =========================================================
@@ -208,11 +253,8 @@ class PaiementAppelViewSet(viewsets.ModelViewSet):
     )
 
     def get_queryset(self):
-        copro_id = self.request.headers.get("X-Copropriete-Id")
-        qs = super().get_queryset()
-        if copro_id:
-            qs = qs.filter(ligne__lot__copropriete_id=copro_id)
-        return qs
+        copro_id = _require_copro_id(self.request)
+        return super().get_queryset().filter(ligne__lot__copropriete_id=copro_id)
 
     def perform_update(self, serializer):
         raise ValidationError(
@@ -224,9 +266,6 @@ class PaiementAppelViewSet(viewsets.ModelViewSet):
             {"detail": "Suppression interdite. Utilisez l’endpoint cancel/."}
         )
 
-    # =========================================================
-    # CANCEL (SOFT)
-    # =========================================================
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         """
@@ -237,27 +276,26 @@ class PaiementAppelViewSet(viewsets.ModelViewSet):
         - Bloque si déjà rapproché
         - Soft-cancel traçable
         """
-
         copro_id = _require_copro_id(request)
-        paiement = self.get_object()
-
-        # Scope copro strict
-        if str(paiement.ligne.lot.copropriete_id) != str(copro_id):
-            raise PermissionDenied("Accès interdit à ce paiement.")
-
         reason = (request.data.get("reason") or "").strip()
 
         with transaction.atomic():
-            paiement = PaiementAppel.objects.select_for_update().get(pk=paiement.pk)
+            paiement = (
+                PaiementAppel.objects.select_for_update()
+                .select_related("ligne", "ligne__lot", "ligne__appel", "ligne__appel__exercice")
+                .filter(pk=pk, ligne__lot__copropriete_id=copro_id)
+                .first()
+            )
 
-            # idempotent
+            if not paiement:
+                raise PermissionDenied("Accès interdit à ce paiement.")
+
             if _paiement_appel_is_cancelled(paiement):
                 return Response(
                     {"detail": "Paiement déjà annulé (soft-cancel)."},
                     status=status.HTTP_200_OK,
                 )
 
-            # blocage si rapprochement
             if _paiement_appel_is_rapproche(paiement):
                 raise ValidationError(
                     {

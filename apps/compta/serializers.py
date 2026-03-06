@@ -27,9 +27,16 @@ def _money2(d: Decimal) -> Decimal:
 
 
 def _require_copro_id(request) -> int:
-    copro_id = request.headers.get("X-Copropriete-Id") if request else None
+    if not request:
+        raise serializers.ValidationError({"detail": "Contexte request requis."})
+
+    copro_id = getattr(request, "copropriete_id", None)
+    if not copro_id:
+        copro_id = request.headers.get("X-Copropriete-Id")
+
     if not copro_id:
         raise serializers.ValidationError({"detail": "En-tête X-Copropriete-Id requis."})
+
     try:
         return int(str(copro_id))
     except ValueError:
@@ -56,8 +63,7 @@ def _get_first_attr(obj, names: tuple[str, ...]):
 
 
 # =========================================================
-# ✅ PATCH: refuser rapprochement sur paiements annulés
-# (PaiementAppel / PaiementTravaux) + robustesse conventions
+# Refuser rapprochement sur paiements annulés
 # =========================================================
 def _is_soft_cancelled_payment(obj) -> bool:
     """
@@ -67,22 +73,18 @@ def _is_soft_cancelled_payment(obj) -> bool:
     if obj is None:
         return False
 
-    # Convention probable (déjà présente côté rapprochement, et souvent sur paiements)
     v = getattr(obj, "is_cancelled", None)
     if v is True:
         return True
 
-    # Champs timestamp d'annulation
     for attr in ("cancelled_at", "annule_at", "annulation_at", "date_annulation"):
         if getattr(obj, attr, None):
             return True
 
-    # Booléens alternatifs
     for attr in ("annule", "is_annule", "cancelled"):
         if getattr(obj, attr, None) is True:
             return True
 
-    # Statut
     statut = getattr(obj, "statut", None)
     if statut and str(statut).upper() in ("ANNULE", "ANNULÉ", "CANCELLED", "CANCELED"):
         return True
@@ -91,8 +93,7 @@ def _is_soft_cancelled_payment(obj) -> bool:
 
 
 # =========================================================
-# ✅ PATCH (HELPER AJOUTÉ) : mapping type_cible -> modèle + validations
-# Objectif: faire des rapprochements "possibles" (robustes) sans imports fragiles
+# Helpers résolution type cible
 # =========================================================
 def _normalize_type_cible(value) -> str:
     return (str(value) if value is not None else "").strip().upper()
@@ -105,7 +106,6 @@ def _resolve_target_model(type_cible: str):
     """
     t = _normalize_type_cible(type_cible)
 
-    # ⚠️ selon enum, tes valeurs peuvent être "MOUVEMENT_BANCAIRE" ou "MOUVEMENT"
     if t in ("MOUVEMENT", "MOUVEMENT_BANCAIRE"):
         return MouvementBancaire, "MOUVEMENT"
 
@@ -120,8 +120,8 @@ def _resolve_target_model(type_cible: str):
 
 def _validate_target_for_copro_and_cancel(*, kind: str, obj, copro_id: int):
     """
-    ✅ Centralise les validations:
-    - existence obj (déjà check ailleurs)
+    Centralise les validations :
+    - existence
     - appartenance copro
     - non annulé (soft-cancel)
     """
@@ -151,7 +151,6 @@ def _validate_target_for_copro_and_cancel(*, kind: str, obj, copro_id: int):
         return
 
     if kind == "MOUVEMENT":
-        # scoping copro strict
         if int(getattr(obj, "copropriete_id", 0) or 0) != int(copro_id):
             raise serializers.ValidationError({"cible_id": "MouvementBancaire hors copropriété."})
         return
@@ -163,9 +162,12 @@ def _validate_target_for_copro_and_cancel(*, kind: str, obj, copro_id: int):
 # Résolution des modèles (évite imports fragiles)
 # =========================
 try:
-    PaiementAppel = apps.get_model("billing_app", "PaiementAppel")
+    PaiementAppel = apps.get_model("billing", "PaiementAppel")
 except Exception:
-    PaiementAppel = None
+    try:
+        PaiementAppel = apps.get_model("billing_app", "PaiementAppel")
+    except Exception:
+        PaiementAppel = None
 
 try:
     PaiementTravaux = apps.get_model("travaux", "PaiementTravaux")
@@ -183,7 +185,7 @@ def _resolve_model(app_label: str, model_name: str):
 def _get_paiement_appel_model():
     global PaiementAppel
     if PaiementAppel is None:
-        PaiementAppel = _resolve_model("billing_app", "PaiementAppel")
+        PaiementAppel = _resolve_model("billing", "PaiementAppel") or _resolve_model("billing_app", "PaiementAppel")
     return PaiementAppel
 
 
@@ -198,7 +200,6 @@ def _get_paiement_travaux_model():
 # Helpers robustes copro
 # =========================
 def _direct_copro_id(obj) -> int | None:
-    """Tente de lire un copro_id direct sur un objet."""
     if obj is None:
         return None
 
@@ -220,12 +221,6 @@ def _direct_copro_id(obj) -> int | None:
 
 
 def _paiement_travaux_copro_id(pt) -> int | None:
-    """
-    Copropriété PaiementTravaux robuste:
-    - pt.copropriete_id si existe
-    - sinon pt.dossier.copropriete_id (le plus fréquent)
-    - sinon pt.dossier.copropriete.id
-    """
     if pt is None:
         return None
 
@@ -268,12 +263,10 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
     if pa is None:
         return None
 
-    # 1) direct (si un jour tu ajoutes copropriete_id sur PaiementAppel)
     cid = _direct_copro_id(pa)
     if cid is not None:
         return cid
 
-    # 2) récupérer la ligne
     try:
         ligne = getattr(pa, "ligne", None)
     except Exception:
@@ -281,7 +274,6 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
     if ligne is None:
         return None
 
-    # 3) ✅ chemin confirmé : ligne.lot.copropriete_id
     try:
         lot = getattr(ligne, "lot", None)
         if lot is not None:
@@ -291,12 +283,10 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
     except Exception:
         pass
 
-    # 4) fallback: si la ligne a copropriete direct
     cid = _direct_copro_id(ligne)
     if cid is not None:
         return cid
 
-    # 5) fallback générique: scanner FK/OneToOne de la ligne
     try:
         fields = list(getattr(ligne._meta, "fields", []))
     except Exception:
@@ -325,7 +315,6 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
         if cid is not None:
             return cid
 
-    # 6) fallback DB "exists" si on a un hint (optionnel)
     if copro_hint is None:
         return None
 
@@ -340,8 +329,8 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
     candidates = [
         {"id": pid, "copropriete_id": copro_hint},
         {"id": pid, "ligne__copropriete_id": copro_hint},
-        {"id": pid, "ligne__lot__copropriete_id": copro_hint},  # ✅ chemin confirmé
-        {"id": pid, "ligne__appel__copropriete_id": copro_hint},  # fallback historique
+        {"id": pid, "ligne__lot__copropriete_id": copro_hint},
+        {"id": pid, "ligne__appel__copropriete_id": copro_hint},
     ]
 
     for filt in candidates:
@@ -357,10 +346,6 @@ def _paiement_appel_copro_id(pa, *, copro_hint: int | None = None) -> int | None
 
 
 def _paiement_montant(obj) -> Decimal:
-    """
-    Rend robuste la lecture du montant sur différentes structures de modèles.
-    On essaie plusieurs noms courants, sinon 0.
-    """
     v = _get_first_attr(
         obj,
         (
@@ -381,21 +366,12 @@ def _paiement_montant(obj) -> Decimal:
 
 
 # =========================================================
-# ✅ HELPERS UX/API : exposer la source de rapprochement d’un Mouvement
-# Objectif frontend : pouvoir afficher un bouton "Annuler" seulement si rapproché
-# et afficher (releve_ligne_id / rapprochement_id) pour aller annuler côté /releves/lignes/<id>/annuler/
-# Sans changer les modèles.
+# Helpers UX/API : source de rapprochement d’un Mouvement
 # =========================================================
 def _get_active_rapprochement_for_mouvement(obj: MouvementBancaire) -> RapprochementBancaire | None:
-    """
-    Cherche un rapprochement actif (non annulé) dont la cible est ce mouvement bancaire.
-    ⚠️ Si tu optimises plus tard, tu peux annoter/prefetch en viewset et attacher
-    un attribut _active_rapprochement au mouvement.
-    """
     if obj is None or getattr(obj, "id", None) is None:
         return None
 
-    # optimisation: si la view a déjà attaché la donnée
     cached = getattr(obj, "_active_rapprochement", None)
     if cached is not None:
         return cached
@@ -406,13 +382,34 @@ def _get_active_rapprochement_for_mouvement(obj: MouvementBancaire) -> Rapproche
             is_cancelled=False,
             cible_id=int(obj.id),
         )
-        # type_cible peut être "MOUVEMENT" ou "MOUVEMENT_BANCAIRE" selon l’enum
         try:
             qs = qs.filter(type_cible__in=("MOUVEMENT", "MOUVEMENT_BANCAIRE"))
         except Exception:
-            # si l’enum ne supporte pas une des valeurs
             qs = qs.filter(type_cible="MOUVEMENT")
-        return qs.select_related("releve_ligne").order_by("-rapproche_at", "-id").first()
+        return qs.select_related("releve_ligne", "releve_ligne__releve_import").order_by("-rapproche_at", "-id").first()
+    except Exception:
+        return None
+
+
+def _get_active_rapprochement_for_releve_ligne(obj: ReleveLigne) -> RapprochementBancaire | None:
+    if obj is None or getattr(obj, "id", None) is None:
+        return None
+
+    rap = getattr(obj, "rapprochement", None)
+    if rap and not getattr(rap, "is_cancelled", False):
+        return rap
+
+    try:
+        return (
+            RapprochementBancaire.objects.filter(
+                releve_ligne_id=obj.id,
+                copropriete_id=getattr(obj, "copropriete_id", None)
+                or getattr(getattr(obj, "releve_import", None), "copropriete_id", None),
+                is_cancelled=False,
+            )
+            .order_by("-rapproche_at", "-id")
+            .first()
+        )
     except Exception:
         return None
 
@@ -504,7 +501,6 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
     is_rapproche = serializers.BooleanField(read_only=True)
 
-    # ✅ nouveaux champs utiles frontend (annulation / debug)
     rapprochement_id = serializers.SerializerMethodField()
     releve_ligne_id = serializers.SerializerMethodField()
     releve_import_id = serializers.SerializerMethodField()
@@ -526,7 +522,6 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
             "is_rapproche",
             "created_by",
             "created_at",
-            # ✅ extras
             "rapprochement_id",
             "releve_ligne_id",
             "releve_import_id",
@@ -617,8 +612,6 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
                 )
             if int(pt_cid) != int(copro_id):
                 raise serializers.ValidationError({"paiement_travaux": "PaiementTravaux hors copropriété."})
-
-            # ✅ PATCH: refuser usage d'un paiement annulé
             if _is_soft_cancelled_payment(pt):
                 raise serializers.ValidationError({"paiement_travaux": "PaiementTravaux annulé (soft-cancel)."})
 
@@ -630,8 +623,6 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
                 )
             if int(pa_cid) != int(copro_id):
                 raise serializers.ValidationError({"paiement_appel": "PaiementAppel hors copropriété."})
-
-            # ✅ PATCH: refuser usage d'un paiement annulé
             if _is_soft_cancelled_payment(pa):
                 raise serializers.ValidationError({"paiement_appel": "PaiementAppel annulé (soft-cancel)."})
 
@@ -671,7 +662,6 @@ class RapprochementBancaireSerializer(serializers.ModelSerializer):
             "cancelled_at",
             "cancelled_by",
             "cancelled_reason",
-            # ✅ audit retarget
             "retarget_count",
             "previous_type_cible",
             "previous_cible_id",
@@ -707,10 +697,8 @@ class ReleveLigneSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_rapprochement(self, obj: ReleveLigne):
-        rap = getattr(obj, "rapprochement", None)
+        rap = _get_active_rapprochement_for_releve_ligne(obj)
         if not rap:
-            return None
-        if getattr(rap, "is_cancelled", False):
             return None
         return RapprochementBancaireSerializer(rap).data
 
@@ -752,7 +740,6 @@ class RapprochementCreateSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True, max_length=300)
     strict_amount = serializers.BooleanField(required=False, default=True)
 
-    # ✅ retarget
     allow_retarget = serializers.BooleanField(required=False, default=False)
     retarget_reason = serializers.CharField(required=False, allow_blank=True, max_length=300, default="")
 
@@ -774,13 +761,11 @@ class RapprochementCreateSerializer(serializers.Serializer):
         rap = getattr(releve_ligne, "rapprochement", None)
         allow_retarget = bool(attrs.get("allow_retarget", False))
 
-        # si déjà rapprochée et allow_retarget=False => refuse
         if rap and not getattr(rap, "is_cancelled", False) and not allow_retarget:
             raise serializers.ValidationError({"detail": "Cette ligne est déjà rapprochée."})
 
         strict_amount = bool(attrs.get("strict_amount", True))
 
-        # normalisation textes
         attrs["note"] = (attrs.get("note") or "").strip()
         attrs["retarget_reason"] = (attrs.get("retarget_reason") or "").strip()
 
@@ -792,16 +777,12 @@ class RapprochementCreateSerializer(serializers.Serializer):
         except Exception:
             raise serializers.ValidationError({"detail": "Montant de la ligne de relevé invalide."})
 
-        # =========================================================
-        # ✅ résolution cible + validations communes
-        # =========================================================
         t_raw = attrs["type_cible"]
         cible_id = int(attrs["cible_id"])
         Model, kind = _resolve_target_model(t_raw)
         if Model is None:
             raise serializers.ValidationError({"type_cible": "Type de cible non supporté par ce serializer."})
 
-        # MOUVEMENT: scoping copro direct; Paiements: scoping via helpers robustes
         if kind == "MOUVEMENT":
             cible = Model.objects.filter(id=cible_id, copropriete_id=copro_id).first()
         else:
@@ -809,7 +790,6 @@ class RapprochementCreateSerializer(serializers.Serializer):
 
         _validate_target_for_copro_and_cancel(kind=kind, obj=cible, copro_id=int(copro_id))
 
-        # montant cible
         if kind == "MOUVEMENT":
             try:
                 montant_cible = _money2(Decimal(str(getattr(cible, "montant", 0))))
@@ -823,7 +803,6 @@ class RapprochementCreateSerializer(serializers.Serializer):
                 {"detail": f"Montant différent. Relevé={montant_ligne} vs Cible={montant_cible}."}
             )
 
-        # reason requis si retarget
         if rap and not getattr(rap, "is_cancelled", False) and allow_retarget:
             reason = (attrs.get("retarget_reason") or attrs.get("note") or "").strip()
             if not reason:
@@ -841,19 +820,23 @@ class RapprochementCreateSerializer(serializers.Serializer):
         retarget_reason = (validated_data.get("retarget_reason") or "").strip()
         note = (validated_data.get("note") or "").strip()
 
-        # ✅ si rapprochement actif existe et allow_retarget => retarget_to
         rap_exist = getattr(releve_ligne, "rapprochement", None)
         if rap_exist and not getattr(rap_exist, "is_cancelled", False) and allow_retarget:
             reason = (retarget_reason or note).strip()
 
-            # ✅ refuse retarget vers une cible soft-cancelled
             Model, kind = _resolve_target_model(validated_data["type_cible"])
             if Model is not None and kind in ("PAIEMENT_APPEL", "PAIEMENT_TRAVAUX"):
                 cible = Model.objects.filter(id=int(validated_data["cible_id"])).first()
                 if _is_soft_cancelled_payment(cible):
                     raise serializers.ValidationError({"detail": "Retarget refusé : cible annulée (soft-cancel)."})
 
-            rap = rap_exist.retarget_to(
+            retarget_fn = getattr(rap_exist, "retarget_to", None)
+            if not callable(retarget_fn):
+                raise serializers.ValidationError(
+                    {"detail": "Le modèle RapprochementBancaire ne supporte pas l'opération de retarget."}
+                )
+
+            rap = retarget_fn(
                 type_cible=validated_data["type_cible"],
                 cible_id=int(validated_data["cible_id"]),
                 user=request.user,
