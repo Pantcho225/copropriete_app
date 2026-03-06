@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Sum, Count
 from django.utils import timezone
@@ -10,16 +11,15 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.compta.permissions import IsAdminOrSyndicWriteReadOnly
 from apps.ag.models import Resolution, Vote
 from .models import Fournisseur, DossierTravaux, PaiementTravaux
 from .serializers import (
     FournisseurSerializer,
     DossierTravauxSerializer,
     PaiementTravauxSerializer,
-    # ✅ déjà prévu chez toi
     DossierUnlockSerializer,
 )
 
@@ -29,9 +29,13 @@ from .serializers import (
 # =========================================================
 
 def _require_copro_id(request) -> int:
-    copro_id = request.headers.get("X-Copropriete-Id")
+    copro_id = getattr(request, "copropriete_id", None)
+    if not copro_id:
+        copro_id = request.headers.get("X-Copropriete-Id")
+
     if not copro_id:
         raise ValidationError({"detail": "En-tête X-Copropriete-Id requis."})
+
     try:
         return int(str(copro_id))
     except ValueError:
@@ -65,21 +69,41 @@ def _lock_dossier(dossier: DossierTravaux, user):
     """
     Verrouille le dossier de façon robuste.
     - utilise dossier.lock() si disponible
-    - sinon fallback + update_fields corrects
+    - convertit les erreurs modèle Django en ValidationError DRF
+    - sinon fallback sans hypothèses fragiles
     """
     if hasattr(dossier, "lock") and callable(getattr(dossier, "lock")):
-        dossier.lock(user=user, save=True)
-        dossier.refresh_from_db(fields=["locked_at", "locked_by"])
-        return
+        try:
+            try:
+                dossier.lock(user=user, save=True)
+            except TypeError:
+                try:
+                    dossier.lock(user=user)
+                except TypeError:
+                    dossier.lock()
+            return
+        except DjangoValidationError as e:
+            message_dict = getattr(e, "message_dict", None)
+            if message_dict:
+                raise ValidationError(message_dict)
+
+            messages = getattr(e, "messages", None)
+            if messages:
+                raise ValidationError({"detail": messages})
+
+            raise ValidationError({"detail": [str(e)]})
 
     changed_fields = []
-    if not dossier.locked_at:
+
+    if hasattr(dossier, "locked_at") and not getattr(dossier, "locked_at", None):
         dossier.locked_at = timezone.now()
         changed_fields.append("locked_at")
 
-    if user and not dossier.locked_by_id:
-        dossier.locked_by = user
-        changed_fields.append("locked_by")
+    if hasattr(dossier, "locked_by"):
+        current_locked_by_id = getattr(dossier, "locked_by_id", None)
+        if user and not current_locked_by_id:
+            dossier.locked_by = user
+            changed_fields.append("locked_by")
 
     if changed_fields:
         dossier.save(update_fields=list(dict.fromkeys(changed_fields)))
@@ -99,7 +123,6 @@ def _unlock_dossier(dossier: DossierTravaux, *, user=None, raison: str | None = 
         dossier.refresh_from_db(fields=["locked_at", "locked_by"])
         return
 
-    # fallback (sans audit)
     DossierTravaux.objects.filter(pk=dossier.pk).update(locked_at=None, locked_by=None)
     dossier.locked_at = None
     dossier.locked_by = None
@@ -129,9 +152,6 @@ def _fetch_resolution_for_link(*, resolution_id: int, copro_id: int) -> Resoluti
 
 
 def _ensure_resolution_not_linked_elsewhere(*, resolution_id: int, dossier_id: int):
-    """
-    Empêche qu'une résolution serve de validation à 2 dossiers (OneToOne vérité métier).
-    """
     conflict_id = (
         DossierTravaux.objects
         .filter(resolution_validation_id=resolution_id)
@@ -144,9 +164,6 @@ def _ensure_resolution_not_linked_elsewhere(*, resolution_id: int, dossier_id: i
 
 
 def _ensure_resolution_fk_not_linked_elsewhere(*, res: Resolution, dossier_id: int):
-    """
-    Empêche que la FK miroir pointe vers un autre dossier.
-    """
     current = getattr(res, "travaux_dossier_id", None)
     if current and int(current) != int(dossier_id):
         raise ValidationError(
@@ -174,11 +191,15 @@ def _sync_links(*, d: DossierTravaux, res: Resolution):
         res.travaux_dossier_id = d.id
 
 
-def _compute_resolution_decision(resolution_id: int) -> str:
+def _compute_resolution_decision(resolution_id: int, copro_id: int) -> str:
     """
-    Calcule ADOPTEE/REJETEE en se basant sur la logique majorités (similaire à ag/views.py).
+    Calcule ADOPTEE/REJETEE en se basant sur la logique majorités.
+    Vérifie aussi le périmètre copropriété.
     """
     res = Resolution.objects.select_related("ag").get(pk=resolution_id)
+
+    if int(res.ag.copropriete_id) != int(copro_id):
+        raise ValidationError({"detail": "Résolution hors copropriété."})
 
     agg = (
         Vote.objects.filter(resolution_id=res.id)
@@ -215,7 +236,7 @@ def _compute_resolution_decision(resolution_id: int) -> str:
 # =========================================================
 
 class FournisseurViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSyndicWriteReadOnly]
     serializer_class = FournisseurSerializer
     queryset = Fournisseur.objects.all().order_by("-id")
 
@@ -240,7 +261,7 @@ class FournisseurViewSet(viewsets.ModelViewSet):
 
 
 class DossierTravauxViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSyndicWriteReadOnly]
     serializer_class = DossierTravauxSerializer
     queryset = DossierTravaux.objects.all().order_by("-id")
 
@@ -267,15 +288,11 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Dossier verrouillé : suppression interdite."})
         super().perform_destroy(instance)
 
-    # -----------------------------------------------------
-    # Stats Travaux (dashboard)
-    # -----------------------------------------------------
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request):
         copro_id = _require_copro_id(request)
 
         qs = DossierTravaux.objects.filter(copropriete_id=copro_id)
-
         total_dossiers = qs.count()
 
         by_statut_rows = (
@@ -323,10 +340,6 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # -----------------------------------------------------
-    # Locks (Phase 3 “propre”)
-    # -----------------------------------------------------
-
     @action(detail=True, methods=["post"], url_path="lock")
     def lock(self, request, pk=None):
         copro_id = _require_copro_id(request)
@@ -334,7 +347,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         _ensure_same_copro(dossier.copropriete_id, copro_id)
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 return Response(
                     {"dossier_id": d.id, "locked": True, "detail": "Déjà verrouillé."},
@@ -368,7 +381,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         raison = ser.validated_data["raison"]
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if not d.is_locked:
                 return Response(
                     {"dossier_id": d.id, "locked": False, "detail": "Déjà déverrouillé."},
@@ -382,10 +395,6 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # -----------------------------------------------------
-    # Workflow
-    # -----------------------------------------------------
-
     @action(detail=True, methods=["post"], url_path="submit-ag")
     def submit_ag(self, request, pk=None):
         copro_id = _require_copro_id(request)
@@ -396,7 +405,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Dossier verrouillé : opération interdite."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 raise ValidationError({"detail": "Dossier verrouillé : opération interdite."})
 
@@ -421,7 +430,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant démarrage."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if not d.is_locked:
                 raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant démarrage."})
 
@@ -440,7 +449,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant clôture des travaux."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if not d.is_locked:
                 raise ValidationError({"detail": "Le dossier doit être verrouillé/validé avant clôture des travaux."})
 
@@ -459,7 +468,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Le dossier doit être verrouillé avant archivage."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if not d.is_locked:
                 raise ValidationError({"detail": "Le dossier doit être verrouillé avant archivage."})
 
@@ -467,10 +476,6 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             d.save(update_fields=["statut"])
 
         return Response({"dossier_id": d.id, "statut": d.statut, "detail": "Dossier archivé."})
-
-    # -----------------------------------------------------
-    # Liaison résolution (OneToOne + miroir Resolution.travaux_dossier)
-    # -----------------------------------------------------
 
     @action(detail=True, methods=["post"], url_path="link-resolution")
     def link_resolution(self, request, pk=None):
@@ -487,7 +492,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         resolution_id = _parse_int(request.data.get("resolution_id"), "resolution_id")
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 raise ValidationError({"detail": "Dossier verrouillé : liaison interdite."})
 
@@ -533,7 +538,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Dossier verrouillé : opération interdite."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 raise ValidationError({"detail": "Dossier verrouillé : opération interdite."})
 
@@ -550,7 +555,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_200_OK,
                 )
 
-            DossierTravaux.objects.filter(pk=d.pk).update(resolution_validation=None)
+            DossierTravaux.objects.filter(pk=d.pk, copropriete_id=copro_id).update(resolution_validation=None)
             d.resolution_validation_id = None
 
             _clear_resolution_fk_if_points_to_dossier(resolution_id=old_res_id, dossier_id=d.id)
@@ -580,7 +585,7 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         resolution_id = _parse_int(request.data.get("resolution_id"), "resolution_id")
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 raise ValidationError({"detail": "Dossier verrouillé : opération interdite."})
 
@@ -640,12 +645,12 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
         if dossier.budget_estime is not None and budget_vote_dec > dossier.budget_estime:
             raise ValidationError({"budget_vote": "Ne peut pas dépasser budget_estime."})
 
-        decision = _compute_resolution_decision(resolution_id)
+        decision = _compute_resolution_decision(resolution_id, copro_id)
         if decision != "ADOPTEE":
             raise ValidationError({"detail": "Validation impossible : la résolution n'est pas ADOPTEE."})
 
         with transaction.atomic():
-            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk)
+            d = DossierTravaux.objects.select_for_update().get(pk=dossier.pk, copropriete_id=copro_id)
             if d.is_locked:
                 return Response({"dossier_id": d.id, "statut": d.statut, "detail": "Déjà verrouillé."})
 
@@ -688,12 +693,11 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
 
 class PaiementTravauxViewSet(viewsets.ModelViewSet):
     """
-    ✅ Endpoint manquant (cause du 404) :
     - GET/POST /api/travaux/paiements/
     - GET/PUT/PATCH/DELETE /api/travaux/paiements/<id>/
-    - GET /api/travaux/paiements/stats/   (stats financières Phase 3)
+    - GET /api/travaux/paiements/stats/
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrSyndicWriteReadOnly]
     serializer_class = PaiementTravauxSerializer
     queryset = PaiementTravaux.objects.all().order_by("-date_paiement", "-id")
 
@@ -703,7 +707,6 @@ class PaiementTravauxViewSet(viewsets.ModelViewSet):
             "dossier", "fournisseur"
         )
 
-        # filtres optionnels
         dossier_id = self.request.query_params.get("dossier")
         fournisseur_id = self.request.query_params.get("fournisseur")
 
@@ -729,7 +732,6 @@ class PaiementTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Dossier hors copropriété."})
 
         fournisseur = serializer.validated_data.get("fournisseur")
-        # Optionnel : si tu veux forcer que le fournisseur est dans la même copro
         if fournisseur and int(fournisseur.copropriete_id) != int(copro_id):
             raise ValidationError({"detail": "Fournisseur hors copropriété."})
 
@@ -738,8 +740,18 @@ class PaiementTravauxViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         copro_id = _require_copro_id(self.request)
         inst: PaiementTravaux = serializer.instance
+
         if int(inst.dossier.copropriete_id) != int(copro_id):
             raise ValidationError({"detail": "Ressource hors copropriété."})
+
+        dossier = serializer.validated_data.get("dossier", inst.dossier)
+        if int(dossier.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Dossier hors copropriété."})
+
+        fournisseur = serializer.validated_data.get("fournisseur", inst.fournisseur)
+        if fournisseur and int(fournisseur.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Fournisseur hors copropriété."})
+
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -748,36 +760,22 @@ class PaiementTravauxViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Ressource hors copropriété."})
         super().perform_destroy(instance)
 
-    # -----------------------------------------------------
-    # Stats financières (Phase 3)
-    # -----------------------------------------------------
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request):
         """
         GET /api/travaux/paiements/stats/
         Header: X-Copropriete-Id
-
-        Retour :
-        - total_paye (copro)
-        - total_budget_vote (copro)
-        - reste_global = budget_vote - payé
-        - by_fournisseur (montants)
-        - by_dossier (payé + budget_vote + reste)
         """
         copro_id = _require_copro_id(request)
 
-        # paiements (copro)
         pqs = PaiementTravaux.objects.filter(dossier__copropriete_id=copro_id)
-
         total_paye = Decimal(str(pqs.aggregate(t=Sum("montant")).get("t") or "0"))
 
-        # budgets votés (copro)
         dqs = DossierTravaux.objects.filter(copropriete_id=copro_id)
         total_budget_vote = Decimal(str(dqs.aggregate(t=Sum("budget_vote")).get("t") or "0"))
 
         reste_global = total_budget_vote - total_paye
 
-        # par fournisseur
         by_f_rows = (
             pqs.values("fournisseur_id")
             .annotate(total=Sum("montant"), count=Count("id"))
@@ -790,15 +788,14 @@ class PaiementTravauxViewSet(viewsets.ModelViewSet):
                 "nb_paiements": int(r["count"]),
             }
             for r in by_f_rows
+            if r["fournisseur_id"] is not None
         ]
 
-        # par dossier (payé vs budget_vote)
         by_d_rows = (
             pqs.values("dossier_id")
             .annotate(total_paye=Sum("montant"), nb=Count("id"))
             .order_by("-total_paye")
         )
-        # map budget_vote par dossier
         budgets_map = {
             row["id"]: Decimal(str(row["budget_vote"] or "0"))
             for row in dqs.values("id", "budget_vote")
