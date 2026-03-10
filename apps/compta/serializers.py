@@ -499,7 +499,10 @@ class CompteBancaireSerializer(serializers.ModelSerializer):
 class MouvementBancaireSerializer(serializers.ModelSerializer):
     copropriete = serializers.PrimaryKeyRelatedField(read_only=True)
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    cancelled_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
     is_rapproche = serializers.BooleanField(read_only=True)
+    impacts_balance = serializers.BooleanField(read_only=True)
 
     rapprochement_id = serializers.SerializerMethodField()
     releve_ligne_id = serializers.SerializerMethodField()
@@ -525,6 +528,12 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
             "rapprochement_id",
             "releve_ligne_id",
             "releve_import_id",
+            "is_cancelled",
+            "cancel_kind",
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_reason",
+            "impacts_balance",
         ]
         read_only_fields = [
             "id",
@@ -535,6 +544,12 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
             "rapprochement_id",
             "releve_ligne_id",
             "releve_import_id",
+            "is_cancelled",
+            "cancel_kind",
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_reason",
+            "impacts_balance",
         ]
 
     def get_rapprochement_id(self, obj: MouvementBancaire):
@@ -641,6 +656,12 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         validated_data.pop("copropriete", None)
         validated_data.pop("copropriete_id", None)
+        validated_data.pop("is_cancelled", None)
+        validated_data.pop("cancel_kind", None)
+        validated_data.pop("cancelled_at", None)
+        validated_data.pop("cancelled_by", None)
+        validated_data.pop("cancelled_reason", None)
+        validated_data.pop("impacts_balance", None)
         return super().update(instance, validated_data)
 
 

@@ -15,12 +15,12 @@ urlpatterns = [
     # =========================
     # Apps API
     # =========================
-    path("api/", include("apps.core.urls")),     # ex: /api/coproprietes/
+    path("api/", include("apps.core.urls")),
     path("api/", include("apps.owners.urls")),
-    path("api/", include("apps.lots.urls")),  # ex: /api/owners/... (selon tes routes)
+    path("api/", include("apps.lots.urls")),
     path("api/billing/", include("apps.billing.urls")),
     path("api/ag/", include("apps.ag.urls")),
     path("api/travaux/", include("apps.travaux.urls")),
     path("api/compta/", include("apps.compta.urls")),
-    
+    path("api/rh/", include("apps.rh.urls")),
 ]

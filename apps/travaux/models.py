@@ -25,6 +25,12 @@ class Fournisseur(models.Model):
     )
 
     nom = models.CharField(max_length=255)
+    specialite = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Ex. plomberie, toiture, peinture, électricité...",
+    )
     email = models.EmailField(blank=True, default="")
     telephone = models.CharField(max_length=50, blank=True, default="")
     adresse = models.TextField(blank=True, default="")
@@ -45,6 +51,7 @@ class Fournisseur(models.Model):
             models.Index(fields=["copropriete", "nom"]),
             models.Index(fields=["copropriete", "is_active"]),
             models.Index(fields=["copropriete", "created_at"]),
+            models.Index(fields=["copropriete", "specialite"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -57,10 +64,14 @@ class Fournisseur(models.Model):
         super().clean()
         if self.nom:
             self.nom = self.nom.strip()
+        if self.specialite:
+            self.specialite = self.specialite.strip()
 
     def save(self, *args, **kwargs):
         if self.nom:
             self.nom = self.nom.strip()
+        if self.specialite:
+            self.specialite = self.specialite.strip()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -282,7 +293,6 @@ class DossierTravaux(models.Model):
 
                 changed = []
                 for f in immutable_fields:
-                    # si update_fields est fourni, on ne contrôle que ce qui est censé être modifié
                     if update_fields_set is not None and f not in update_fields_set:
                         continue
 
@@ -297,16 +307,12 @@ class DossierTravaux(models.Model):
                         old_statut = str(old.statut)
                         new_statut = str(self.statut)
 
-                        # pas un vrai changement => OK
-                        if old_statut == new_statut:
-                            pass
-                        else:
+                        if old_statut != new_statut:
                             allowed = self.ALLOWED_TRANSITIONS.get(old_statut, set())
                             if new_statut not in allowed:
                                 raise ValidationError(
                                     {"statut": f"Dossier verrouillé: transition interdite {old_statut} -> {new_statut}."}
                                 )
-                            # transition OK => on laisse passer
                     else:
                         raise ValidationError(
                             {"detail": f"Dossier verrouillé: modification interdite ({', '.join(changed)})."}
@@ -356,7 +362,6 @@ class DossierTravaux(models.Model):
             with transaction.atomic():
                 self.__class__.objects.filter(pk=self.pk).update(locked_at=None, locked_by=None)
 
-                # ✅ Audit unlock (optionnel)
                 if user is not None and raison:
                     TravauxUnlockLog = django_apps.get_model("travaux", "TravauxUnlockLog")
                     TravauxUnlockLog.objects.create(

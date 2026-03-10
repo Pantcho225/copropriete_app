@@ -72,6 +72,7 @@ class FournisseurSerializer(serializers.ModelSerializer):
             "id",
             "copropriete",
             "nom",
+            "specialite",
             "email",
             "telephone",
             "adresse",
@@ -87,6 +88,9 @@ class FournisseurSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Le nom est requis.")
         return value
+
+    def validate_specialite(self, value: str) -> str:
+        return (value or "").strip()
 
     def validate_email(self, value: str) -> str:
         return (value or "").strip()
@@ -144,7 +148,7 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "copropriete",
-            "budget_vote",              # ✅ voté via AG (validate-ag)
+            "budget_vote",
             "budget_reference",
             "total_paye",
             "reste_a_payer",
@@ -157,7 +161,6 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    # ---------- computed fields ----------
     def get_budget_reference(self, obj: DossierTravaux):
         try:
             return str(obj.budget_reference())
@@ -176,7 +179,6 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
         except Exception:
             return str(DEC_0)
 
-    # ---------- field validations ----------
     def validate_titre(self, value: str) -> str:
         value = (value or "").strip()
         if not value:
@@ -187,16 +189,14 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
         return (value or "").strip()
 
     def validate_budget_estime(self, value):
-        # ✅ important : accepte None (si modèle nullable)
         if value is None or value == "":
-            return None
+            raise serializers.ValidationError("Le budget estimé est requis.")
         d = _to_decimal(value, "budget_estime")
         if d < DEC_0:
             raise serializers.ValidationError("Doit être >= 0.")
         return _money2(d)
 
     def validate_budget_vote(self, value):
-        # Normalement read-only, mais on garde une validation si jamais le champ arrive.
         if value is None or value == "":
             return None
         d = _to_decimal(value, "budget_vote")
@@ -215,11 +215,9 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
         """
         instance: DossierTravaux | None = getattr(self, "instance", None)
 
-        # ✅ blocage total si verrouillé
         if instance and instance.is_locked and attrs:
             raise serializers.ValidationError("Dossier verrouillé : modification interdite.")
 
-        # ✅ statut contrôlé par endpoints dédiés
         if instance and "statut" in attrs and attrs["statut"] != instance.statut:
             raise serializers.ValidationError(
                 {"statut": "Modification du statut via endpoint dédié uniquement (submit-ag/validate-ag)."}
@@ -227,21 +225,18 @@ class DossierTravauxSerializer(serializers.ModelSerializer):
         if not instance and "statut" in attrs and attrs["statut"] != DossierTravaux.Statut.BROUILLON:
             raise serializers.ValidationError({"statut": "À la création, le statut doit être BROUILLON."})
 
-        # ✅ option prod-safe : ne plus toucher budget_estime après soumission
         if instance and "budget_estime" in attrs and attrs["budget_estime"] != instance.budget_estime:
             if instance.statut in (DossierTravaux.Statut.SOUMIS_AG, DossierTravaux.Statut.VALIDE):
                 raise serializers.ValidationError(
                     {"budget_estime": "Modification interdite après soumission à l’AG (SOUMIS_AG/VALIDE)."}
                 )
 
-        # ✅ empêcher budget_vote “manuellement”
         if "budget_vote" in attrs:
             if not instance:
                 raise serializers.ValidationError({"budget_vote": "Budget voté uniquement via validation AG."})
             if instance.statut in (DossierTravaux.Statut.BROUILLON, DossierTravaux.Statut.SOUMIS_AG):
                 raise serializers.ValidationError({"budget_vote": "Budget voté uniquement via validation AG."})
 
-        # ✅ règle budget_vote <= budget_estime (sur valeurs finales)
         budget_estime = attrs.get("budget_estime", getattr(instance, "budget_estime", None))
         budget_vote = attrs.get("budget_vote", getattr(instance, "budget_vote", None))
 
@@ -306,13 +301,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        """
-        Règles:
-        - dossier/fournisseur doivent être dans la même copropriete (X-Copropriete-Id)
-        - dossier doit être verrouillé
-        - statut dossier doit être VALIDE/EN_COURS/TERMINE/ARCHIVE
-        - plafond budget: somme paiements <= budget_reference
-        """
         request = self.context.get("request")
         instance: PaiementTravaux | None = getattr(self, "instance", None)
 
@@ -322,14 +310,12 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
 
         copro_id = _require_copro_id_from_request(request)
 
-        # --- cohérence copro dossier/fournisseur ---
         if dossier and int(dossier.copropriete_id) != int(copro_id):
             raise serializers.ValidationError({"dossier": "Dossier hors périmètre de la copropriété courante."})
 
         if fournisseur and int(fournisseur.copropriete_id) != int(copro_id):
             raise serializers.ValidationError({"fournisseur": "Fournisseur hors périmètre de la copropriété courante."})
 
-        # --- dossier doit être prêt (statut + lock) ---
         if dossier:
             allowed = {
                 DossierTravaux.Statut.VALIDE,
@@ -343,7 +329,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
             if not dossier.is_locked:
                 raise serializers.ValidationError({"dossier": "Paiement interdit : le dossier doit être verrouillé."})
 
-        # --- plafond budget (pré-check, utile mais pas suffisant en concurrence) ---
         if dossier and montant is not None:
             budget = _budget_reference_decimal(dossier)
 
@@ -362,9 +347,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
         return attrs
 
     def _recheck_budget_under_lock(self, *, dossier_id: int, instance_pk: int | None, montant: Decimal):
-        """
-        Re-vérifie le plafond budget sous transaction + lock du dossier (anti-race condition).
-        """
         d = DossierTravaux.objects.select_for_update().get(pk=dossier_id)
         budget = _budget_reference_decimal(d)
 
@@ -381,12 +363,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
             )
 
     def create(self, validated_data):
-        """
-        ✅ Production-grade:
-        - force copropriete depuis header X-Copropriete-Id
-        - set created_by depuis request.user
-        - recheck plafond budget sous lock (anti concurrence)
-        """
         request = self.context.get("request")
         copro_id = _require_copro_id_from_request(request)
 
@@ -397,7 +373,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
         dossier = validated_data.get("dossier")
         montant = validated_data.get("montant")
 
-        # Anti-race condition: lock dossier + recheck plafond
         if dossier and montant is not None:
             with transaction.atomic():
                 self._recheck_budget_under_lock(dossier_id=dossier.id, instance_pk=None, montant=montant)
@@ -406,9 +381,6 @@ class PaiementTravauxSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        """
-        Même logique que create pour éviter qu'un PATCH/PUT fasse dépasser le plafond en concurrence.
-        """
         dossier = validated_data.get("dossier", instance.dossier)
         montant = validated_data.get("montant", instance.montant)
 

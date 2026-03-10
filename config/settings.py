@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "apps.travaux",
     "django_extensions",
     "apps.compta.apps.ComptaConfig",
+    "apps.rh"
 ]
 
 MIDDLEWARE = [

@@ -106,11 +106,6 @@ def _parse_decimal_fr(value: str) -> Decimal | None:
 
 
 def _detect_sens_and_montant(row: dict) -> tuple[str, Decimal]:
-    """
-    Stratégies:
-    1) colonnes credit/debit : l'une des deux est remplie
-    2) colonne montant signée : >0 CREDIT, <0 DEBIT
-    """
     lower = {str(k).strip().lower(): v for k, v in row.items()}
 
     credit_keys = ["credit", "crédit", "montant_credit", "amount_credit"]
@@ -153,9 +148,6 @@ def _detect_sens_and_montant(row: dict) -> tuple[str, Decimal]:
 
 
 def _paiement_travaux_copro_id(pt) -> int | None:
-    """
-    copropriété PaiementTravaux robuste
-    """
     if pt is None:
         return None
 
@@ -212,10 +204,6 @@ def _as_drf_error_from_django_validation(e: DjangoValidationError) -> dict:
 
 
 def _soft_cancel_rapprochement(rap, *, user=None, reason: str = ""):
-    """
-    Essaie d'abord la méthode métier rap.cancel(...).
-    Sinon, applique un fallback robuste sans casser le flux.
-    """
     cancel_fn = getattr(rap, "cancel", None)
     if callable(cancel_fn):
         cancel_fn(user=user, reason=reason)
@@ -248,6 +236,18 @@ def _soft_cancel_rapprochement(rap, *, user=None, reason: str = ""):
         rap.save(update_fields=list(dict.fromkeys(update_fields)))
     else:
         rap.save()
+
+
+def _mouvement_effective_queryset(*, copro_id: int):
+    """
+    Règle métier figée :
+    - annulation d’erreur => n’impacte plus le solde
+    - annulation métier => impact bancaire conservé
+    """
+    return MouvementBancaire.objects.filter(copropriete_id=copro_id).exclude(
+        is_cancelled=True,
+        cancel_kind=MouvementBancaire.CancelKind.ERROR,
+    )
 
 
 # =========================================================
@@ -291,7 +291,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             super()
             .get_queryset()
             .filter(copropriete_id=copro_id)
-            .select_related("compte", "paiement_travaux", "paiement_appel")
+            .select_related("compte", "paiement_travaux", "paiement_appel", "cancelled_by")
         )
 
         compte = self.request.query_params.get("compte")
@@ -299,6 +299,18 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
         dfrom = _parse_date_param(self.request, "from")
         dto = _parse_date_param(self.request, "to")
         rapproche = self.request.query_params.get("rapproche")
+        is_cancelled = self.request.query_params.get("is_cancelled")
+        cancel_kind = self.request.query_params.get("cancel_kind")
+        include_cancelled = _parse_bool(self.request.query_params.get("include_cancelled"), default=True)
+
+        if not include_cancelled and is_cancelled not in ("0", "1"):
+            qs = qs.filter(is_cancelled=False)
+
+        if is_cancelled in ("0", "1"):
+            qs = qs.filter(is_cancelled=(is_cancelled == "1"))
+
+        if cancel_kind:
+            qs = qs.filter(cancel_kind=str(cancel_kind).upper())
 
         if compte:
             try:
@@ -326,7 +338,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
         copro_id = _require_copro_id(request)
 
         comptes = CompteBancaire.objects.filter(copropriete_id=copro_id, is_active=True)
-        mqs = MouvementBancaire.objects.filter(copropriete_id=copro_id)
+        mqs = _mouvement_effective_queryset(copro_id=copro_id)
 
         total_credit = Decimal(str(mqs.filter(sens="CREDIT").aggregate(t=Sum("montant")).get("t") or 0))
         total_debit = Decimal(str(mqs.filter(sens="DEBIT").aggregate(t=Sum("montant")).get("t") or 0))
@@ -406,6 +418,18 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
                 }
             )
 
+        cancelled_error_count = MouvementBancaire.objects.filter(
+            copropriete_id=copro_id,
+            is_cancelled=True,
+            cancel_kind=MouvementBancaire.CancelKind.ERROR,
+        ).count()
+
+        cancelled_business_count = MouvementBancaire.objects.filter(
+            copropriete_id=copro_id,
+            is_cancelled=True,
+            cancel_kind=MouvementBancaire.CancelKind.BUSINESS,
+        ).count()
+
         return Response(
             {
                 "copropriete_id": int(copro_id),
@@ -418,6 +442,8 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
                     "solde_net_mouvements": float(total_credit - total_debit),
                     "nb_non_rapproches": int(nb_non_rapproches),
                     "series_days": int(series_days),
+                    "nb_mouvements_annules_erreur": int(cancelled_error_count),
+                    "nb_mouvements_annules_metier": int(cancelled_business_count),
                 },
                 "comptes": comptes_out,
                 "series": series,
@@ -463,10 +489,11 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
         if int(pt_cid) != int(copro_id):
             raise ValidationError({"paiement_travaux": "PaiementTravaux hors copropriété."})
 
-        existing = MouvementBancaire.objects.filter(
-            copropriete_id=copro_id,
-            paiement_travaux_id=p.id,
-        ).first()
+        existing = (
+            MouvementBancaire.objects.filter(copropriete_id=copro_id, paiement_travaux_id=p.id)
+            .exclude(is_cancelled=True, cancel_kind=MouvementBancaire.CancelKind.ERROR)
+            .first()
+        )
         if existing:
             return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
 
@@ -487,6 +514,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             existing2 = (
                 MouvementBancaire.objects.select_for_update()
                 .filter(copropriete_id=copro_id, paiement_travaux_id=p.id)
+                .exclude(is_cancelled=True, cancel_kind=MouvementBancaire.CancelKind.ERROR)
                 .first()
             )
             if existing2:
@@ -497,6 +525,83 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             obj = ser.save()
 
         return Response(self.get_serializer(obj).data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="cancel",
+        permission_classes=[IsAdminOrSyndicWriteReadOnly],
+    )
+    def cancel(self, request, pk=None):
+        copro_id = _require_copro_id(request)
+        mouvement = self.get_queryset().filter(pk=pk, copropriete_id=copro_id).first()
+        if not mouvement:
+            raise ValidationError({"detail": "Mouvement introuvable."})
+
+        kind = str(request.data.get("cancel_kind") or request.data.get("kind") or "ERROR").strip().upper()
+        reason = (request.data.get("reason") or request.data.get("note") or "").strip()
+
+        if kind not in MouvementBancaire.CancelKind.values:
+            raise ValidationError(
+                {
+                    "cancel_kind": (
+                        "Valeur invalide. Utiliser ERROR pour une annulation d’erreur "
+                        "ou BUSINESS pour une annulation métier."
+                    )
+                }
+            )
+
+        with transaction.atomic():
+            mvt = MouvementBancaire.objects.select_for_update().filter(pk=mouvement.pk, copropriete_id=copro_id).first()
+            if not mvt:
+                raise ValidationError({"detail": "Mouvement introuvable."})
+
+            if mvt.is_cancelled:
+                return Response(
+                    {
+                        "detail": "Mouvement déjà annulé.",
+                        "mouvement_id": mvt.id,
+                        "cancel_kind": mvt.cancel_kind,
+                        "impacts_balance": mvt.impacts_balance,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            cancel_fn = getattr(mvt, "cancel", None)
+            if callable(cancel_fn):
+                cancel_fn(user=request.user, reason=reason, kind=kind)
+            else:
+                mvt.is_cancelled = True
+                mvt.cancel_kind = kind
+                mvt.cancelled_at = timezone.now()
+                if getattr(request.user, "id", None):
+                    mvt.cancelled_by = request.user
+                mvt.cancelled_reason = (reason or "").strip()[:300]
+                mvt.save(
+                    update_fields=[
+                        "is_cancelled",
+                        "cancel_kind",
+                        "cancelled_at",
+                        "cancelled_by",
+                        "cancelled_reason",
+                    ]
+                )
+
+        detail = (
+            "Mouvement annulé comme erreur : il ne compte plus dans le solde."
+            if kind == MouvementBancaire.CancelKind.ERROR
+            else "Mouvement marqué en annulation métier : son impact bancaire est conservé dans le solde."
+        )
+
+        return Response(
+            {
+                "detail": detail,
+                "mouvement_id": mvt.id,
+                "cancel_kind": mvt.cancel_kind,
+                "impacts_balance": mvt.impacts_balance,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # =========================================================
@@ -746,10 +851,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="ignorer", permission_classes=[IsAdminOrSyndicWriteReadOnly])
     def ignorer(self, request, pk=None):
-        """
-        Marque une ligne comme ignorée sans créer de rapprochement.
-        Compatible même si certains statuts métier diffèrent selon le modèle.
-        """
         copro_id = _require_copro_id(request)
         ligne = self.get_object()
 
@@ -841,6 +942,7 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
                     montant=ligne.montant,
                     sens=ligne.sens,
                 )
+                .exclude(is_cancelled=True, cancel_kind=MouvementBancaire.CancelKind.ERROR)
                 .filter(Q(note__icontains=fingerprint) | Q(reference=ligne.reference))
                 .order_by("-id")
                 .first()
@@ -889,12 +991,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="suggestions")
     def suggestions(self, request, pk=None):
-        """
-        Retourne désormais :
-        - suggestions: LISTE PLATE exploitable directement par le frontend
-        - grouped: regroupement par type pour audit/debug
-        - debug: détails techniques
-        """
         ligne = self.get_object()
 
         raw_days = request.query_params.get("days", "30")
@@ -1029,9 +1125,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
                 return value
             return None
 
-        # -----------------------
-        # PaiementAppel
-        # -----------------------
         pa_base = PaiementAppel.objects.all()
 
         pa_copro_filters = [
@@ -1098,9 +1191,6 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
             "date_fields_ignored": pa_date_ignored,
         }
 
-        # -----------------------
-        # PaiementTravaux
-        # -----------------------
         pt_base = PaiementTravaux.objects.all()
 
         pt_copro_filters = [
@@ -1165,12 +1255,9 @@ class ReleveLigneViewSet(viewsets.ReadOnlyModelViewSet):
             "date_fields_ignored": pt_date_ignored,
         }
 
-        # -----------------------
-        # MouvementBancaire
-        # -----------------------
         mv = (
-            MouvementBancaire.objects.filter(
-                copropriete_id=copro_id,
+            _mouvement_effective_queryset(copro_id=copro_id)
+            .filter(
                 montant__gte=(montant - tol) if tol and tol > 0 else montant,
                 montant__lte=(montant + tol) if tol and tol > 0 else montant,
                 date_operation__range=(dmin, dmax),

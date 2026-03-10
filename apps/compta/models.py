@@ -97,6 +97,10 @@ class MouvementBancaire(models.Model):
         CREDIT = "CREDIT", "Crédit"
         DEBIT = "DEBIT", "Débit"
 
+    class CancelKind(models.TextChoices):
+        ERROR = "ERROR", "Annulation d'erreur"
+        BUSINESS = "BUSINESS", "Annulation métier"
+
     copropriete = models.ForeignKey(
         "core.Copropriete",
         on_delete=models.CASCADE,
@@ -141,6 +145,25 @@ class MouvementBancaire(models.Model):
         blank=True,
         related_name="mouvements_bancaires_crees",
     )
+
+    # ✅ Annulation métier vs annulation d’erreur
+    is_cancelled = models.BooleanField(default=False)
+    cancel_kind = models.CharField(
+        max_length=20,
+        choices=CancelKind.choices,
+        blank=True,
+        default="",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mouvements_bancaires_annules",
+    )
+    cancelled_reason = models.CharField(max_length=300, blank=True, default="")
+
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:
@@ -149,6 +172,8 @@ class MouvementBancaire(models.Model):
             models.Index(fields=["copropriete", "sens", "date_operation"]),
             models.Index(fields=["copropriete", "paiement_travaux"]),
             models.Index(fields=["copropriete", "paiement_appel"]),
+            models.Index(fields=["copropriete", "is_cancelled"]),
+            models.Index(fields=["copropriete", "cancel_kind"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -160,6 +185,60 @@ class MouvementBancaire(models.Model):
     @property
     def is_rapproche(self) -> bool:
         return bool(self.paiement_travaux_id or self.paiement_appel_id)
+
+    @property
+    def impacts_balance(self) -> bool:
+        """
+        Règle métier figée :
+        - annulation d’erreur => ne compte plus dans le solde
+        - annulation métier => continue d’impacter le solde
+        """
+        return not (self.is_cancelled and self.cancel_kind == self.CancelKind.ERROR)
+
+    def clean(self):
+        if self.montant is not None and self.montant < Decimal("0.01"):
+            raise ValidationError({"montant": "Le montant doit être ≥ 0.01."})
+
+        if self.is_cancelled:
+            if not self.cancel_kind:
+                raise ValidationError({"cancel_kind": "Obligatoire si is_cancelled=True."})
+            if not self.cancelled_at:
+                raise ValidationError({"cancelled_at": "Obligatoire si is_cancelled=True."})
+        else:
+            if self.cancel_kind or self.cancelled_at or self.cancelled_by_id or (self.cancelled_reason or "").strip():
+                raise ValidationError(
+                    {"is_cancelled": "Incohérence: des champs d’annulation existent alors que is_cancelled=False."}
+                )
+
+    @transaction.atomic
+    def cancel(self, *, user=None, reason: str = "", kind: str = CancelKind.ERROR):
+        """
+        kind=ERROR    -> neutralise l’impact sur le dashboard
+        kind=BUSINESS -> garde l’impact bancaire mais marque l’annulation métier
+        """
+        if self.is_cancelled:
+            return self
+
+        kind = str(kind or "").strip().upper()
+        if kind not in self.CancelKind.values:
+            raise ValidationError({"cancel_kind": "Type d’annulation invalide."})
+
+        self.is_cancelled = True
+        self.cancel_kind = kind
+        self.cancelled_at = timezone.now()
+        self.cancelled_by = user if getattr(user, "id", None) else None
+        self.cancelled_reason = (reason or "").strip()[:300]
+
+        self.save(
+            update_fields=[
+                "is_cancelled",
+                "cancel_kind",
+                "cancelled_at",
+                "cancelled_by",
+                "cancelled_reason",
+            ]
+        )
+        return self
 
     def __str__(self) -> str:
         return f"Mvt#{self.id} {self.sens} {self.montant} ({self.date_operation})"
@@ -407,9 +486,6 @@ class RapprochementBancaire(models.Model):
             f"(ligne={self.releve_ligne_id}) cancelled={self.is_cancelled}"
         )
 
-    # -------------------------
-    # Résolution cible (assisté)
-    # -------------------------
     @staticmethod
     def _get_target_model(type_cible: str):
         if type_cible == RapprochementBancaire.TypeCible.PAIEMENT_APPEL:
@@ -430,19 +506,17 @@ class RapprochementBancaire(models.Model):
 
     @staticmethod
     def _target_copro_id(target) -> int | None:
-        """
-        Convention: si l'objet a copropriete_id => direct.
-        Sinon, fallback selon le modèle (PaiementAppel / PaiementTravaux).
-        """
         direct = getattr(target, "copropriete_id", None)
         if direct is not None:
-            return direct
+            try:
+                return int(direct)
+            except Exception:
+                pass
 
         meta = getattr(target, "_meta", None)
         app_label = getattr(meta, "app_label", "") if meta else ""
         model_name = getattr(meta, "model_name", "") if meta else ""
 
-        # ✅ PaiementAppel confirmé: paiement_appel.ligne.lot.copropriete_id
         if app_label == "billing_app" and model_name == "paiementappel":
             try:
                 ligne = getattr(target, "ligne", None)
@@ -453,7 +527,6 @@ class RapprochementBancaire(models.Model):
             except Exception:
                 pass
 
-            # fallback historique
             try:
                 ligne = getattr(target, "ligne", None)
                 appel = getattr(ligne, "appel", None) if ligne else None
@@ -463,7 +536,6 @@ class RapprochementBancaire(models.Model):
             except Exception:
                 pass
 
-        # PaiementTravaux : via dossier -> copropriete_id
         if app_label == "travaux" and model_name == "paiementtravaux":
             try:
                 dossier = getattr(target, "dossier", None)
@@ -483,7 +555,6 @@ class RapprochementBancaire(models.Model):
         return None
 
     def clean(self):
-        # Cohérence copro avec la ligne
         if self.releve_ligne_id and self.copropriete_id:
             rl_copro = self.releve_ligne.copropriete_id or self.releve_ligne.releve_import.copropriete_id
             if rl_copro != self.copropriete_id:
@@ -492,7 +563,6 @@ class RapprochementBancaire(models.Model):
         if self.montant is not None and self.montant < DEC_2:
             raise ValidationError({"montant": "Le montant doit être ≥ 0.01."})
 
-        # empêche incohérences RL
         if self.releve_ligne_id:
             rl = self.releve_ligne
             if self.date_operation and self.date_operation != rl.date_operation:
@@ -500,22 +570,17 @@ class RapprochementBancaire(models.Model):
             if self.montant is not None and d2(self.montant) != d2(rl.montant):
                 raise ValidationError({"montant": "montant doit correspondre à la ReleveLigne."})
 
-        # ✅ cohérence soft-cancel (consolidation)
         if self.is_cancelled:
             if not self.cancelled_at:
                 raise ValidationError({"cancelled_at": "Obligatoire si is_cancelled=True."})
             if not self.cancelled_by_id:
                 raise ValidationError({"cancelled_by": "Obligatoire si is_cancelled=True."})
         else:
-            # si actif, on veut éviter des résidus de cancel
             if self.cancelled_at or self.cancelled_by_id or (self.cancelled_reason or "").strip():
                 raise ValidationError(
                     {"is_cancelled": "Incohérence: champs d'annulation présents alors que is_cancelled=False."}
                 )
 
-    # -------------------------
-    # Side effects
-    # -------------------------
     @transaction.atomic
     def apply_side_effects(self):
         ligne = self.releve_ligne
@@ -526,11 +591,6 @@ class RapprochementBancaire(models.Model):
 
     @transaction.atomic
     def cancel(self, *, user, reason: str = ""):
-        """
-        Annulation contrôlée (soft cancel) :
-        - on annule le rapprochement
-        - on remet la ligne à A_TRAITER
-        """
         if self.is_cancelled:
             return
 
@@ -545,17 +605,8 @@ class RapprochementBancaire(models.Model):
             ligne.statut = ReleveLigne.Statut.A_TRAITER
             ligne.save(update_fields=["statut"])
 
-    # -------------------------
-    # ✅ CHOIX (1) : retarget centralisé (pour views.py)
-    # -------------------------
     @transaction.atomic
     def retarget_to(self, *, type_cible: str, cible_id: int, user, reason: str = "", note: str = ""):
-        """
-        Corrige un rapprochement ACTIF sans annuler.
-        - garde un audit (previous_*, retarget_*)
-        - vérifie conflit unique active (cible déjà rapprochée par une autre ligne)
-        - met à jour rapproche_par/rapproche_at
-        """
         if self.is_cancelled:
             raise ValidationError("Impossible de corriger un rapprochement annulé (is_cancelled=True).")
 
@@ -572,10 +623,8 @@ class RapprochementBancaire(models.Model):
         if not reason:
             raise ValidationError({"retarget_reason": "Raison obligatoire pour corriger un rapprochement existant."})
 
-        # verrou sur self
         me = RapprochementBancaire.objects.select_for_update().get(pk=self.pk)
 
-        # validation cible (existence + copro + montant strict)
         target = self._fetch_target(type_cible=type_cible, cible_id=cible_id)
 
         copro_id = me.copropriete_id
@@ -587,7 +636,6 @@ class RapprochementBancaire(models.Model):
         if t_amount is not None and d2(t_amount) != d2(me.releve_ligne.montant):
             raise ValidationError({"montant": "Montant cible ≠ montant ligne relevé (retarget strict)."})
 
-        # clash cible déjà utilisée ailleurs
         clash = (
             RapprochementBancaire.objects.select_for_update()
             .filter(copropriete_id=copro_id, type_cible=type_cible, cible_id=cible_id, is_cancelled=False)
@@ -596,7 +644,6 @@ class RapprochementBancaire(models.Model):
         if clash.exists():
             raise ValidationError({"cible_id": "Cette cible est déjà rapprochée par une autre ligne (active)."})
 
-        # audit
         me.retarget_count = int(me.retarget_count or 0) + 1
         me.previous_type_cible = (me.type_cible or "")[:30]
         me.previous_cible_id = int(me.cible_id) if me.cible_id is not None else None
@@ -604,7 +651,6 @@ class RapprochementBancaire(models.Model):
         me.retargeted_by = user
         me.retarget_reason = reason[:300]
 
-        # update
         me.type_cible = type_cible
         me.cible_id = int(cible_id)
         me.montant = me.releve_ligne.montant
@@ -633,9 +679,6 @@ class RapprochementBancaire(models.Model):
         me.apply_side_effects()
         return me
 
-    # -------------------------
-    # Factory (DB-safe + assisté)
-    # -------------------------
     @classmethod
     @transaction.atomic
     def create_from_line(
@@ -647,20 +690,9 @@ class RapprochementBancaire(models.Model):
         user,
         note: str = "",
         strict_amount: bool = True,
-        # ✅ CHOIX (1)
         allow_retarget: bool = False,
         retarget_reason: str = "",
     ) -> "RapprochementBancaire":
-        """
-        Option 2 (soft cancel):
-        - si rapprochement existe et actif => refuse (SAUF allow_retarget=True)
-        - si rapprochement existe mais annulé => on "réactive"
-        - sinon crée un nouveau
-
-        ✅ CHOIX (1) : allow_retarget=True
-        - autorise la correction d’un rapprochement ACTIF (sans cancel)
-        - on garde un audit (previous_*, retarget_* , retarget_count)
-        """
         releve_ligne = ReleveLigne.objects.select_for_update().get(pk=releve_ligne.pk)
 
         existing = cls.objects.select_for_update().filter(releve_ligne_id=releve_ligne.id).first()
@@ -697,7 +729,6 @@ class RapprochementBancaire(models.Model):
         if clash.exists():
             raise ValidationError({"cible_id": "Cette cible est déjà rapprochée par une autre ligne (active)."})
 
-        # 1) Réactivation si annulé
         if existing and existing.is_cancelled:
             existing.type_cible = type_cible
             existing.cible_id = int(cible_id)
@@ -729,9 +760,7 @@ class RapprochementBancaire(models.Model):
             existing.apply_side_effects()
             return existing
 
-        # 2) Retarget d’un rapprochement actif
         if existing and not existing.is_cancelled and allow_retarget:
-            # on délègue à la méthode centralisée
             return existing.retarget_to(
                 type_cible=type_cible,
                 cible_id=int(cible_id),
@@ -740,7 +769,6 @@ class RapprochementBancaire(models.Model):
                 note=(note or ""),
             )
 
-        # 3) Création
         rap = cls.objects.create(
             copropriete_id=copro_id,
             releve_ligne=releve_ligne,

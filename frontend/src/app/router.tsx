@@ -6,6 +6,9 @@ import ImportCsvPage from "../features/compta/ImportCsvPage";
 import ImportDetailPage from "../features/compta/ImportDetailPage";
 import RapproStatsPage from "../features/compta/RapproStatsPage";
 import ReleveLignes from "../pages/compta/ReleveLignes";
+import RHEmployes from "../pages/rh/RHEmployes";
+import RHContrats from "../pages/rh/RHContrats";
+import EmployeForm from "../pages/rh/EmployeForm";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -18,17 +21,19 @@ export const router = createBrowserRouter([
         children: [
           { path: "/", element: <ImportCsvPage /> },
 
-          // Import CSV
+          // COMPTA
           { path: "/compta/import", element: <ImportCsvPage /> },
-
-          // Détail import
           { path: "/compta/imports/:importId", element: <ImportDetailPage /> },
-
-          // ✅ Lignes importées
           { path: "/compta/imports/:importId/lignes", element: <ReleveLignes /> },
-
-          // Stats rapprochements
           { path: "/compta/stats", element: <RapproStatsPage /> },
+
+          // RH — Employés
+          { path: "/rh/employes", element: <RHEmployes /> },
+          { path: "/rh/employes/nouveau", element: <EmployeForm /> },
+          { path: "/rh/employes/:id/modifier", element: <EmployeForm /> },
+
+          // RH — Contrats
+          { path: "/rh/contrats", element: <RHContrats /> },
         ],
       },
     ],

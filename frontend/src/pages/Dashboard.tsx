@@ -1,5 +1,5 @@
 // src/pages/Dashboard.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { useAuthStore } from "../store/authStore";
@@ -8,9 +8,9 @@ type LoadState = "idle" | "loading" | "success" | "error";
 
 type MouvementItem = {
   id: number;
-  sens: string; // "CREDIT" | "DEBIT"
+  sens: string;
   montant: string | number;
-  date_operation: string; // YYYY-MM-DD
+  date_operation: string;
   reference?: string;
   libelle?: string;
   note?: string;
@@ -27,51 +27,42 @@ type SeriesPoint = {
 
 type DashboardStats = {
   totalDossiersTravaux: number | null;
-
-  // Billing
   appelsActifs: number | null;
   impayesEnCours: number | null;
   restantAppels: number | null;
-
-  // Compta
   soldeBancaire: number | null;
   totalCredit: number | null;
   totalDebit: number | null;
   nbNonRapproches: number | null;
-
-  // Series sparkline
   series: SeriesPoint[];
-
-  // Mouvements
   derniersMouvements: MouvementItem[];
 };
 
 const EMPTY_STATS: DashboardStats = {
   totalDossiersTravaux: null,
-
   appelsActifs: null,
   impayesEnCours: null,
   restantAppels: null,
-
   soldeBancaire: null,
   totalCredit: null,
   totalDebit: null,
   nbNonRapproches: null,
-
   series: [],
-
   derniersMouvements: [],
 };
 
-// ----------------- Helpers -----------------
-function toNumberOrNull(v: any): number | null {
-  if (v === null || v === undefined) return null;
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
-function asArray<T = any>(v: any): T[] {
-  return Array.isArray(v) ? v : [];
+function asArray<T = unknown>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
+function isPaginatedResponse<T = unknown>(v: unknown): v is { results: T[] } {
+  return Boolean(v && typeof v === "object" && Array.isArray((v as { results?: T[] }).results));
 }
 
 function formatMoneyFCFA(amount: number | null): string {
@@ -94,21 +85,30 @@ function formatInt(v: number | null): string {
 
 function formatDateShort(iso?: string): string {
   if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString("fr-FR");
+  }
   const s = String(iso);
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
-function getDetailError(e: any): string {
+function getDetailError(e: unknown): string {
+  const err = e as {
+    response?: { data?: { detail?: string; message?: string } };
+    message?: string;
+  };
+
   return (
-    e?.response?.data?.detail ||
-    e?.response?.data?.message ||
-    e?.message ||
-    "Erreur lors du chargement du tableau de bord."
+    err?.response?.data?.detail ||
+    err?.response?.data?.message ||
+    err?.message ||
+    "Une erreur est survenue lors du chargement du tableau de bord."
   );
 }
 
 function normalizeMontant(m: string | number | undefined): number | null {
-  if (m === undefined || m === null) return null;
+  if (m === undefined || m === null || m === "") return null;
   const n = Number(m);
   return Number.isFinite(n) ? n : null;
 }
@@ -117,22 +117,33 @@ function isAllNullOrZero(values: Array<number | null>) {
   return values.every((v) => v === null || v === 0);
 }
 
-// --- Sparkline helpers ---
+function truncateText(value?: string, max = 42) {
+  if (!value) return "";
+  const s = String(value).trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
 function pickSeriesValue(p: SeriesPoint): number | null {
-  // priorité: cumul_net, sinon net, sinon credit - debit
-  const c = toNumberOrNull((p as any)?.cumul_net);
-  if (c !== null) return c;
-  const n = toNumberOrNull((p as any)?.net);
-  if (n !== null) return n;
-  const credit = toNumberOrNull((p as any)?.credit);
-  const debit = toNumberOrNull((p as any)?.debit);
+  const cumul = toNumberOrNull(p?.cumul_net);
+  if (cumul !== null) return cumul;
+
+  const net = toNumberOrNull(p?.net);
+  if (net !== null) return net;
+
+  const credit = toNumberOrNull(p?.credit);
+  const debit = toNumberOrNull(p?.debit);
   if (credit !== null || debit !== null) return (credit ?? 0) - (debit ?? 0);
+
   return null;
 }
 
-function buildSparkPath(series: SeriesPoint[], width = 220, height = 44, pad = 4) {
+function buildSparkPath(series: SeriesPoint[], width = 260, height = 64, pad = 6) {
   const vals = series.map(pickSeriesValue).filter((v): v is number => v !== null);
-  if (vals.length < 2) return { d: "", y0: height - pad, min: 0, max: 0 };
+
+  if (vals.length < 2) {
+    return { d: "", y0: height - pad, min: 0, max: 0 };
+  }
 
   const min = Math.min(...vals);
   const max = Math.max(...vals);
@@ -143,7 +154,7 @@ function buildSparkPath(series: SeriesPoint[], width = 220, height = 44, pad = 4
 
   const points = vals.map((v, i) => {
     const x = pad + (i * usableW) / (vals.length - 1);
-    const y = pad + (1 - (v - min) / span) * usableH; // inversé (haut = max)
+    const y = pad + (1 - (v - min) / span) * usableH;
     return { x, y };
   });
 
@@ -151,7 +162,6 @@ function buildSparkPath(series: SeriesPoint[], width = 220, height = 44, pad = 4
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
     .join(" ");
 
-  // ligne baseline (0) si 0 est dans le range
   let y0 = height - pad;
   if (min <= 0 && max >= 0) {
     y0 = pad + (1 - (0 - min) / span) * usableH;
@@ -160,96 +170,272 @@ function buildSparkPath(series: SeriesPoint[], width = 220, height = 44, pad = 4
   return { d, y0, min, max };
 }
 
-// ----------------- UI -----------------
-function StatCard(props: { title: string; value: string; sub?: string; isLoading?: boolean }) {
+function PageShell({ children }: { children: ReactNode }) {
+  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+}
+
+function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <div
       style={{
-        border: "1px solid #e7e7e7",
-        borderRadius: 14,
-        padding: 16,
-        background: "#fff",
-        boxShadow: "0 1px 10px rgba(0,0,0,0.04)",
-        minHeight: 86,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
       }}
     >
-      <div style={{ fontSize: 13, color: "#555", marginBottom: 8 }}>{props.title}</div>
-      <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.2 }}>
-        {props.isLoading ? "…" : props.value}
+      <div>
+        <div
+          style={{
+            fontSize: 30,
+            fontWeight: 900,
+            letterSpacing: -0.6,
+            color: "#111827",
+            lineHeight: 1.1,
+          }}
+        >
+          {props.title}
+        </div>
+        {props.subtitle ? (
+          <div
+            style={{
+              fontSize: 14,
+              color: "#6b7280",
+              marginTop: 6,
+              lineHeight: 1.5,
+              maxWidth: 920,
+            }}
+          >
+            {props.subtitle}
+          </div>
+        ) : null}
       </div>
-      {props.sub ? <div style={{ marginTop: 6, fontSize: 12, color: "#777" }}>{props.sub}</div> : null}
+      {props.right ? <div>{props.right}</div> : null}
     </div>
   );
 }
 
-function Card(props: { title: string; children: any; right?: any }) {
-  return (
-    <div style={{ border: "1px solid #e7e7e7", borderRadius: 14, padding: 16, background: "#fff" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 900 }}>{props.title}</div>
-        {props.right ? props.right : null}
-      </div>
-      <div style={{ marginTop: 10 }}>{props.children}</div>
-    </div>
-  );
-}
+function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+  const tone =
+    props.kind === "error"
+      ? {
+          bg: "#fef2f2",
+          border: "#fecaca",
+          text: "#991b1b",
+        }
+      : {
+          bg: "#eff6ff",
+          border: "#bfdbfe",
+          text: "#1d4ed8",
+        };
 
-function AlertBox(props: { kind: "error" | "info"; children: any }) {
-  const bg = props.kind === "error" ? "#fff2f2" : "#f2f7ff";
-  const border = props.kind === "error" ? "#ffcccc" : "#cfe2ff";
-  const color = props.kind === "error" ? "#8a1f1f" : "#1f3a8a";
   return (
-    <div style={{ border: `1px solid ${border}`, background: bg, color, padding: 12, borderRadius: 12 }}>
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        background: tone.bg,
+        color: tone.text,
+        padding: 14,
+        borderRadius: 16,
+      }}
+    >
       {props.children}
     </div>
   );
 }
 
-function Badge(props: { text: string; kind: "credit" | "debit" | "neutral" }) {
-  const { text, kind } = props;
+function Card(props: { title: string; children: ReactNode; right?: ReactNode; minHeight?: number }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 20,
+        padding: 18,
+        background: "#ffffff",
+        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+        minHeight: props.minHeight,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+        {props.right ? props.right : null}
+      </div>
+      {props.children}
+    </div>
+  );
+}
+
+function StatCard(props: {
+  title: string;
+  value: string;
+  sub?: string;
+  isLoading?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 20,
+        padding: 18,
+        background: "#ffffff",
+        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+        minHeight: 112,
+      }}
+    >
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>
+        {props.title}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 900,
+          letterSpacing: -0.5,
+          color: "#111827",
+          lineHeight: 1.1,
+        }}
+      >
+        {props.isLoading ? "…" : props.value}
+      </div>
+      {props.sub ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
+          {props.sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Badge(props: { text: string; kind: "credit" | "debit" | "neutral" | "warning" }) {
   const styles =
-    kind === "credit"
+    props.kind === "credit"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
-      : kind === "debit"
-        ? { background: "#fff1f2", border: "#fecdd3", color: "#9f1239" }
-        : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+      : props.kind === "debit"
+        ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+        : props.kind === "warning"
+          ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
+          : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
 
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "2px 8px",
+        justifyContent: "center",
+        padding: "4px 10px",
         borderRadius: 999,
         fontSize: 12,
+        fontWeight: 700,
         border: `1px solid ${styles.border}`,
         background: styles.background,
         color: styles.color,
         whiteSpace: "nowrap",
       }}
     >
-      {text}
+      {props.text}
     </span>
   );
 }
 
-function SmallButton(props: { children: any; onClick?: () => void; disabled?: boolean }) {
+function SmallButton(props: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+}) {
   return (
     <button
+      type="button"
       onClick={props.onClick}
       disabled={props.disabled}
       style={{
-        border: "1px solid #e7e7e7",
-        background: props.disabled ? "#f7f7f7" : "#fff",
-        borderRadius: 10,
-        padding: "8px 10px",
+        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
+        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
+        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        borderRadius: 12,
+        padding: "9px 12px",
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
+        transition: "all 0.15s ease",
+        whiteSpace: "nowrap",
       }}
     >
       {props.children}
     </button>
+  );
+}
+
+function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div
+      style={{
+        border: "1px dashed #d1d5db",
+        borderRadius: 16,
+        padding: 18,
+        background: "#f9fafb",
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
+        {props.title}
+      </div>
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      {props.actionLabel && props.onAction ? (
+        <div style={{ marginTop: 12 }}>
+          <SmallButton onClick={props.onAction} primary>
+            {props.actionLabel}
+          </SmallButton>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function KeyValueMetric(props: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>{props.label}</div>
+      <div style={{ fontSize: 20, fontWeight: 900, color: "#111827", lineHeight: 1.2 }}>
+        {props.value}
+      </div>
+    </div>
+  );
+}
+
+function QuickActionCard(props: {
+  title: string;
+  text: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        padding: 16,
+        background: "#ffffff",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      <div>
+        <SmallButton onClick={props.onAction} primary>
+          {props.actionLabel}
+        </SmallButton>
+      </div>
+    </div>
   );
 }
 
@@ -262,14 +448,10 @@ export default function Dashboard() {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
-
-  // ✅ filtre de période
   const [seriesDays, setSeriesDays] = useState<number>(30);
 
-  // ✅ fetch seulement si authentifié + copro sélectionnée
   const canFetch = useMemo(() => Boolean(isAuthenticated && coproprieteId), [isAuthenticated, coproprieteId]);
 
-  // ✅ reset UI quand copro change
   useEffect(() => {
     setStats(EMPTY_STATS);
     setState("idle");
@@ -286,16 +468,11 @@ export default function Dashboard() {
       setError(null);
 
       try {
-        const travauxReq = api.get("/api/travaux/dossiers/stats/");
-        const billingReq = api.get("/api/billing/dashboard/");
-        const comptaReq = api.get(`/api/compta/mouvements/dashboard/?series_days=${seriesDays}`);
-        const lastMovesReq = api.get("/api/compta/mouvements/?ordering=-date_operation");
-
         const [travauxRes, billingRes, comptaRes, movesRes] = await Promise.all([
-          travauxReq,
-          billingReq,
-          comptaReq,
-          lastMovesReq,
+          api.get("/api/travaux/dossiers/stats/"),
+          api.get("/api/billing/dashboard/"),
+          api.get(`/api/compta/mouvements/dashboard/?series_days=${seriesDays}`),
+          api.get("/api/compta/mouvements/?ordering=-date_operation"),
         ]);
 
         if (!alive) return;
@@ -303,9 +480,12 @@ export default function Dashboard() {
         const travauxData = travauxRes?.data ?? {};
         const billingData = billingRes?.data ?? {};
         const comptaData = comptaRes?.data ?? {};
-        const movesList = asArray<MouvementItem>(movesRes?.data);
+        const movesData = movesRes?.data ?? {};
 
-        // ---- Travaux ----
+        const movesList = isPaginatedResponse<MouvementItem>(movesData)
+          ? asArray<MouvementItem>(movesData.results)
+          : asArray<MouvementItem>(movesData);
+
         const totalDossiersTravaux =
           toNumberOrNull(travauxData?.total_dossiers) ??
           toNumberOrNull(travauxData?.totaux?.total_dossiers) ??
@@ -313,7 +493,6 @@ export default function Dashboard() {
           toNumberOrNull(travauxData?.nb_dossiers) ??
           null;
 
-        // ---- Billing (structure réelle: billingData.lignes.*) ----
         const lignes = billingData?.lignes ?? {};
         const appelsActifs =
           toNumberOrNull(lignes?.nb) ??
@@ -321,15 +500,17 @@ export default function Dashboard() {
           toNumberOrNull(billingData?.totaux?.appels_actifs) ??
           null;
 
-        const impayesEnCours =
-          (Array.isArray(lignes?.impayes_top10) ? lignes.impayes_top10.length : null) ??
-          toNumberOrNull(billingData?.impayes_en_cours) ??
-          toNumberOrNull(billingData?.totaux?.impayes_en_cours) ??
+        const impayesEnCours = Array.isArray(lignes?.impayes_top10)
+          ? lignes.impayes_top10.length
+          : (toNumberOrNull(billingData?.impayes_en_cours) ??
+            toNumberOrNull(billingData?.totaux?.impayes_en_cours) ??
+            null);
+
+        const restantAppels =
+          toNumberOrNull(lignes?.restant) ??
+          toNumberOrNull(lignes?.reste_a_payer) ??
           null;
 
-        const restantAppels = toNumberOrNull(lignes?.restant) ?? toNumberOrNull(lignes?.reste_a_payer) ?? null;
-
-        // ---- Compta ----
         const soldeBancaire = toNumberOrNull(comptaData?.totaux?.solde) ?? null;
         const totalCredit = toNumberOrNull(comptaData?.totaux?.total_credit) ?? null;
         const totalDebit = toNumberOrNull(comptaData?.totaux?.total_debit) ?? null;
@@ -352,14 +533,15 @@ export default function Dashboard() {
         });
 
         setState("success");
-      } catch (e: any) {
+      } catch (e) {
         if (!alive) return;
         setState("error");
         setError(String(getDetailError(e)));
       }
     }
 
-    load();
+    void load();
+
     return () => {
       alive = false;
     };
@@ -369,232 +551,431 @@ export default function Dashboard() {
 
   if (!isAuthenticated) {
     return (
-      <div style={{ padding: 18 }}>
-        <AlertBox kind="info">Vous n’êtes pas connecté. Veuillez vous authentifier.</AlertBox>
-      </div>
+      <PageShell>
+        <AlertBox kind="info">
+          Vous n’êtes pas connecté. Veuillez vous authentifier pour accéder au tableau de bord.
+        </AlertBox>
+      </PageShell>
     );
   }
 
   if (!coproprieteId) {
     return (
-      <div style={{ padding: 18 }}>
-        <AlertBox kind="info">Aucune copropriété sélectionnée. Clique sur “Changer copro”.</AlertBox>
-      </div>
+      <PageShell>
+        <AlertBox kind="info">
+          Aucune copropriété n’est sélectionnée. Utilisez l’action « Changer de copropriété » pour afficher les indicateurs associés.
+        </AlertBox>
+      </PageShell>
     );
   }
 
-  const emptyCompta = isAllNullOrZero([stats.soldeBancaire, stats.totalCredit, stats.totalDebit, stats.nbNonRapproches]);
+  const emptyCompta = isAllNullOrZero([
+    stats.soldeBancaire,
+    stats.totalCredit,
+    stats.totalDebit,
+    stats.nbNonRapproches,
+  ]);
 
   const subImpayes =
-    stats.restantAppels !== null ? `Restant : ${formatMoneyFCFA(stats.restantAppels)}` : "Nb lots en impayé (top)";
+    stats.restantAppels !== null
+      ? `Montant restant dû : ${formatMoneyFCFA(stats.restantAppels)}`
+      : "Vue synthétique des impayés actuellement suivis.";
 
-  const spark = buildSparkPath(stats.series, 220, 44, 4);
+  const spark = buildSparkPath(stats.series, 260, 64, 6);
+  const hasSeries = Boolean(spark.d);
 
   return (
-    <div style={{ padding: 18 }}>
-      {/* Header */}
-      <div style={{ marginBottom: 14, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.2 }}>Tableau de bord</div>
-          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-            Données consolidées (Travaux, Billing, Compta). Copropriété active : <b>{coproprieteId}</b>
-          </div>
-        </div>
+    <PageShell>
+      <SectionTitle
+        title="Tableau de bord"
+        subtitle={`Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire et centralisée. Copropriété active : #${coproprieteId}.`}
+        right={
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>Période analysée</label>
+            <select
+              value={seriesDays}
+              onChange={(e) => setSeriesDays(Number(e.target.value))}
+              disabled={isLoading}
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 12,
+                fontWeight: 800,
+                background: "#fff",
+                color: "#111827",
+                minWidth: 120,
+              }}
+            >
+              <option value={30}>30 jours</option>
+              <option value={90}>90 jours</option>
+              <option value={180}>180 jours</option>
+            </select>
 
-        {/* Filter */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontSize: 12, color: "#666" }}>Période</div>
-          <select
-            value={seriesDays}
-            onChange={(e) => setSeriesDays(Number(e.target.value))}
-            style={{
-              border: "1px solid #e7e7e7",
-              borderRadius: 10,
-              padding: "8px 10px",
-              fontSize: 12,
-              fontWeight: 700,
-              background: "#fff",
-            }}
-          >
-            <option value={30}>30 jours</option>
-            <option value={90}>90 jours</option>
-            <option value={180}>180 jours</option>
-          </select>
-        </div>
-      </div>
+            <SmallButton onClick={() => navigate("/compta/stats")} disabled={isLoading}>
+              Voir les statistiques
+            </SmallButton>
+          </div>
+        }
+      />
 
       {state === "error" && error ? (
-        <div style={{ marginBottom: 12 }}>
-          <AlertBox kind="error">
-            <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-            <div style={{ fontSize: 13 }}>{error}</div>
-            <div style={{ fontSize: 12, marginTop: 8, color: "#6b7280" }}>
-              Vérifie : token OK + en-tête <b>X-Copropriete-Id</b> + endpoints backend.
-            </div>
-          </AlertBox>
-        </div>
+        <AlertBox kind="error">
+          <div style={{ fontWeight: 900, marginBottom: 4 }}>
+            Impossible de charger le tableau de bord
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>{error}</div>
+        </AlertBox>
       ) : null}
 
-      {/* Top stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
-        <StatCard
-          title="Dossiers Travaux"
-          value={formatInt(stats.totalDossiersTravaux)}
-          sub="Nombre total de dossiers (tous statuts)"
-          isLoading={isLoading}
-        />
-        <StatCard title="Appels actifs" value={formatInt(stats.appelsActifs)} sub="Nb lignes d’appel (période)" isLoading={isLoading} />
-        <StatCard title="Impayés en cours" value={formatInt(stats.impayesEnCours)} sub={subImpayes} isLoading={isLoading} />
+      <div className="dashboard-stat-grid">
         <StatCard
           title="Solde bancaire"
           value={formatMoneyFCFA(stats.soldeBancaire)}
-          sub={`Compta (série sur ${seriesDays} jours)`}
+          sub={`Situation comptable observée sur ${seriesDays} jours.`}
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Appels de fonds actifs"
+          value={formatInt(stats.appelsActifs)}
+          sub="Appels de fonds actuellement suivis."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Impayés en cours"
+          value={formatInt(stats.impayesEnCours)}
+          sub={subImpayes}
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Dossiers travaux"
+          value={formatInt(stats.totalDossiersTravaux)}
+          sub="Nombre total de dossiers travaux enregistrés."
           isLoading={isLoading}
         />
       </div>
 
-      {/* Bottom cards */}
-      <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="dashboard-main-grid">
         <Card
-          title="Compta — Total"
+          title="Pilotage comptable"
           right={
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {stats.nbNonRapproches !== null ? <Badge text={`Non rapprochés : ${stats.nbNonRapproches}`} kind="neutral" /> : null}
-              <SmallButton onClick={() => navigate("/compta/mouvements")}>Voir tout</SmallButton>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {stats.nbNonRapproches !== null ? (
+                <Badge
+                  text={`Non rapprochés : ${formatInt(stats.nbNonRapproches)}`}
+                  kind={stats.nbNonRapproches > 0 ? "warning" : "neutral"}
+                />
+              ) : null}
+              <SmallButton onClick={() => navigate("/compta/mouvements")} disabled={isLoading}>
+                Voir les mouvements
+              </SmallButton>
             </div>
           }
+          minHeight={260}
         >
           {isLoading ? (
-            <div style={{ color: "#666" }}>Chargement…</div>
+            <div style={{ color: "#6b7280", fontSize: 14 }}>
+              Chargement des indicateurs comptables…
+            </div>
           ) : emptyCompta ? (
-            <div style={{ color: "#666" }}>Aucun compte/mouvement trouvé pour cette copropriété. Importez un CSV pour alimenter la compta.</div>
+            <EmptyState
+              title="Aucune donnée comptable disponible"
+              text="Aucun compte ou mouvement bancaire n’a encore été trouvé pour cette copropriété. Importez un relevé bancaire pour commencer le suivi comptable."
+              actionLabel="Importer un relevé"
+              onAction={() => navigate("/compta/import")}
+            />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>Crédit total</div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>{formatMoneyFCFA(stats.totalCredit)}</div>
-                </div>
-                <div style={{ width: 1, background: "#eee", margin: "0 4px" }} />
-                <div>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>Débit total</div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>{formatMoneyFCFA(stats.totalDebit)}</div>
-                </div>
+            <div style={{ display: "grid", gap: 18 }}>
+              <div
+                className="dashboard-metrics-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <KeyValueMetric label="Crédits totaux" value={formatMoneyFCFA(stats.totalCredit)} />
+                <KeyValueMetric label="Débits totaux" value={formatMoneyFCFA(stats.totalDebit)} />
+                <KeyValueMetric label="Solde bancaire" value={formatMoneyFCFA(stats.soldeBancaire)} />
               </div>
 
-              {/* Sparkline */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>Tendance</div>
-                <svg width={220} height={44} style={{ display: "block" }}>
-                  {/* baseline */}
-                  <line x1="4" y1={spark.y0} x2="216" y2={spark.y0} stroke="#eee" strokeWidth="1" />
-                  {/* path */}
-                  {spark.d ? <path d={spark.d} fill="none" stroke="#111" strokeWidth="2" /> : null}
-                </svg>
+              <div
+                style={{
+                  borderTop: "1px solid #f1f5f9",
+                  paddingTop: 16,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    marginBottom: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#111827" }}>
+                    Tendance récente
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>{seriesDays} derniers jours</div>
+                </div>
+
+                {hasSeries ? (
+                  <div
+                    style={{
+                      border: "1px solid #f1f5f9",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "#fcfcfd",
+                    }}
+                  >
+                    <svg width="100%" height="70" viewBox="0 0 260 64" preserveAspectRatio="none">
+                      <line
+                        x1="6"
+                        y1={spark.y0}
+                        x2="254"
+                        y2={spark.y0}
+                        stroke="#e5e7eb"
+                        strokeWidth="1"
+                      />
+                      <path
+                        d={spark.d}
+                        fill="none"
+                        stroke="#111827"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>
+                    Les données disponibles sont encore insuffisantes pour afficher une tendance sur la période sélectionnée.
+                  </div>
+                )}
               </div>
             </div>
           )}
-
-          <div style={{ marginTop: 10, fontSize: 12, color: "#777" }}>
-            Source : <code>/api/compta/mouvements/dashboard/?series_days={seriesDays}</code> → <code>totaux</code> + <code>series</code>
-          </div>
         </Card>
 
         <Card
-          title="Derniers mouvements"
+          title="Activité bancaire récente"
           right={
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "#777" }}>Top 5</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <Badge text="5 derniers mouvements" kind="neutral" />
               <SmallButton onClick={() => navigate("/compta/mouvements")} disabled={isLoading}>
                 Voir tout
               </SmallButton>
             </div>
           }
+          minHeight={260}
         >
           {isLoading ? (
-            <div style={{ color: "#666" }}>Chargement…</div>
-          ) : stats.derniersMouvements.length === 0 ? (
-            <div style={{ color: "#666" }}>
-              Aucun mouvement à afficher. (Source : <code>/api/compta/mouvements/</code>)
+            <div style={{ color: "#6b7280", fontSize: 14 }}>
+              Chargement de l’activité récente…
             </div>
+          ) : stats.derniersMouvements.length === 0 ? (
+            <EmptyState
+              title="Aucune activité récente disponible"
+              text="Les derniers mouvements bancaires apparaîtront ici dès que des opérations auront été enregistrées."
+              actionLabel="Voir les imports"
+              onAction={() => navigate("/compta/imports")}
+            />
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gap: 10 }}>
               {stats.derniersMouvements.map((m) => {
                 const sens = String(m.sens || "").toUpperCase();
-                const kind = sens === "CREDIT" ? "credit" : sens === "DEBIT" ? "debit" : "neutral";
+                const kind: "credit" | "debit" | "neutral" =
+                  sens === "CREDIT" ? "credit" : sens === "DEBIT" ? "debit" : "neutral";
                 const montant = normalizeMontant(m.montant);
+                const titre = m.libelle || m.reference || "Mouvement bancaire";
 
                 return (
                   <div
                     key={m.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "92px 1fr auto",
-                      gap: 10,
+                      gridTemplateColumns: "96px 1fr auto",
+                      gap: 12,
                       alignItems: "center",
-                      padding: "10px 10px",
-                      border: "1px solid #f0f0f0",
-                      borderRadius: 12,
+                      padding: 12,
+                      border: "1px solid #eef2f7",
+                      borderRadius: 14,
+                      background: "#fff",
                     }}
                   >
-                    <div style={{ fontSize: 12, color: "#666" }}>{formatDateShort(m.date_operation)}</div>
-
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {m.libelle || m.reference || "Mouvement"}
-                      </div>
-                      {m.reference ? <div style={{ fontSize: 12, color: "#777" }}>{m.reference}</div> : null}
+                    <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>
+                      {formatDateShort(m.date_operation)}
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Badge text={sens || "—"} kind={kind as any} />
-                      <div style={{ fontSize: 13, fontWeight: 900 }}>{montant === null ? "—" : formatMoneyFCFA(montant)}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        title={titre}
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 900,
+                          color: "#111827",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {truncateText(titre, 38)}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          marginTop: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {m.reference ? (
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>
+                            {truncateText(m.reference, 28)}
+                          </span>
+                        ) : null}
+                        {m.is_rapproche === true ? <Badge text="Rapproché" kind="neutral" /> : null}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <Badge text={sens || "—"} kind={kind} />
+                      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+                        {montant === null ? "—" : formatMoneyFCFA(montant)}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
-
-          <div style={{ marginTop: 10, fontSize: 12, color: "#777" }}>
-            Source : <code>/api/compta/mouvements/?ordering=-date_operation</code>
-          </div>
         </Card>
       </div>
 
-      <div style={{ marginTop: 12 }}>
-        <Card title="Notes techniques">
-          <ul style={{ margin: 0, paddingLeft: 18, color: "#555", fontSize: 13, lineHeight: 1.5 }}>
-            <li>
-              Dashboard Compta : <code>/api/compta/mouvements/dashboard/?series_days=30/90/180</code> →{" "}
-              <code>totaux.solde</code>, <code>totaux.total_credit</code>, <code>totaux.total_debit</code>, <code>series</code>.
-            </li>
-            <li>
-              Derniers mouvements : <code>/api/compta/mouvements/?ordering=-date_operation</code> (liste directe).
-            </li>
-            <li>
-              Billing : <code>/api/billing/dashboard/</code> → <code>lignes.nb</code>, <code>lignes.impayes_top10</code>, <code>lignes.restant</code>.
-            </li>
-            <li>
-              401 = jeton absent/expiré ; 400 = <code>X-Copropriete-Id</code> manquant ; 404 = mauvais endpoint.
-            </li>
-          </ul>
-        </Card>
-      </div>
+      <Card title="Accès rapides" minHeight={120}>
+        <div className="dashboard-quick-grid">
+          <QuickActionCard
+            title="Importer un relevé"
+            text="Ajoutez un relevé bancaire pour traiter les lignes importées et lancer les rapprochements."
+            actionLabel="Importer un relevé"
+            onAction={() => navigate("/compta/import")}
+          />
+          <QuickActionCard
+            title="Consulter les imports bancaires"
+            text="Accédez à l’historique des imports bancaires et poursuivez le traitement des lignes."
+            actionLabel="Voir les imports"
+            onAction={() => navigate("/compta/imports")}
+          />
+          <QuickActionCard
+            title="Consulter les mouvements bancaires"
+            text="Suivez les mouvements bancaires enregistrés pour la copropriété active."
+            actionLabel="Voir les mouvements"
+            onAction={() => navigate("/compta/mouvements")}
+          />
+          <QuickActionCard
+            title="Voir les statistiques comptables"
+            text="Analysez les principaux indicateurs comptables et la situation bancaire globale."
+            actionLabel="Voir les statistiques"
+            onAction={() => navigate("/compta/stats")}
+          />
+          <QuickActionCard
+            title="Gérer les employés"
+            text="Accédez à la liste des employés rattachés à cette copropriété."
+            actionLabel="Voir les employés"
+            onAction={() => navigate("/rh/employes")}
+          />
+          <QuickActionCard
+            title="Gérer les contrats"
+            text="Consultez les contrats, leurs périodes d’activité et leur statut."
+            actionLabel="Voir les contrats"
+            onAction={() => navigate("/rh/contrats")}
+          />
+          <QuickActionCard
+            title="Gérer les dossiers travaux"
+            text="Suivez les dossiers travaux, leur budget, leur résolution liée et leur verrouillage."
+            actionLabel="Voir les dossiers"
+            onAction={() => navigate("/travaux/dossiers")}
+          />
+          <QuickActionCard
+            title="Gérer les fournisseurs"
+            text="Consultez les fournisseurs enregistrés dans le module Travaux et maintenez leurs fiches."
+            actionLabel="Voir les fournisseurs"
+            onAction={() => navigate("/travaux/fournisseurs")}
+          />
+        </div>
+      </Card>
 
-      {/* Responsive */}
       <style>{`
-        @media (max-width: 1100px) {
-          div[style*="grid-template-columns: repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        .dashboard-stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
         }
-        @media (max-width: 900px) {
-          div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+
+        .dashboard-main-grid {
+          display: grid;
+          grid-template-columns: 1.15fr 1fr;
+          gap: 14px;
         }
+
+        .dashboard-quick-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        @media (max-width: 1280px) {
+          .dashboard-quick-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 1200px) {
+          .dashboard-stat-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .dashboard-main-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .dashboard-quick-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 760px) {
+          .dashboard-stat-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .dashboard-metrics-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .dashboard-quick-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
         @media (max-width: 640px) {
-          div[style*="grid-template-columns: repeat(4"] { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+          .dashboard-main-grid > div,
+          .dashboard-stat-grid > div {
+            min-width: 0;
+          }
         }
-        code { background: #f6f6f6; padding: 1px 6px; border-radius: 8px; }
       `}</style>
-    </div>
+    </PageShell>
   );
 }

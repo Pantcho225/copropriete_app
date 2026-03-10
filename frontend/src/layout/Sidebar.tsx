@@ -1,20 +1,76 @@
-// src/layout/Sidebar.tsx
+import type { CSSProperties, ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 
-const linkBase: React.CSSProperties = {
-  display: "block",
-  padding: "10px 12px",
-  borderRadius: 10,
+const SIDEBAR_WIDTH = 276;
+
+const linkBase: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 14,
   textDecoration: "none",
-  color: "inherit",
+  color: "#374151",
+  transition:
+    "background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+  boxSizing: "border-box",
 };
 
-function SectionTitle(props: { children: any }) {
+function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <div style={{ marginTop: 12, fontSize: 12, opacity: 0.6, letterSpacing: 0.6 }}>
-      {props.children}
+    <div
+      style={{
+        marginTop: 18,
+        marginBottom: 8,
+        padding: "0 6px",
+        fontSize: 11,
+        fontWeight: 900,
+        opacity: 0.55,
+        letterSpacing: 1,
+        textTransform: "uppercase",
+        color: "#475569",
+      }}
+    >
+      {children}
     </div>
+  );
+}
+
+function SidebarLink(props: { to: string; children: ReactNode }) {
+  return (
+    <NavLink to={props.to} style={({ isActive }) => buildLinkStyle(isActive)}>
+      {props.children}
+    </NavLink>
+  );
+}
+
+function buildLinkStyle(isActive: boolean): CSSProperties {
+  return {
+    ...linkBase,
+    background: isActive
+      ? "linear-gradient(180deg, #eef2ff 0%, #e9edff 100%)"
+      : "transparent",
+    color: isActive ? "#111827" : "#374151",
+    fontWeight: isActive ? 800 : 700,
+    boxShadow: isActive
+      ? "inset 0 0 0 1px rgba(99, 102, 241, 0.14)"
+      : "none",
+  };
+}
+
+function Dot({ active = false }: { active?: boolean }) {
+  return (
+    <span
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: 999,
+        background: active ? "#4f46e5" : "#cbd5e1",
+        flexShrink: 0,
+      }}
+    />
   );
 }
 
@@ -33,106 +89,215 @@ export default function Sidebar() {
   return (
     <aside
       style={{
-        width: 260,
+        width: SIDEBAR_WIDTH,
+        minWidth: SIDEBAR_WIDTH,
         padding: 16,
-        borderRight: "1px solid #eee",
+        borderRight: "1px solid #e5e7eb",
         height: "100vh",
         position: "sticky",
         top: 0,
-        background: "#fff",
+        background: "rgba(255,255,255,0.92)",
+        backdropFilter: "blur(8px)",
         boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 16, fontWeight: 900 }}>Copropriété App</div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>Admin Panel</div>
+      <div
+        style={{
+          padding: "4px 4px 16px 4px",
+          borderBottom: "1px solid #eef2f7",
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              display: "grid",
+              placeItems: "center",
+              background: "linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%)",
+              border: "1px solid #c7d2fe",
+              color: "#3730a3",
+              fontWeight: 900,
+              fontSize: 15,
+              flexShrink: 0,
+            }}
+          >
+            C
+          </div>
 
-        {/* ✅ Copro active (aide beaucoup quand on change 7 ↔ 11) */}
-        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-          Copro active : <b>{coproprieteId ?? "—"}</b>
+          <div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 900,
+                color: "#111827",
+                lineHeight: 1.2,
+                letterSpacing: -0.3,
+              }}
+            >
+              Copropriété App
+            </div>
+
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 12,
+                color: "#6b7280",
+                fontWeight: 700,
+              }}
+            >
+              Plateforme de gestion de copropriété
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: "12px 13px",
+            borderRadius: 14,
+            background: "#f8fafc",
+            border: "1px solid #eef2f7",
+            fontSize: 12,
+            color: "#475569",
+          }}
+        >
+          <div
+            style={{
+              marginBottom: 5,
+              fontWeight: 800,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: 0.4,
+              fontSize: 11,
+            }}
+          >
+            Copropriété active
+          </div>
+
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 900,
+              color: "#111827",
+              lineHeight: 1.2,
+            }}
+          >
+            {coproprieteId ? `#${coproprieteId}` : "Aucune sélection"}
+          </div>
         </div>
       </div>
 
-      <nav style={{ display: "grid", gap: 6 }}>
-        <NavLink
-          to="/"
-          end
-          style={({ isActive }) => ({
-            ...linkBase,
-            background: isActive ? "#f3f4f6" : "transparent",
-            fontWeight: isActive ? 800 : 600,
-          })}
-        >
-          Dashboard
-        </NavLink>
+      <nav
+        aria-label="Navigation principale"
+        style={{
+          display: "grid",
+          gap: 4,
+          alignContent: "start",
+          flex: 1,
+          overflowY: "auto",
+          paddingRight: 2,
+        }}
+      >
+        <SidebarLink to="/">
+          <Dot active />
+          <span>Tableau de bord</span>
+        </SidebarLink>
 
-        <SectionTitle>COMPTA</SectionTitle>
+        <SectionTitle>Comptabilité</SectionTitle>
 
-        <NavLink
-          to="/compta/import"
-          style={({ isActive }) => ({
-            ...linkBase,
-            background: isActive ? "#f3f4f6" : "transparent",
-            fontWeight: isActive ? 800 : 600,
-          })}
-        >
-          Import CSV
-        </NavLink>
+        <SidebarLink to="/compta/import">
+          <Dot />
+          <span>Importer un relevé</span>
+        </SidebarLink>
 
-        <NavLink
-          to="/compta/imports"
-          style={({ isActive }) => ({
-            ...linkBase,
-            background: isActive ? "#f3f4f6" : "transparent",
-            fontWeight: isActive ? 800 : 600,
-          })}
-        >
-          Imports
-        </NavLink>
+        <SidebarLink to="/compta/imports">
+          <Dot />
+          <span>Imports bancaires</span>
+        </SidebarLink>
 
-        {/* ✅ NEW */}
-        <NavLink
-          to="/compta/mouvements"
-          style={({ isActive }) => ({
-            ...linkBase,
-            background: isActive ? "#f3f4f6" : "transparent",
-            fontWeight: isActive ? 800 : 600,
-          })}
-        >
-          Mouvements
-        </NavLink>
+        <SidebarLink to="/compta/mouvements">
+          <Dot />
+          <span>Mouvements bancaires</span>
+        </SidebarLink>
 
-        <NavLink
-          to="/compta/stats"
-          style={({ isActive }) => ({
-            ...linkBase,
-            background: isActive ? "#f3f4f6" : "transparent",
-            fontWeight: isActive ? 800 : 600,
-          })}
-        >
-          Stats
-        </NavLink>
+        <SidebarLink to="/compta/stats">
+          <Dot />
+          <span>Statistiques comptables</span>
+        </SidebarLink>
 
-        {/* ✅ Footer actions */}
-        <div style={{ marginTop: 16, borderTop: "1px solid #eee", paddingTop: 12 }}>
-          {isAuthenticated ? (
-            <button
-              onClick={doLogout}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #eee",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 900,
-              }}
-            >
-              Se déconnecter
-            </button>
-          ) : null}
-        </div>
+        <SectionTitle>Ressources humaines</SectionTitle>
+
+        <SidebarLink to="/rh/employes">
+          <Dot />
+          <span>Employés</span>
+        </SidebarLink>
+
+        <SidebarLink to="/rh/contrats">
+          <Dot />
+          <span>Contrats</span>
+        </SidebarLink>
+
+        <SectionTitle>Travaux</SectionTitle>
+
+        <SidebarLink to="/travaux/dossiers">
+          <Dot />
+          <span>Dossiers travaux</span>
+        </SidebarLink>
+
+        <SidebarLink to="/travaux/dossiers/nouveau">
+          <Dot />
+          <span>Nouveau dossier</span>
+        </SidebarLink>
+
+        <SidebarLink to="/travaux/fournisseurs">
+          <Dot />
+          <span>Fournisseurs</span>
+        </SidebarLink>
+
+        <SidebarLink to="/travaux/fournisseurs/nouveau">
+          <Dot />
+          <span>Nouveau fournisseur</span>
+        </SidebarLink>
       </nav>
+
+      <div
+        style={{
+          marginTop: 16,
+          paddingTop: 14,
+          borderTop: "1px solid #eef2f7",
+        }}
+      >
+        {isAuthenticated ? (
+          <button
+            onClick={doLogout}
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+              color: "#111827",
+              cursor: "pointer",
+              fontWeight: 800,
+              fontSize: 14,
+              transition: "all 0.2s ease",
+            }}
+          >
+            Se déconnecter
+          </button>
+        ) : null}
+      </div>
     </aside>
   );
 }
