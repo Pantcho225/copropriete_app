@@ -35,7 +35,6 @@
       border-radius: 6px;
     }
 
-    /* ===== Entête ===== */
     .header {
       border: 1px solid #ddd;
       border-radius: 6px;
@@ -61,6 +60,32 @@
       margin-top: 8px;
       padding-top: 8px;
       border-top: 1px dashed #ddd;
+    }
+
+    .sign-state-box {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      background: #fafafa;
+    }
+
+    .sign-state-box.ok {
+      background: #f0fff4;
+      border-color: #9ae6b4;
+      color: #166534;
+    }
+
+    .sign-state-box.warn {
+      background: #fffbeb;
+      border-color: #fcd34d;
+      color: #92400e;
+    }
+
+    .sign-state-box.neutral {
+      background: #f8fafc;
+      border-color: #dbeafe;
+      color: #334155;
     }
 
     table {
@@ -92,17 +117,18 @@
       border: 1px solid #ddd;
       font-weight: 700;
     }
+
     .pill.ok { border-color: #0a7a0a; color: #0a7a0a; }
     .pill.bad { border-color: #a00000; color: #a00000; }
+    .pill.info { border-color: #1d4ed8; color: #1d4ed8; }
+    .pill.warn { border-color: #92400e; color: #92400e; }
 
-    /* ===== Formule "Fait à ..." ===== */
     .fait {
       margin-top: 18px;
       text-align: right;
       font-size: 12px;
     }
 
-    /* ===== Signatures ===== */
     .signature { margin-top: 12px; }
 
     .sig-grid {
@@ -147,6 +173,12 @@
       margin-top: 6px;
     }
 
+    .digital-proof {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed #ddd;
+    }
+
     .page-break { page-break-before: always; }
   </style>
 </head>
@@ -158,7 +190,6 @@
     Généré le {{ generated_at|date:"d/m/Y H:i" }}
   </div>
 
-  <!-- ✅ Entête "pro" -->
   <div class="header">
     <div class="header-top">
       <div class="header-col">
@@ -172,13 +203,38 @@
     </div>
 
     <div class="pades-note muted small">
-      {% if pv_signed_at %}
-        Document signé numériquement (PAdES) le <strong>{{ pv_signed_at|date:"d/m/Y H:i" }}</strong>
-        {% if pv_signer_subject %} — Signataire : <strong>{{ pv_signer_subject }}</strong>{% endif %}
-      {% else %}
-        Document non signé numériquement (PAdES). La version signée fait foi après signature.
-      {% endif %}
+      {{ pv_signature_message }}
     </div>
+
+    <div class="sign-state-box neutral small">
+      <strong>Information documentaire :</strong>
+      ce procès-verbal peut faire l’objet d’une signature numérique (PAdES).
+      L’état réel de signature doit être vérifié dans le lecteur PDF
+      ou dans le registre documentaire de l’application.
+    </div>
+
+    {% if has_digital_signature %}
+      <div class="sign-state-box ok small" style="margin-top:8px;">
+        <div>
+          <strong>Signature enregistrée côté application :</strong> oui
+          {% if pv_locked %} — <strong>PV verrouillé</strong>{% endif %}
+        </div>
+        {% if pv_signed_at %}
+          <div style="margin-top:4px;">
+            <strong>Date de signature :</strong> {{ pv_signed_at|date:"d/m/Y H:i" }}
+          </div>
+        {% endif %}
+        {% if pv_signer_subject %}
+          <div style="margin-top:4px;">
+            <strong>Signataire numérique :</strong> {{ pv_signer_subject }}
+          </div>
+        {% endif %}
+      </div>
+    {% elif has_visual_signatures %}
+      <div class="sign-state-box warn small" style="margin-top:8px;">
+        <strong>Signatures visuelles :</strong> présentes, sans preuve PAdES active.
+      </div>
+    {% endif %}
   </div>
 
   <div class="box">
@@ -282,13 +338,11 @@
     </table>
   </div>
 
-  <!-- ✅ Formule finale -->
   <div class="fait">
     Fait à <strong>{{ ag.lieu|default:"-" }}</strong>,
     le <strong>{{ generated_at|date:"d/m/Y" }}</strong>.
   </div>
 
-  <!-- ===== SIGNATURES ===== -->
   <div class="signature">
     <div class="sig-grid">
       <h2 style="margin:0 0 6px 0;">Signatures</h2>
@@ -297,39 +351,61 @@
       </div>
 
       <div class="sig-row">
-        <!-- Président -->
         <div class="sig-col">
           <div class="sig-title">Président de séance</div>
           <div class="sig-name">Nom : <strong>{{ president_nom|default:"-" }}</strong></div>
           {% if signature_president_url %}
             <img class="sigimg" src="{{ signature_president_url }}" alt="Signature Président">
+          {% elif has_digital_signature %}
+            <div class="muted small">(Aucune image de signature fournie — document couvert par signature numérique)</div>
           {% else %}
             <div class="muted small">(Signature non fournie)</div>
           {% endif %}
         </div>
 
-        <!-- Secrétaire -->
         <div class="sig-col">
           <div class="sig-title">Secrétaire de séance</div>
           <div class="sig-name">Nom : <strong>{{ secretaire_nom|default:"-" }}</strong></div>
           {% if signature_secretaire_url %}
             <img class="sigimg" src="{{ signature_secretaire_url }}" alt="Signature Secrétaire">
+          {% elif has_digital_signature %}
+            <div class="muted small">(Aucune image de signature fournie — document couvert par signature numérique)</div>
           {% else %}
             <div class="muted small">(Signature non fournie)</div>
           {% endif %}
         </div>
       </div>
 
-      <!-- Cachet -->
       <div class="stamp">
         <div class="sig-title">Cachet / Tampon</div>
         {% if cachet_image_url %}
           <img src="{{ cachet_image_url }}" alt="Cachet">
+        {% elif has_digital_signature %}
+          <div class="muted small">(Cachet non fourni — authenticité garantie par la signature numérique)</div>
         {% else %}
           <div class="muted small">(Cachet non fourni)</div>
         {% endif %}
       </div>
 
+      {% if has_digital_signature %}
+        <div class="digital-proof">
+          <div class="sig-title">Preuve de signature numérique</div>
+          <div class="small">
+            <strong>Document signé numériquement (PAdES)</strong>
+            {% if pv_signed_at %} le {{ pv_signed_at|date:"d/m/Y H:i" }}{% endif %}.
+          </div>
+          {% if pv_signer_subject %}
+            <div class="small" style="margin-top:4px;">
+              <strong>Identité du signataire :</strong> {{ pv_signer_subject }}
+            </div>
+          {% endif %}
+          {% if pv_locked %}
+            <div class="small" style="margin-top:4px;">
+              <strong>Statut documentaire :</strong> PV verrouillé après signature.
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
   </div>
 

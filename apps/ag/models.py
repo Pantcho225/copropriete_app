@@ -1,4 +1,5 @@
-# apps/ag/models.py
+from __future__ import annotations
+
 from decimal import Decimal
 
 from django.conf import settings
@@ -38,9 +39,18 @@ class AssembleeGenerale(models.Model):
     date_ag = models.DateTimeField()
     lieu = models.CharField(max_length=255, blank=True)
 
+    # Catégorie officielle de référence pour quorum / présences / votes
+    tantieme_categorie = models.ForeignKey(
+        "lots.TantiemeCategorie",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assemblees_generales",
+    )
+
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default="BROUILLON")
 
-    # ✅ Phase 2.4 — clôture administrative (audit)
+    # Clôture administrative
     closed_at = models.DateTimeField(null=True, blank=True)
     closed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -53,32 +63,24 @@ class AssembleeGenerale(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # =========================
-    # ✅ Phase 2.2 — PV PDF : archivage + immutabilité
-    # =========================
+    # PV archive + immutabilité
     pv_pdf = models.FileField(upload_to="ag/pv/", null=True, blank=True)
-    pv_pdf_hash = models.CharField(max_length=64, blank=True, default="")  # sha256
+    pv_pdf_hash = models.CharField(max_length=64, blank=True, default="")
     pv_generated_at = models.DateTimeField(null=True, blank=True)
     pv_locked = models.BooleanField(default=False)
 
-    # =========================
-    # ✅ Phase 2.3 — Signature PAdES réelle (pyHanko)
-    # =========================
+    # Signature PAdES
     pv_signed_pdf = models.FileField(upload_to="ag/pv_signed/", null=True, blank=True)
-    pv_signed_hash = models.CharField(max_length=64, blank=True, default="")  # sha256 du PDF signé
+    pv_signed_hash = models.CharField(max_length=64, blank=True, default="")
     pv_signed_at = models.DateTimeField(null=True, blank=True)
-    pv_signer_subject = models.CharField(max_length=255, blank=True, default="")  # CN/Subject certificat
+    pv_signer_subject = models.CharField(max_length=255, blank=True, default="")
 
-    # =========================
-    # ✅ Phase 2.2 — Signatures visuelles (images)
-    # =========================
+    # Signatures visuelles
     president_nom = models.CharField(max_length=120, blank=True, default="")
     secretaire_nom = models.CharField(max_length=120, blank=True, default="")
 
     signature_president = models.ImageField(upload_to="ag/signatures/", null=True, blank=True)
     signature_secretaire = models.ImageField(upload_to="ag/signatures/", null=True, blank=True)
-
-    # Optionnel (cachet / tampon)
     cachet_image = models.ImageField(upload_to="ag/cachets/", null=True, blank=True)
 
     class Meta:
@@ -93,33 +95,32 @@ class AssembleeGenerale(models.Model):
         return f"AG {self.copropriete_id} - {self.date_ag.date()}"
 
     # -------------------------
-    # Helpers Phase 2.4
+    # Helpers généraux
     # -------------------------
     def is_closed(self) -> bool:
         return self.statut == "CLOTUREE"
 
     def is_immutable(self) -> bool:
-        # immutabilité "forte" : PV verrouillé OU AG clôturée
         return bool(self.pv_locked) or self.is_closed()
 
     def ensure_writable(self, *, reason: str = "AG") -> None:
-        """
-        Rempart métier central : empêche toute écriture si AG clôturée (Phase 2.4)
-        ou si PV verrouillé (Phase 2.2/2.3).
-        """
         if self.is_closed():
             raise ValidationError({"ag": f"{reason} clôturée : modification interdite."})
         if self.pv_locked:
             raise ValidationError({"ag": f"PV verrouillé : modification interdite ({reason})."})
 
     def clean(self):
-        # cohérence exercice/copro
-        if self.exercice_id:
-            if self.exercice and self.exercice.copropriete_id != self.copropriete_id:
+        super().clean()
+
+        if self.exercice_id and self.exercice:
+            if self.exercice.copropriete_id != self.copropriete_id:
                 raise ValidationError({"exercice": "L'exercice doit appartenir à la même copropriété."})
 
-        if self.statut == "CLOTUREE":
-            pass
+        if self.tantieme_categorie_id and self.tantieme_categorie:
+            if self.tantieme_categorie.copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {"tantieme_categorie": "La catégorie de tantièmes doit appartenir à la même copropriété."}
+                )
 
     def _get_db_instance(self):
         if not self.pk:
@@ -132,31 +133,18 @@ class AssembleeGenerale(models.Model):
 
     @staticmethod
     def _normalize_field_name(field_name: str) -> str:
-        """
-        ✅ Fix robuste : Django expose souvent les FK sous forme `xxx_id`.
-        On normalise `closed_by_id` -> `closed_by` pour matcher la whitelist.
-        """
-        if field_name.endswith("_id"):
-            return field_name[:-3]
-        return field_name
+        return field_name[:-3] if field_name.endswith("_id") else field_name
 
     def save(self, *args, **kwargs):
-        """
-        ✅ Immutabilité intelligente :
-        - Si pv_locked=True en base OU statut=CLOTUREE, on interdit les modifications,
-          sauf champs autorisés (signature + lock + clôture).
-        """
         db = self._get_db_instance()
 
         if db and (db.pv_locked or db.statut == "CLOTUREE"):
             allowed_when_locked_or_closed = {
-                # lock / signature (Phase 2.3)
                 "pv_locked",
                 "pv_signed_pdf",
                 "pv_signed_hash",
                 "pv_signed_at",
                 "pv_signer_subject",
-                # clôture (Phase 2.4)
                 "statut",
                 "closed_at",
                 "closed_by",
@@ -170,6 +158,7 @@ class AssembleeGenerale(models.Model):
                 "titre",
                 "date_ag",
                 "lieu",
+                "tantieme_categorie_id",
                 "statut",
                 "pv_pdf_hash",
                 "pv_generated_at",
@@ -198,7 +187,6 @@ class AssembleeGenerale(models.Model):
                 changed.add("cachet_image")
 
             normalized_changed = {self._normalize_field_name(c) for c in changed}
-
             forbidden = {c for c in normalized_changed if c not in allowed_when_locked_or_closed}
             if forbidden:
                 raise ValidationError(
@@ -209,10 +197,61 @@ class AssembleeGenerale(models.Model):
         super().save(*args, **kwargs)
 
     # -------------------------
-    # Phase 2.2 / 2.3 existants
+    # Helpers tantièmes
+    # -------------------------
+    def get_reference_tantieme_categorie_id(self):
+        return self.tantieme_categorie_id
+
+    def get_lot_tantiemes(self, lot_id: int, *, categorie_id: int | None = None) -> Decimal:
+        """
+        Retourne les tantièmes d’un lot pour la catégorie de référence.
+        Si aucune catégorie AG n’est définie, somme toutes les catégories du lot.
+        """
+        from apps.lots.models import LotTantieme
+
+        ref_cat_id = categorie_id if categorie_id is not None else self.get_reference_tantieme_categorie_id()
+
+        qs = LotTantieme.objects.filter(
+            lot_id=lot_id,
+            lot__copropriete_id=self.copropriete_id,
+        )
+
+        if ref_cat_id:
+            qs = qs.filter(categorie_id=ref_cat_id)
+
+        total = qs.aggregate(total=Sum("valeur")).get("total") or DEC0
+        return Decimal(str(total))
+
+    def total_tantiemes_copro(self) -> Decimal:
+        from apps.lots.models import LotTantieme
+
+        qs = LotTantieme.objects.filter(lot__copropriete_id=self.copropriete_id)
+        if self.tantieme_categorie_id:
+            qs = qs.filter(categorie_id=self.tantieme_categorie_id)
+
+        total = qs.aggregate(total=Sum("valeur")).get("total") or DEC0
+        return Decimal(str(total))
+
+    def total_tantiemes_presents(self) -> Decimal:
+        total = (
+            self.presences
+            .filter(present_ou_represente=True)
+            .aggregate(total=Sum("tantiemes"))
+            .get("total")
+        ) or DEC0
+        return Decimal(str(total))
+
+    def quorum_atteint(self, seuil_ratio: Decimal = Decimal("0.50")) -> bool:
+        total = self.total_tantiemes_copro()
+        if total <= 0:
+            return False
+        presents = self.total_tantiemes_presents()
+        return presents >= (total * seuil_ratio)
+
+    # -------------------------
+    # Helpers PV
     # -------------------------
     def lock_pv(self):
-        """Verrouille le PV (plus d’écrasement/régénération côté API)."""
         if not self.pv_pdf:
             raise ValidationError({"pv_pdf": "Impossible de verrouiller : PV non archivé."})
         if not self.pv_locked:
@@ -220,10 +259,6 @@ class AssembleeGenerale(models.Model):
             self.save(update_fields=["pv_locked"])
 
     def mark_signed(self, *, signed_pdf_file, signed_hash: str, signer_subject: str):
-        """
-        Helper pratique : après signature PAdES, enregistrer le PDF signé + hash + subject,
-        et verrouiller.
-        """
         self.pv_signed_pdf = signed_pdf_file
         self.pv_signed_hash = signed_hash
         self.pv_signer_subject = signer_subject or ""
@@ -240,7 +275,7 @@ class AssembleeGenerale(models.Model):
         )
 
     # -------------------------
-    # ✅ Phase 2.4 — clôture définitive
+    # Clôture définitive
     # -------------------------
     def can_be_closed(self) -> None:
         if self.statut == "ANNULEE":
@@ -261,51 +296,21 @@ class AssembleeGenerale(models.Model):
     def close(self, *, user=None) -> "AssembleeGenerale":
         if not self.pk:
             raise ValidationError({"ag": "Impossible de clôturer : AG non sauvegardée (pk manquant)."})
+
         with transaction.atomic():
             ag = AssembleeGenerale.objects.select_for_update().get(pk=self.pk)
 
             if ag.statut == "CLOTUREE":
-                return ag  # idempotent
+                return ag
 
             ag.can_be_closed()
 
             ag.statut = "CLOTUREE"
             ag.closed_at = timezone.now()
             ag.closed_by = user if user and getattr(user, "is_authenticated", False) else None
-
             ag.pv_locked = True
             ag.save(update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
             return ag
-
-    # -------------------------
-    # Quorum / tantièmes
-    # -------------------------
-    def total_tantiemes_copro(self) -> Decimal:
-        from apps.lots.models import LotTantieme
-
-        total = (
-            LotTantieme.objects
-            .filter(lot__copropriete_id=self.copropriete_id)
-            .aggregate(total=Sum("valeur"))
-            .get("total")
-        ) or DEC0
-        return Decimal(str(total))
-
-    def total_tantiemes_presents(self) -> Decimal:
-        total = (
-            self.presences
-            .filter(present_ou_represente=True)
-            .aggregate(total=Sum("tantiemes"))
-            .get("total")
-        ) or DEC0
-        return Decimal(str(total))
-
-    def quorum_atteint(self, seuil_ratio: Decimal = Decimal("0.50")) -> bool:
-        total = self.total_tantiemes_copro()
-        if total <= 0:
-            return False
-        presents = self.total_tantiemes_presents()
-        return presents >= (total * seuil_ratio)
 
 
 class PresenceLot(models.Model):
@@ -321,7 +326,6 @@ class PresenceLot(models.Model):
     )
 
     tantiemes = models.DecimalField(max_digits=12, decimal_places=4, default=DEC0)
-
     present_ou_represente = models.BooleanField(default=True)
     representant_nom = models.CharField(max_length=120, blank=True)
     commentaire = models.TextField(blank=True)
@@ -337,6 +341,8 @@ class PresenceLot(models.Model):
         return f"Presence AG={self.ag_id} lot={self.lot_id}"
 
     def clean(self):
+        super().clean()
+
         if self.lot_id and self.ag_id:
             if self.lot.copropriete_id != self.ag.copropriete_id:
                 raise ValidationError({"lot": "Le lot doit appartenir à la copropriété de l'AG."})
@@ -347,17 +353,17 @@ class PresenceLot(models.Model):
             if self.ag.pv_locked:
                 raise ValidationError({"ag": "PV verrouillé : modification des présences interdite."})
 
-    def save(self, *args, **kwargs):
-        if (self.tantiemes is None) or (Decimal(str(self.tantiemes)) <= 0):
-            from apps.lots.models import LotTantieme
+    def refresh_tantiemes(self):
+        """
+        Recalcule les tantièmes depuis la catégorie de référence de l’AG.
+        """
+        if self.ag_id and self.lot_id:
+            self.tantiemes = self.ag.get_lot_tantiemes(self.lot_id)
 
-            total = (
-                LotTantieme.objects
-                .filter(lot_id=self.lot_id)
-                .aggregate(total=Sum("valeur"))
-                .get("total")
-            ) or DEC0
-            self.tantiemes = total
+    def save(self, *args, **kwargs):
+        if self.ag_id and self.lot_id:
+            if self.tantiemes is None or Decimal(str(self.tantiemes)) <= 0:
+                self.refresh_tantiemes()
 
         self.full_clean()
         super().save(*args, **kwargs)
@@ -382,6 +388,8 @@ class Resolution(models.Model):
 
     type_majorite = models.CharField(max_length=20, choices=MAJORITE_CHOICES, default="SIMPLE")
 
+    # Catégorie spécifique de vote pour cette résolution
+    # Si vide -> fallback sur ag.tantieme_categorie
     tantieme_categorie = models.ForeignKey(
         "lots.TantiemeCategorie",
         on_delete=models.PROTECT,
@@ -420,24 +428,28 @@ class Resolution(models.Model):
         return f"Résolution {self.ag_id}-{self.ordre} {self.titre}"
 
     def clean(self):
-        # garde-fous AG immuable
+        super().clean()
+
         if self.ag_id:
             if self.ag.is_closed():
                 raise ValidationError({"ag": "AG clôturée : modification des résolutions interdite."})
             if self.ag.pv_locked:
                 raise ValidationError({"ag": "PV verrouillé : modification des résolutions interdite."})
 
-        # ✅ Phase 3.2 : cohérence si résolution liée à un dossier travaux
+        if self.tantieme_categorie_id and self.tantieme_categorie:
+            if self.tantieme_categorie.copropriete_id != self.ag.copropriete_id:
+                raise ValidationError(
+                    {"tantieme_categorie": "La catégorie de tantièmes doit appartenir à la même copropriété que l'AG."}
+                )
+
         if self.travaux_dossier_id:
             dossier = self.travaux_dossier
 
-            # périmètre copro obligatoire
             if dossier and str(dossier.copropriete_id) != str(self.ag.copropriete_id):
                 raise ValidationError(
                     {"travaux_dossier": "Le dossier travaux doit appartenir à la même copropriété que l'AG."}
                 )
 
-            # workflow:
             dossier_statut = getattr(dossier, "statut", None) if dossier else None
             if not self.cloturee:
                 if dossier and dossier_statut != "SOUMIS_AG":
@@ -445,7 +457,6 @@ class Resolution(models.Model):
                         {"travaux_dossier": "Le dossier travaux doit être SOUMIS_AG avant d’être lié à une résolution."}
                     )
 
-            # synchronisation logique
             if dossier and getattr(dossier, "resolution_validation_id", None) and self.pk:
                 if int(dossier.resolution_validation_id) != int(self.pk):
                     raise ValidationError(
@@ -457,13 +468,10 @@ class Resolution(models.Model):
             return None
         return Resolution.objects.filter(pk=self.pk).first()
 
+    def get_reference_tantieme_categorie_id(self):
+        return self.tantieme_categorie_id or self.ag.tantieme_categorie_id
+
     def save(self, *args, **kwargs):
-        """
-        ✅ Stabilisation liaison Resolution ↔ DossierTravaux:
-        - full_clean() systématique
-        - synchronisation transactionnelle avec DossierTravaux.resolution_validation (OneToOne)
-          via QuerySet.update() (évite d'appeler DossierTravaux.save() et ses full_clean()).
-        """
         db = self._get_db_instance()
         prev_travaux_dossier_id = getattr(db, "travaux_dossier_id", None) if db else None
 
@@ -473,7 +481,7 @@ class Resolution(models.Model):
             super().save(*args, **kwargs)
 
             if self.travaux_dossier_id:
-                from apps.travaux.models import DossierTravaux  # import local
+                from apps.travaux.models import DossierTravaux
 
                 dossier = DossierTravaux.objects.select_for_update().filter(pk=self.travaux_dossier_id).first()
                 if not dossier:
@@ -493,7 +501,7 @@ class Resolution(models.Model):
                     DossierTravaux.objects.filter(pk=dossier.pk).update(resolution_validation_id=self.pk)
 
             if prev_travaux_dossier_id and not self.travaux_dossier_id:
-                from apps.travaux.models import DossierTravaux  # import local
+                from apps.travaux.models import DossierTravaux
 
                 dossier_prev = DossierTravaux.objects.select_for_update().filter(pk=prev_travaux_dossier_id).first()
                 if dossier_prev and dossier_prev.resolution_validation_id == self.pk:
@@ -523,12 +531,19 @@ class Vote(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("resolution", "lot", "choix")
+        # Un lot = un seul vote par résolution
+        unique_together = ("resolution", "lot")
         indexes = [
             models.Index(fields=["resolution", "choix"]),
+            models.Index(fields=["lot"]),
         ]
 
+    def __str__(self):
+        return f"Vote res={self.resolution_id} lot={self.lot_id} choix={self.choix}"
+
     def clean(self):
+        super().clean()
+
         if self.resolution_id and self.resolution.cloturee:
             raise ValidationError({"resolution": "Cette résolution est clôturée. Aucun vote n'est accepté."})
 
@@ -543,8 +558,6 @@ class Vote(models.Model):
             if self.lot.copropriete_id != self.resolution.ag.copropriete_id:
                 raise ValidationError({"lot": "Le lot doit appartenir à la copropriété de l'AG."})
 
-        # ✅ Bloc remplacé (tests friendly + prod safe) :
-        # On applique la règle "lot présent/représenté" SEULEMENT si l'AG a des présences initialisées.
         if self.resolution_id and self.lot_id:
             has_presences = PresenceLot.objects.filter(ag_id=self.resolution.ag_id).exists()
             if has_presences:
@@ -556,17 +569,18 @@ class Vote(models.Model):
                 if not ok:
                     raise ValidationError({"lot": "Ce lot n'est pas présent/représenté pour cette AG."})
 
+    def refresh_tantiemes(self):
+        if self.resolution_id and self.lot_id:
+            ref_cat_id = self.resolution.get_reference_tantieme_categorie_id()
+            self.tantiemes = self.resolution.ag.get_lot_tantiemes(
+                self.lot_id,
+                categorie_id=ref_cat_id,
+            )
+
     def save(self, *args, **kwargs):
-        if (self.tantiemes is None) or (Decimal(str(self.tantiemes)) <= 0):
-            from apps.lots.models import LotTantieme
-
-            cat = self.resolution.tantieme_categorie_id
-            qs = LotTantieme.objects.filter(lot_id=self.lot_id)
-            if cat:
-                qs = qs.filter(categorie_id=cat)
-
-            total = qs.aggregate(total=Sum("valeur")).get("total") or DEC0
-            self.tantiemes = total
+        if self.resolution_id and self.lot_id:
+            if self.tantiemes is None or Decimal(str(self.tantiemes)) <= 0:
+                self.refresh_tantiemes()
 
         with transaction.atomic():
             self.full_clean()

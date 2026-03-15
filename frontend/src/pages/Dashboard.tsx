@@ -1,10 +1,10 @@
-// src/pages/Dashboard.tsx
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { useAuthStore } from "../store/authStore";
 
 type LoadState = "idle" | "loading" | "success" | "error";
+type AGStatus = "BROUILLON" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE";
 
 type MouvementItem = {
   id: number;
@@ -25,6 +25,12 @@ type SeriesPoint = {
   cumul_net?: number;
 };
 
+type AGDashboardItem = {
+  id: number;
+  statut: AGStatus;
+  pv_genere?: boolean;
+};
+
 type DashboardStats = {
   totalDossiersTravaux: number | null;
   appelsActifs: number | null;
@@ -36,6 +42,12 @@ type DashboardStats = {
   nbNonRapproches: number | null;
   series: SeriesPoint[];
   derniersMouvements: MouvementItem[];
+
+  // AG
+  totalAG: number | null;
+  agOuvertes: number | null;
+  agPvsGeneres: number | null;
+  firstAgId: number | null;
 };
 
 const EMPTY_STATS: DashboardStats = {
@@ -49,7 +61,34 @@ const EMPTY_STATS: DashboardStats = {
   nbNonRapproches: null,
   series: [],
   derniersMouvements: [],
+
+  totalAG: null,
+  agOuvertes: null,
+  agPvsGeneres: null,
+  firstAgId: null,
 };
+
+const DASHBOARD_ROUTES = {
+  comptaImport: "/compta/import",
+  comptaImports: "/compta/imports",
+  comptaMouvements: "/compta/mouvements",
+  comptaStats: "/compta/stats",
+
+  rhEmployes: "/rh/employes",
+  rhContrats: "/rh/contrats",
+
+  travauxDossiers: "/travaux/dossiers",
+  travauxFournisseurs: "/travaux/fournisseurs",
+
+  agHome: "/ag",
+  agList: "/ag/assemblees",
+  agResolutions: "/ag/resolutions",
+
+  billing: "/billing",
+  platformAdmin: "/platform-admin",
+};
+
+const AG_ENDPOINT_CANDIDATES = ["/api/ag/ags/", "/api/ag/ags"];
 
 function toNumberOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -57,12 +96,27 @@ function toNumberOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function asArray<T = unknown>(v: unknown): T[] {
-  return Array.isArray(v) ? (v as T[]) : [];
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v && typeof v === "object" && !Array.isArray(v));
 }
 
 function isPaginatedResponse<T = unknown>(v: unknown): v is { results: T[] } {
   return Boolean(v && typeof v === "object" && Array.isArray((v as { results?: T[] }).results));
+}
+
+function extractRows<T = unknown>(v: unknown): T[] {
+  if (Array.isArray(v)) return v as T[];
+
+  if (isPaginatedResponse<T>(v)) return v.results;
+
+  if (isRecord(v)) {
+    const candidates = [v.results, v.items, v.data];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate as T[];
+    }
+  }
+
+  return [];
 }
 
 function formatMoneyFCFA(amount: number | null): string {
@@ -136,6 +190,65 @@ function pickSeriesValue(p: SeriesPoint): number | null {
   if (credit !== null || debit !== null) return (credit ?? 0) - (debit ?? 0);
 
   return null;
+}
+
+function normalizeAGStatus(value: unknown): AGStatus {
+  const s = String(value ?? "").trim().toUpperCase();
+
+  if (["OUVERTE", "OPEN", "ACTIVE", "ACTIF", "EN_COURS"].includes(s)) return "OUVERTE";
+  if (["CLOTUREE", "CLOTURE", "CLOSED", "TERMINEE", "TERMINÉE"].includes(s)) return "CLOTUREE";
+  if (["ARCHIVEE", "ARCHIVÉE", "ARCHIVE", "ARCHIVED"].includes(s)) return "ARCHIVEE";
+  return "BROUILLON";
+}
+
+function toBooleanOrNull(value: unknown): boolean | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+
+  if (typeof value === "string") {
+    const s = value.trim().toLowerCase();
+
+    if (["true", "1", "oui", "yes", "ok", "genere", "généré", "disponible"].includes(s)) {
+      return true;
+    }
+
+    if (["false", "0", "non", "no", "non_genere", "non généré", "non genere", "indisponible"].includes(s)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+function hasTruthyValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function normalizeAGDashboardItem(raw: unknown, index: number): AGDashboardItem {
+  const row = isRecord(raw) ? raw : {};
+
+  const pvGenere =
+    toBooleanOrNull(row.pv_genere) ??
+    toBooleanOrNull(row.pv_archive) ??
+    toBooleanOrNull(row.pv_disponible) ??
+    (hasTruthyValue(row.pv_signed_pdf) ? true : null) ??
+    false;
+
+  return {
+    id:
+      toNumberOrNull(row.id) ??
+      toNumberOrNull(row.ag_id) ??
+      toNumberOrNull(row.pk) ??
+      index + 1,
+    statut: normalizeAGStatus(row.statut ?? row.status ?? row.etat),
+    pv_genere: pvGenere,
+  };
 }
 
 function buildSparkPath(series: SeriesPoint[], width = 260, height = 64, pad = 6) {
@@ -315,15 +428,17 @@ function StatCard(props: {
   );
 }
 
-function Badge(props: { text: string; kind: "credit" | "debit" | "neutral" | "warning" }) {
+function Badge(props: { text: string; kind: "credit" | "debit" | "neutral" | "warning" | "success" | "info" }) {
   const styles =
-    props.kind === "credit"
+    props.kind === "credit" || props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
       : props.kind === "debit"
         ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
         : props.kind === "warning"
           ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
-          : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+          : props.kind === "info"
+            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
+            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
 
   return (
     <span
@@ -416,6 +531,8 @@ function QuickActionCard(props: {
   text: string;
   actionLabel: string;
   onAction: () => void;
+  disabled?: boolean;
+  badge?: ReactNode;
 }) {
   return (
     <div
@@ -428,10 +545,13 @@ function QuickActionCard(props: {
         gap: 10,
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+        {props.badge ?? null}
+      </div>
       <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
       <div>
-        <SmallButton onClick={props.onAction} primary>
+        <SmallButton onClick={props.onAction} primary disabled={props.disabled}>
           {props.actionLabel}
         </SmallButton>
       </div>
@@ -468,11 +588,22 @@ export default function Dashboard() {
       setError(null);
 
       try {
-        const [travauxRes, billingRes, comptaRes, movesRes] = await Promise.all([
+        const [travauxRes, billingRes, comptaRes, movesRes, agRes] = await Promise.all([
           api.get("/api/travaux/dossiers/stats/"),
           api.get("/api/billing/dashboard/"),
           api.get(`/api/compta/mouvements/dashboard/?series_days=${seriesDays}`),
           api.get("/api/compta/mouvements/?ordering=-date_operation"),
+          (async () => {
+            let lastError: unknown = null;
+            for (const endpoint of AG_ENDPOINT_CANDIDATES) {
+              try {
+                return await api.get(endpoint);
+              } catch (e) {
+                lastError = e;
+              }
+            }
+            throw lastError ?? new Error("Impossible de charger les assemblées.");
+          })(),
         ]);
 
         if (!alive) return;
@@ -481,10 +612,12 @@ export default function Dashboard() {
         const billingData = billingRes?.data ?? {};
         const comptaData = comptaRes?.data ?? {};
         const movesData = movesRes?.data ?? {};
+        const agData = agRes?.data ?? {};
 
-        const movesList = isPaginatedResponse<MouvementItem>(movesData)
-          ? asArray<MouvementItem>(movesData.results)
-          : asArray<MouvementItem>(movesData);
+        const movesList = extractRows<MouvementItem>(movesData);
+        const agList = extractRows<Record<string, unknown>>(agData)
+          .map(normalizeAGDashboardItem)
+          .filter((item) => item.id > 0);
 
         const totalDossiersTravaux =
           toNumberOrNull(travauxData?.total_dossiers) ??
@@ -516,8 +649,13 @@ export default function Dashboard() {
         const totalDebit = toNumberOrNull(comptaData?.totaux?.total_debit) ?? null;
         const nbNonRapproches = toNumberOrNull(comptaData?.totaux?.nb_non_rapproches) ?? null;
 
-        const series = asArray<SeriesPoint>(comptaData?.series);
+        const series = extractRows<SeriesPoint>(comptaData?.series);
         const derniersMouvements = movesList.slice(0, 5);
+
+        const totalAG = agList.length;
+        const agOuvertes = agList.filter((x) => x.statut === "OUVERTE").length;
+        const agPvsGeneres = agList.filter((x) => x.pv_genere).length;
+        const firstAgId = agList.length > 0 ? agList[0].id : null;
 
         setStats({
           totalDossiersTravaux,
@@ -530,6 +668,11 @@ export default function Dashboard() {
           nbNonRapproches,
           series,
           derniersMouvements,
+
+          totalAG,
+          agOuvertes,
+          agPvsGeneres,
+          firstAgId,
         });
 
         setState("success");
@@ -583,12 +726,13 @@ export default function Dashboard() {
 
   const spark = buildSparkPath(stats.series, 260, 64, 6);
   const hasSeries = Boolean(spark.d);
+  const hasAnyAg = stats.firstAgId !== null;
 
   return (
     <PageShell>
       <SectionTitle
         title="Tableau de bord"
-        subtitle={`Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire et centralisée. Copropriété active : #${coproprieteId}.`}
+        subtitle={`Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire, centralisée et orientée produit. Copropriété active : #${coproprieteId}.`}
         right={
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <label style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>Période analysée</label>
@@ -612,7 +756,7 @@ export default function Dashboard() {
               <option value={180}>180 jours</option>
             </select>
 
-            <SmallButton onClick={() => navigate("/compta/stats")} disabled={isLoading}>
+            <SmallButton onClick={() => navigate(DASHBOARD_ROUTES.comptaStats)} disabled={isLoading}>
               Voir les statistiques
             </SmallButton>
           </div>
@@ -638,7 +782,7 @@ export default function Dashboard() {
         <StatCard
           title="Appels de fonds actifs"
           value={formatInt(stats.appelsActifs)}
-          sub="Appels de fonds actuellement suivis."
+          sub="Indicateur issu du module Facturation."
           isLoading={isLoading}
         />
         <StatCard
@@ -666,7 +810,7 @@ export default function Dashboard() {
                   kind={stats.nbNonRapproches > 0 ? "warning" : "neutral"}
                 />
               ) : null}
-              <SmallButton onClick={() => navigate("/compta/mouvements")} disabled={isLoading}>
+              <SmallButton onClick={() => navigate(DASHBOARD_ROUTES.comptaMouvements)} disabled={isLoading}>
                 Voir les mouvements
               </SmallButton>
             </div>
@@ -682,7 +826,7 @@ export default function Dashboard() {
               title="Aucune donnée comptable disponible"
               text="Aucun compte ou mouvement bancaire n’a encore été trouvé pour cette copropriété. Importez un relevé bancaire pour commencer le suivi comptable."
               actionLabel="Importer un relevé"
-              onAction={() => navigate("/compta/import")}
+              onAction={() => navigate(DASHBOARD_ROUTES.comptaImport)}
             />
           ) : (
             <div style={{ display: "grid", gap: 18 }}>
@@ -763,7 +907,7 @@ export default function Dashboard() {
           right={
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <Badge text="5 derniers mouvements" kind="neutral" />
-              <SmallButton onClick={() => navigate("/compta/mouvements")} disabled={isLoading}>
+              <SmallButton onClick={() => navigate(DASHBOARD_ROUTES.comptaMouvements)} disabled={isLoading}>
                 Voir tout
               </SmallButton>
             </div>
@@ -779,7 +923,7 @@ export default function Dashboard() {
               title="Aucune activité récente disponible"
               text="Les derniers mouvements bancaires apparaîtront ici dès que des opérations auront été enregistrées."
               actionLabel="Voir les imports"
-              onAction={() => navigate("/compta/imports")}
+              onAction={() => navigate(DASHBOARD_ROUTES.comptaImports)}
             />
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
@@ -863,58 +1007,160 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      <Card
+        title="Assemblées générales"
+        right={
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {stats.totalAG !== null ? (
+              <Badge text={`AG : ${formatInt(stats.totalAG)}`} kind="info" />
+            ) : null}
+            <SmallButton onClick={() => navigate(DASHBOARD_ROUTES.agList)} disabled={isLoading}>
+              Voir la liste AG
+            </SmallButton>
+          </div>
+        }
+        minHeight={180}
+      >
+        {isLoading ? (
+          <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des indicateurs AG…</div>
+        ) : stats.totalAG === null || stats.totalAG === 0 ? (
+          <EmptyState
+            title="Aucune assemblée générale disponible"
+            text="Le module AG est accessible, mais aucune assemblée n’a encore été trouvée pour cette copropriété."
+            actionLabel="Ouvrir le module AG"
+            onAction={() => navigate(DASHBOARD_ROUTES.agHome)}
+          />
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 14,
+            }}
+            className="dashboard-ag-grid"
+          >
+            <KeyValueMetric label="Assemblées totales" value={formatInt(stats.totalAG)} />
+            <KeyValueMetric label="Assemblées ouvertes" value={formatInt(stats.agOuvertes)} />
+            <KeyValueMetric label="PV générés" value={formatInt(stats.agPvsGeneres)} />
+          </div>
+        )}
+      </Card>
+
       <Card title="Accès rapides" minHeight={120}>
         <div className="dashboard-quick-grid">
           <QuickActionCard
             title="Importer un relevé"
             text="Ajoutez un relevé bancaire pour traiter les lignes importées et lancer les rapprochements."
             actionLabel="Importer un relevé"
-            onAction={() => navigate("/compta/import")}
+            onAction={() => navigate(DASHBOARD_ROUTES.comptaImport)}
           />
           <QuickActionCard
             title="Consulter les imports bancaires"
             text="Accédez à l’historique des imports bancaires et poursuivez le traitement des lignes."
             actionLabel="Voir les imports"
-            onAction={() => navigate("/compta/imports")}
+            onAction={() => navigate(DASHBOARD_ROUTES.comptaImports)}
           />
           <QuickActionCard
             title="Consulter les mouvements bancaires"
             text="Suivez les mouvements bancaires enregistrés pour la copropriété active."
             actionLabel="Voir les mouvements"
-            onAction={() => navigate("/compta/mouvements")}
+            onAction={() => navigate(DASHBOARD_ROUTES.comptaMouvements)}
           />
           <QuickActionCard
             title="Voir les statistiques comptables"
             text="Analysez les principaux indicateurs comptables et la situation bancaire globale."
             actionLabel="Voir les statistiques"
-            onAction={() => navigate("/compta/stats")}
+            onAction={() => navigate(DASHBOARD_ROUTES.comptaStats)}
           />
           <QuickActionCard
             title="Gérer les employés"
             text="Accédez à la liste des employés rattachés à cette copropriété."
             actionLabel="Voir les employés"
-            onAction={() => navigate("/rh/employes")}
+            onAction={() => navigate(DASHBOARD_ROUTES.rhEmployes)}
           />
           <QuickActionCard
             title="Gérer les contrats"
             text="Consultez les contrats, leurs périodes d’activité et leur statut."
             actionLabel="Voir les contrats"
-            onAction={() => navigate("/rh/contrats")}
+            onAction={() => navigate(DASHBOARD_ROUTES.rhContrats)}
           />
           <QuickActionCard
             title="Gérer les dossiers travaux"
             text="Suivez les dossiers travaux, leur budget, leur résolution liée et leur verrouillage."
             actionLabel="Voir les dossiers"
-            onAction={() => navigate("/travaux/dossiers")}
+            onAction={() => navigate(DASHBOARD_ROUTES.travauxDossiers)}
           />
           <QuickActionCard
             title="Gérer les fournisseurs"
             text="Consultez les fournisseurs enregistrés dans le module Travaux et maintenez leurs fiches."
             actionLabel="Voir les fournisseurs"
-            onAction={() => navigate("/travaux/fournisseurs")}
+            onAction={() => navigate(DASHBOARD_ROUTES.travauxFournisseurs)}
+          />
+          <QuickActionCard
+            title="Module AG"
+            text="Accédez à l’espace Assemblées générales pour suivre le cycle complet AG."
+            actionLabel="Ouvrir AG"
+            onAction={() => navigate(DASHBOARD_ROUTES.agHome)}
+            badge={<Badge text="Visible" kind="success" />}
+          />
+          <QuickActionCard
+            title="Liste des AG"
+            text="Consultez directement la liste des assemblées générales disponibles."
+            actionLabel="Voir les AG"
+            onAction={() => navigate(DASHBOARD_ROUTES.agList)}
+          />
+          <QuickActionCard
+            title="Résolutions AG"
+            text="Suivez les résolutions liées aux assemblées et leur statut métier."
+            actionLabel="Voir les résolutions"
+            onAction={() => navigate(DASHBOARD_ROUTES.agResolutions)}
+          />
+          <QuickActionCard
+            title="Présences AG"
+            text="Accédez directement aux présences de la première AG disponible."
+            actionLabel="Voir les présences"
+            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}/presences`)}
+            disabled={!hasAnyAg}
+            badge={<Badge text={hasAnyAg ? "Visible" : "Aucune AG"} kind={hasAnyAg ? "success" : "warning"} />}
+          />
+          <QuickActionCard
+            title="Votes AG"
+            text="Accédez directement aux votes de la première AG disponible."
+            actionLabel="Voir les votes"
+            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}/votes`)}
+            disabled={!hasAnyAg}
+            badge={<Badge text={hasAnyAg ? "Visible" : "Aucune AG"} kind={hasAnyAg ? "success" : "warning"} />}
+          />
+          <QuickActionCard
+            title="Détail AG"
+            text="Ouvrez une AG disponible pour accéder au quorum, au PV, aux présences et aux votes."
+            actionLabel="Ouvrir le détail"
+            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}`)}
+            disabled={!hasAnyAg}
+            badge={<Badge text={hasAnyAg ? "Recommandé" : "Aucune AG"} kind={hasAnyAg ? "info" : "warning"} />}
+          />
+          <QuickActionCard
+            title="Facturation"
+            text="Accédez au module Facturation pour piloter les appels de fonds, les lignes et les impayés."
+            actionLabel="Ouvrir la facturation"
+            onAction={() => navigate(DASHBOARD_ROUTES.billing)}
+          />
+          <QuickActionCard
+            title="Administration plateforme"
+            text="Accédez au back-office plateforme pour superviser les copropriétés et les rôles principaux."
+            actionLabel="Ouvrir l’administration"
+            onAction={() => navigate(DASHBOARD_ROUTES.platformAdmin)}
           />
         </div>
       </Card>
+
+      <AlertBox kind="info">
+        <div style={{ fontWeight: 900, marginBottom: 4 }}>Visibilité transverse du module AG</div>
+        <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+          Le tableau de bord expose désormais le module <strong>Assemblées générales</strong> de façon plus visible,
+          avec accès directs vers la liste, les résolutions, les présences, les votes et le détail d’une AG disponible.
+        </div>
+      </AlertBox>
 
       <style>{`
         .dashboard-stat-grid {
@@ -933,6 +1179,10 @@ export default function Dashboard() {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 12px;
+        }
+
+        .dashboard-ag-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
         @media (max-width: 1280px) {
@@ -964,7 +1214,8 @@ export default function Dashboard() {
             grid-template-columns: 1fr !important;
           }
 
-          .dashboard-quick-grid {
+          .dashboard-quick-grid,
+          .dashboard-ag-grid {
             grid-template-columns: 1fr;
           }
         }

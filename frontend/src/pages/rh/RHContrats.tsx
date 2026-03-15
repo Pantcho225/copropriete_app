@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { Link } from "react-router-dom";
 import { activerContrat, cloturerContrat, getContrats, getEmployes } from "../../api/rh";
 import type { ContratEmploye, ContratStatut, Employe } from "../../api/types";
+import {
+  PRODUCT_WORDING,
+  getContractStatusLabel,
+  getRHRoleLabel,
+} from "../../constants/productWording";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -48,12 +53,15 @@ function getErrorMessage(e: unknown, fallback: string) {
 }
 
 function humanizeRole(role?: string | null) {
-  const value = String(role ?? "").trim().toUpperCase();
-  if (!value) return "—";
+  const value = String(role ?? "").trim();
+  if (!value) return PRODUCT_WORDING.common.notProvided;
+
+  const normalized = value.toUpperCase();
+  const centralized = getRHRoleLabel(normalized);
+
+  if (centralized !== normalized) return centralized;
 
   const MAP: Record<string, string> = {
-    AGENT_ENTRETIEN: "Agent d’entretien",
-    GARDIEN: "Gardien",
     SYNDIC: "Syndic",
     EMPLOYE: "Employé",
     ASSISTANT: "Assistant",
@@ -62,9 +70,9 @@ function humanizeRole(role?: string | null) {
     RESPONSABLE: "Responsable",
   };
 
-  if (MAP[value]) return MAP[value];
+  if (MAP[normalized]) return MAP[normalized];
 
-  return value
+  return normalized
     .toLowerCase()
     .split("_")
     .filter(Boolean)
@@ -74,7 +82,7 @@ function humanizeRole(role?: string | null) {
 
 function humanizeContractType(type?: string | null) {
   const value = String(type ?? "").trim().toUpperCase();
-  if (!value) return "—";
+  if (!value) return PRODUCT_WORDING.common.notProvided;
 
   const MAP: Record<string, string> = {
     CDI: "CDI",
@@ -99,11 +107,11 @@ function humanizeContractType(type?: string | null) {
 function getStatutLabel(statut?: ContratStatut | string | null) {
   const s = String(statut ?? "").toUpperCase();
 
-  if (s === "ACTIF") return "Actif";
-  if (s === "TERMINE") return "Terminé";
-  if (s === "BROUILLON") return "Brouillon";
+  if (s === "ACTIF") return getContractStatusLabel("IN_PROGRESS");
+  if (s === "TERMINE") return getContractStatusLabel("COMPLETED");
+  if (s === "BROUILLON") return PRODUCT_WORDING.statuses.draft;
 
-  return s || "—";
+  return s || PRODUCT_WORDING.common.notProvided;
 }
 
 function getStatutStyle(statut: ContratStatut): CSSProperties {
@@ -148,7 +156,7 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
 
   if (statut === "TERMINE") {
     return {
-      label: "Terminé",
+      label: PRODUCT_WORDING.rh.contracts.status.completed,
       style: {
         ...softBadgeBase,
         color: "#374151",
@@ -160,7 +168,7 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
 
   if (debut && debut > today) {
     return {
-      label: "À venir",
+      label: PRODUCT_WORDING.rh.contracts.status.upcoming,
       style: {
         ...softBadgeBase,
         color: "#1d4ed8",
@@ -172,7 +180,7 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
 
   if (fin && fin < today) {
     return {
-      label: "Échu",
+      label: PRODUCT_WORDING.rh.contracts.status.completed,
       style: {
         ...softBadgeBase,
         color: "#92400e",
@@ -183,7 +191,7 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
   }
 
   return {
-    label: "En cours",
+    label: PRODUCT_WORDING.rh.contracts.status.inProgress,
     style: {
       ...softBadgeBase,
       color: "#166534",
@@ -405,7 +413,7 @@ function ConfirmModal(props: {
               cursor: props.loading ? "not-allowed" : "pointer",
             }}
           >
-            Annuler
+            {PRODUCT_WORDING.actions.cancel}
           </button>
 
           <button
@@ -478,7 +486,7 @@ export default function RHContrats() {
       setState("success");
     } catch (e) {
       setState("error");
-      setError(getErrorMessage(e, "Impossible de charger la liste des contrats."));
+      setError(getErrorMessage(e, PRODUCT_WORDING.rh.contracts.loadError));
       setRows([]);
       setEmployes([]);
     }
@@ -501,7 +509,7 @@ export default function RHContrats() {
       return `Employé #${employe}`;
     }
 
-    if (!employe) return "—";
+    if (!employe) return PRODUCT_WORDING.common.notProvided;
 
     const emp = employe as Employe;
     return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
@@ -513,7 +521,7 @@ export default function RHContrats() {
       return humanizeRole(emp?.role);
     }
 
-    if (!employe) return "—";
+    if (!employe) return PRODUCT_WORDING.common.notProvided;
     return humanizeRole((employe as Employe).role);
   }
 
@@ -522,7 +530,7 @@ export default function RHContrats() {
     const isActif = current === "ACTIF";
 
     if (isActif && isFutureDate(item.date_debut)) {
-      setError("Impossible de clôturer un contrat qui n’a pas encore commencé.");
+      setError(PRODUCT_WORDING.rh.contracts.closeFutureError);
       setSuccess(null);
       return;
     }
@@ -561,8 +569,8 @@ export default function RHContrats() {
       setRows((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
       setSuccess(
         action === "cloturer"
-          ? `Le contrat #${item.id} a bien été clôturé.`
-          : `Le contrat #${item.id} a bien été réactivé.`
+          ? PRODUCT_WORDING.rh.contracts.closeSuccess
+          : PRODUCT_WORDING.rh.contracts.reactivateSuccess
       );
 
       setConfirmAction({
@@ -571,7 +579,7 @@ export default function RHContrats() {
         action: null,
       });
     } catch (e) {
-      setError(getErrorMessage(e, "Impossible de modifier le statut de ce contrat."));
+      setError(getErrorMessage(e, "Cette action n’a pas pu être finalisée."));
     } finally {
       setBusyId(null);
     }
@@ -625,13 +633,13 @@ export default function RHContrats() {
   return (
     <PageShell>
       <SectionTitle
-        title="Contrats"
+        title={PRODUCT_WORDING.rh.contracts.listTitle}
         subtitle="Suivez les contrats, leurs périodes d’activité et leur statut pour les employés de la copropriété."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <SmallButton to="/rh/employes">Voir les employés</SmallButton>
             <SmallButton to="/rh/contrats/nouveau" primary>
-              Nouveau contrat
+              {PRODUCT_WORDING.rh.contracts.createTitle}
             </SmallButton>
           </div>
         }
@@ -646,7 +654,7 @@ export default function RHContrats() {
         }}
       >
         <StatCard title="Contrats visibles" value={stats.total} sub="Résultats affichés après filtres et recherche." />
-        <StatCard title="Actifs" value={stats.actifs} sub="Contrats visibles actuellement actifs." />
+        <StatCard title="En cours" value={stats.actifs} sub="Contrats visibles actuellement en cours." />
         <StatCard title="Terminés" value={stats.termines} sub="Contrats visibles clôturés ou arrivés à terme." />
         <StatCard title="Brouillons" value={stats.brouillons} sub="Contrats visibles encore en préparation." />
         <StatCard
@@ -681,7 +689,7 @@ export default function RHContrats() {
             style={selectInput}
           >
             <option value="TOUS">Tous les statuts</option>
-            <option value="ACTIF">Actifs</option>
+            <option value="ACTIF">En cours</option>
             <option value="TERMINE">Terminés</option>
             <option value="BROUILLON">Brouillons</option>
           </select>
@@ -757,7 +765,7 @@ export default function RHContrats() {
                     <td style={td}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <Link to={`/rh/contrats/${item.id}/modifier`} style={primaryMiniLink}>
-                          Modifier
+                          {PRODUCT_WORDING.actions.edit}
                         </Link>
 
                         <button
@@ -773,19 +781,19 @@ export default function RHContrats() {
                           disabled={isBusy || (current === "ACTIF" && futureContract)}
                           title={
                             current === "ACTIF" && futureContract
-                              ? "Impossible de clôturer un contrat qui n’a pas encore commencé."
+                              ? PRODUCT_WORDING.rh.contracts.closeFutureError
                               : current === "ACTIF"
-                                ? "Clôturer ce contrat"
-                                : "Réactiver ce contrat"
+                                ? PRODUCT_WORDING.rh.contracts.closeAction
+                                : PRODUCT_WORDING.rh.contracts.reactivateAction
                           }
                         >
                           {isBusy
                             ? "Traitement..."
                             : current === "ACTIF"
                               ? futureContract
-                                ? "À venir"
-                                : "Clôturer"
-                              : "Réactiver"}
+                                ? PRODUCT_WORDING.rh.contracts.status.upcoming
+                                : PRODUCT_WORDING.rh.contracts.closeAction
+                              : PRODUCT_WORDING.rh.contracts.reactivateAction}
                         </button>
                       </div>
                     </td>
@@ -799,22 +807,22 @@ export default function RHContrats() {
                   {!hasRows ? (
                     <EmptyState
                       title="Aucun contrat enregistré"
-                      text="Aucun contrat n’a encore été enregistré pour cette copropriété."
-                      actionLabel="Nouveau contrat"
+                      text={PRODUCT_WORDING.rh.contracts.empty}
+                      actionLabel={PRODUCT_WORDING.rh.contracts.createTitle}
                       actionTo="/rh/contrats/nouveau"
                     />
                   ) : hasFilters ? (
                     <EmptyState
                       title="Aucun résultat"
-                      text="Aucun contrat ne correspond à la recherche ou aux filtres sélectionnés."
-                      actionLabel="Nouveau contrat"
+                      text={PRODUCT_WORDING.common.noResultsForSearch}
+                      actionLabel={PRODUCT_WORDING.rh.contracts.createTitle}
                       actionTo="/rh/contrats/nouveau"
                     />
                   ) : (
                     <EmptyState
                       title="Aucun contrat à afficher"
-                      text="Aucune donnée contrat n’est disponible pour le moment."
-                      actionLabel="Nouveau contrat"
+                      text={PRODUCT_WORDING.rh.contracts.empty}
+                      actionLabel={PRODUCT_WORDING.rh.contracts.createTitle}
                       actionTo="/rh/contrats/nouveau"
                     />
                   )}
@@ -827,7 +835,11 @@ export default function RHContrats() {
 
       <ConfirmModal
         open={confirmAction.open}
-        title={confirmAction.action === "cloturer" ? "Confirmer la clôture" : "Confirmer la réactivation"}
+        title={
+          confirmAction.action === "cloturer"
+            ? "Confirmer la clôture"
+            : "Confirmer la réactivation"
+        }
         message={
           confirmAction.contrat ? (
             <span>
@@ -841,7 +853,11 @@ export default function RHContrats() {
             </span>
           ) : null
         }
-        confirmLabel={confirmAction.action === "cloturer" ? "Clôturer" : "Réactiver"}
+        confirmLabel={
+          confirmAction.action === "cloturer"
+            ? PRODUCT_WORDING.rh.contracts.closeAction
+            : PRODUCT_WORDING.rh.contracts.reactivateAction
+        }
         confirmDanger={confirmAction.action === "cloturer"}
         loading={confirmLoading}
         onClose={closeConfirmModal}

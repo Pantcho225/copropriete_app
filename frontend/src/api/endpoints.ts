@@ -1,4 +1,3 @@
-// src/api/endpoints.ts
 export const ENDPOINTS = {
   // =========================
   // AUTH
@@ -123,4 +122,15 @@ export const ENDPOINTS = {
 
   rhContratCloturer: (contratId: number | string) =>
     `/api/rh/contrats/${contratId}/cloturer/`,
+
+  // =========================
+  // LOTS
+  // =========================
+  lots: "/api/lots/",
+
+  lotDetail: (lotId: number | string) =>
+    `/api/lots/${lotId}/`,
+
+  tantiemeCategories: "/api/tantieme-categories/",
+  lotTantiemes: "/api/lot-tantiemes/",
 } as const;

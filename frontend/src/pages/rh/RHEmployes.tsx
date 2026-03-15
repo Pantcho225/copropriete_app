@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { Link } from "react-router-dom";
 import { activerEmploye, desactiverEmploye, getEmployes } from "../../api/rh";
 import type { Employe, EmployeStatut } from "../../api/types";
+import { PRODUCT_WORDING, getRHRoleLabel } from "../../constants/productWording";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -55,12 +56,15 @@ function getErrorMessage(e: unknown, fallback: string) {
 }
 
 function humanizeRole(role?: string | null) {
-  const value = String(role ?? "").trim().toUpperCase();
-  if (!value) return "—";
+  const value = String(role ?? "").trim();
+  if (!value) return PRODUCT_WORDING.common.notProvided;
 
-  const MAP: Record<string, string> = {
-    AGENT_ENTRETIEN: "Agent d’entretien",
-    GARDIEN: "Gardien",
+  const normalized = value.toUpperCase();
+  const centralized = getRHRoleLabel(normalized);
+
+  if (centralized !== normalized) return centralized;
+
+  const FALLBACK_MAP: Record<string, string> = {
     SYNDIC: "Syndic",
     EMPLOYE: "Employé",
     ASSISTANT: "Assistant",
@@ -69,9 +73,9 @@ function humanizeRole(role?: string | null) {
     RESPONSABLE: "Responsable",
   };
 
-  if (MAP[value]) return MAP[value];
+  if (FALLBACK_MAP[normalized]) return FALLBACK_MAP[normalized];
 
-  return value
+  return normalized
     .toLowerCase()
     .split("_")
     .filter(Boolean)
@@ -82,11 +86,11 @@ function humanizeRole(role?: string | null) {
 function getStatutLabel(statut?: EmployeStatut | string | null) {
   const s = String(statut ?? "").toUpperCase();
 
-  if (s === "ACTIF") return "Actif";
-  if (s === "INACTIF") return "Inactif";
+  if (s === "ACTIF") return PRODUCT_WORDING.rh.employees.status.active;
+  if (s === "INACTIF") return PRODUCT_WORDING.rh.employees.status.inactive;
   if (s === "SUSPENDU") return "Suspendu";
 
-  return s || "—";
+  return s || PRODUCT_WORDING.common.notProvided;
 }
 
 function getStatutStyle(statut: EmployeStatut): CSSProperties {
@@ -299,7 +303,7 @@ function ConfirmModal(props: {
               cursor: props.loading ? "not-allowed" : "pointer",
             }}
           >
-            Annuler
+            {PRODUCT_WORDING.actions.cancel}
           </button>
 
           <button
@@ -371,7 +375,7 @@ export default function RHEmployes() {
       setState("success");
     } catch (e) {
       setState("error");
-      setError(getErrorMessage(e, "Impossible de charger la liste des employés."));
+      setError(getErrorMessage(e, PRODUCT_WORDING.rh.employees.loadError));
       setRows([]);
     }
   }
@@ -417,8 +421,8 @@ export default function RHEmployes() {
       setRows((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
       setSuccess(
         action === "desactiver"
-          ? `L’employé #${item.id} a bien été désactivé.`
-          : `L’employé #${item.id} a bien été activé.`
+          ? PRODUCT_WORDING.rh.employees.disableSuccess
+          : PRODUCT_WORDING.rh.employees.reactivateSuccess
       );
 
       setConfirmAction({
@@ -427,7 +431,7 @@ export default function RHEmployes() {
         action: null,
       });
     } catch (e) {
-      setError(getErrorMessage(e, "Impossible de modifier le statut de cet employé."));
+      setError(getErrorMessage(e, "Cette action n’a pas pu être finalisée."));
     } finally {
       setBusyId(null);
     }
@@ -480,13 +484,13 @@ export default function RHEmployes() {
   return (
     <PageShell>
       <SectionTitle
-        title="Employés"
+        title={PRODUCT_WORDING.rh.employees.listTitle}
         subtitle="Gérez les gardiens, agents d’entretien et autres employés rattachés à la copropriété."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <SmallButton to="/rh/contrats">Voir les contrats</SmallButton>
             <SmallButton to="/rh/employes/nouveau" primary>
-              Nouvel employé
+              {PRODUCT_WORDING.rh.employees.createTitle}
             </SmallButton>
           </div>
         }
@@ -618,7 +622,7 @@ export default function RHEmployes() {
                     <td style={td}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <Link to={`/rh/employes/${item.id}/modifier`} style={primaryMiniLink}>
-                          Modifier
+                          {PRODUCT_WORDING.actions.edit}
                         </Link>
 
                         <button
@@ -626,9 +630,17 @@ export default function RHEmployes() {
                           style={current === "ACTIF" ? dangerMiniBtn : miniBtn}
                           onClick={() => openConfirmFor(item)}
                           disabled={isBusy}
-                          title={current === "ACTIF" ? "Désactiver cet employé" : "Activer cet employé"}
+                          title={
+                            current === "ACTIF"
+                              ? "Désactiver cet employé"
+                              : "Réactiver cet employé"
+                          }
                         >
-                          {isBusy ? "Traitement..." : current === "ACTIF" ? "Désactiver" : "Activer"}
+                          {isBusy
+                            ? "Traitement..."
+                            : current === "ACTIF"
+                              ? PRODUCT_WORDING.rh.employees.actions.disable
+                              : PRODUCT_WORDING.rh.employees.actions.reactivate}
                         </button>
                       </div>
                     </td>
@@ -642,22 +654,22 @@ export default function RHEmployes() {
                   {!hasRows ? (
                     <EmptyState
                       title="Aucun employé enregistré"
-                      text="Aucun employé n’a encore été enregistré pour cette copropriété."
-                      actionLabel="Nouvel employé"
+                      text={PRODUCT_WORDING.rh.employees.empty}
+                      actionLabel={PRODUCT_WORDING.rh.employees.createTitle}
                       actionTo="/rh/employes/nouveau"
                     />
                   ) : hasFilters ? (
                     <EmptyState
                       title="Aucun résultat"
-                      text="Aucun employé ne correspond à la recherche ou aux filtres sélectionnés."
-                      actionLabel="Nouvel employé"
+                      text={PRODUCT_WORDING.common.noResultsForSearch}
+                      actionLabel={PRODUCT_WORDING.rh.employees.createTitle}
                       actionTo="/rh/employes/nouveau"
                     />
                   ) : (
                     <EmptyState
                       title="Aucun employé à afficher"
-                      text="Aucune donnée employé n’est disponible pour le moment."
-                      actionLabel="Nouvel employé"
+                      text={PRODUCT_WORDING.rh.employees.empty}
+                      actionLabel={PRODUCT_WORDING.rh.employees.createTitle}
                       actionTo="/rh/employes/nouveau"
                     />
                   )}
@@ -670,13 +682,13 @@ export default function RHEmployes() {
 
       <ConfirmModal
         open={confirmAction.open}
-        title={confirmAction.action === "desactiver" ? "Confirmer la désactivation" : "Confirmer l’activation"}
+        title={confirmAction.action === "desactiver" ? "Confirmer la désactivation" : "Confirmer la réactivation"}
         message={
           confirmAction.employe ? (
             <span>
               {confirmAction.action === "desactiver"
                 ? "Voulez-vous vraiment désactiver l’employé"
-                : "Voulez-vous vraiment activer l’employé"}{" "}
+                : "Voulez-vous vraiment réactiver l’employé"}{" "}
               <strong>
                 {confirmAction.employe.nom} {confirmAction.employe.prenoms}
               </strong>
@@ -684,7 +696,11 @@ export default function RHEmployes() {
             </span>
           ) : null
         }
-        confirmLabel={confirmAction.action === "desactiver" ? "Désactiver" : "Activer"}
+        confirmLabel={
+          confirmAction.action === "desactiver"
+            ? PRODUCT_WORDING.rh.employees.actions.disable
+            : PRODUCT_WORDING.rh.employees.actions.reactivate
+        }
         confirmDanger={confirmAction.action === "desactiver"}
         loading={confirmLoading}
         onClose={closeConfirmModal}

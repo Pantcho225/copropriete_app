@@ -7,6 +7,7 @@ import os
 import tempfile
 from typing import Any, Optional, Iterable, List
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.db.models import Sum
@@ -524,7 +525,32 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
             ag.pv_pdf_hash = sha
             ag.pv_generated_at = timezone.now()
-            ag.save(update_fields=["pv_pdf", "pv_pdf_hash", "pv_generated_at"])
+
+            # Reset complet de l'état signé si on régénère / réarchive le PV
+            if _has_model_field(ag, "pv_signed_pdf"):
+                ag.pv_signed_pdf = None
+            if _has_model_field(ag, "pv_signed_hash"):
+                ag.pv_signed_hash = ""
+            if _has_model_field(ag, "pv_signed_at"):
+                ag.pv_signed_at = None
+            if _has_model_field(ag, "pv_signer_subject"):
+                ag.pv_signer_subject = ""
+            if _has_model_field(ag, "pv_locked"):
+                ag.pv_locked = False
+
+            _safe_save(
+                ag,
+                update_fields=[
+                    "pv_pdf",
+                    "pv_pdf_hash",
+                    "pv_generated_at",
+                    "pv_signed_pdf",
+                    "pv_signed_hash",
+                    "pv_signed_at",
+                    "pv_signer_subject",
+                    "pv_locked",
+                ],
+            )
 
         _log_ag_event(
             request,
@@ -540,6 +566,11 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_pdf": getattr(ag.pv_pdf, "name", None),
                 "pv_pdf_hash": ag.pv_pdf_hash,
                 "pv_generated_at": ag.pv_generated_at.isoformat() if ag.pv_generated_at else None,
+                "pv_signed_pdf": getattr(getattr(ag, "pv_signed_pdf", None), "name", None),
+                "pv_signed_hash": getattr(ag, "pv_signed_hash", ""),
+                "pv_signed_at": ag.pv_signed_at.isoformat() if getattr(ag, "pv_signed_at", None) else None,
+                "pv_signer_subject": getattr(ag, "pv_signer_subject", ""),
+                "pv_locked": getattr(ag, "pv_locked", False),
             },
             status=status.HTTP_200_OK,
         )
@@ -634,7 +665,8 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             ag.pv_signer_subject = sign_result.signer_subject or ""
             ag.pv_locked = True
 
-            ag.save(
+            _safe_save(
+                ag,
                 update_fields=[
                     "pv_pdf_hash",
                     "pv_signed_pdf",
@@ -642,7 +674,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                     "pv_signed_at",
                     "pv_signer_subject",
                     "pv_locked",
-                ]
+                ],
             )
 
         _log_ag_event(
@@ -712,7 +744,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Impossible de verrouiller: PV non signé (faites pv/sign)."})
 
         ag.pv_locked = True
-        ag.save(update_fields=["pv_locked"])
+        _safe_save(ag, update_fields=["pv_locked"])
 
         _log_ag_event(request, ag, event="PV_LOCKED", meta={"pv_locked": True})
 
@@ -771,7 +803,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             ag.closed_at = timezone.now()
             ag.closed_by = request.user if getattr(request.user, "is_authenticated", False) else None
             ag.pv_locked = True
-            ag.save(update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
+            _safe_save(ag, update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
 
         _log_ag_event(
             request,
@@ -953,7 +985,15 @@ class VoteViewSet(viewsets.ModelViewSet):
         if resolution:
             _assert_same_copro(self.request, resolution.ag)
             _assert_ag_writable(resolution.ag)
-        serializer.save()
+
+        try:
+            serializer.save()
+        except DjangoValidationError as e:
+            if hasattr(e, "message_dict"):
+                raise ValidationError(e.message_dict)
+            if hasattr(e, "messages"):
+                raise ValidationError({"detail": e.messages})
+            raise ValidationError({"detail": str(e)})
 
     def perform_update(self, serializer):
         raise ValidationError({"detail": "La modification d’un vote est désactivée. Supprimez et recréez si nécessaire."})

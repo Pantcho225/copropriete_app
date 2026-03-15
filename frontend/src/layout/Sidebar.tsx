@@ -248,6 +248,18 @@ export default function Sidebar() {
           <span>Contrats</span>
         </SidebarLink>
 
+        <SectionTitle>Lots</SectionTitle>
+
+        <SidebarLink to="/lots">
+          <Dot />
+          <span>Lots</span>
+        </SidebarLink>
+
+        <SidebarLink to="/lots/nouveau">
+          <Dot />
+          <span>Nouveau lot</span>
+        </SidebarLink>
+
         <SectionTitle>Travaux</SectionTitle>
 
         <SidebarLink to="/travaux/dossiers">
@@ -268,6 +280,27 @@ export default function Sidebar() {
         <SidebarLink to="/travaux/fournisseurs/nouveau">
           <Dot />
           <span>Nouveau fournisseur</span>
+        </SidebarLink>
+
+        <SectionTitle>Assemblées générales</SectionTitle>
+
+        <SidebarLink to="/ag">
+          <Dot />
+          <span>Assemblées générales</span>
+        </SidebarLink>
+
+        <SectionTitle>Facturation</SectionTitle>
+
+        <SidebarLink to="/billing">
+          <Dot />
+          <span>Facturation</span>
+        </SidebarLink>
+
+        <SectionTitle>Administration plateforme</SectionTitle>
+
+        <SidebarLink to="/platform-admin">
+          <Dot />
+          <span>Administration plateforme</span>
         </SidebarLink>
       </nav>
 

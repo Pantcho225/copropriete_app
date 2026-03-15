@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-&pb=-(oxnxt!6mk@&sb=2k076c0ai=@d#+vv!qxvn53gfc$)9b
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# ✅ Dev: autoriser localhost/127.0.0.1 (sinon tu peux avoir des 400/invalid host)
+# ✅ Dev: autoriser localhost/127.0.0.1
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
@@ -37,114 +37,120 @@ ALLOWED_HOSTS = [
 
 
 # Application definition
-
 INSTALLED_APPS = [
-    # ✅ CORS (doit être installé)
+    # ✅ CORS
     "corsheaders",
 
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
 
-    'rest_framework',
-    'rest_framework_simplejwt',
+    "rest_framework",
+    "rest_framework_simplejwt",
     "django.contrib.humanize",
 
-    'apps.core',
-    'apps.lots',
-    'apps.owners',
-    'apps.documents',
+    "apps.core",
+    "apps.lots",
+    "apps.owners",
+    "apps.documents",
     "apps.billing.apps.BillingConfig",
     "apps.ag",
     "apps.travaux",
     "django_extensions",
     "apps.compta.apps.ComptaConfig",
-    "apps.rh"
+    "apps.rh",
+    "apps.relances.apps.RelancesConfig",
+    
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
 
-    # ✅ IMPORTANT: CorsMiddleware doit être placé AVANT CommonMiddleware
+    # ✅ IMPORTANT: avant CommonMiddleware
     "corsheaders.middleware.CorsMiddleware",
-    'django.middleware.common.CommonMiddleware',
+    "django.middleware.common.CommonMiddleware",
 
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'apps.core.middleware.CoproContextMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.core.middleware.CoproContextMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],  # ✅ on override plus bas avec BASE_DIR / "templates"
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST', default='127.0.0.1'),
-        'PORT': config('DB_PORT', cast=int, default=5432),
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST", default="127.0.0.1"),
+        "PORT": config("DB_PORT", cast=int, default=5432),
     }
 }
 
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
-
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
+STATIC_URL = "/static/"
 
-STATIC_URL = 'static/'
+
+# ===============================
+# Media files
+# ===============================
+# On garde BASE_DIR pour ne pas casser les PDF déjà stockés sous :
+# ag/pv/...
+# ag/pv_signed/...
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR
 
 
 # ===============================
 # Django REST Framework + JWT
 # ===============================
-
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -154,17 +160,15 @@ REST_FRAMEWORK = {
     ),
 }
 
+
 # ===============================
 # ✅ CORS (React/Vite -> Django API)
 # ===============================
-# Ton frontend tourne sur http://localhost:5173
-# Ton backend sur http://127.0.0.1:8002 (ou localhost:8002)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
-# ✅ Autoriser les méthodes nécessaires (preflight OPTIONS incluse)
 CORS_ALLOW_METHODS = [
     "DELETE",
     "GET",
@@ -174,31 +178,36 @@ CORS_ALLOW_METHODS = [
     "PUT",
 ]
 
-# ✅ Autoriser tes headers custom (X-Copropriete-Id) + Authorization
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "authorization",
     "x-copropriete-id",
 ]
 
-# Optionnel (utile si un jour tu utilises cookies/CSRF entre domaines)
 CORS_ALLOW_CREDENTIALS = True
 
+
 # ===============================
-# ✅ CSRF / Trusted origins (utile si tu utilises session/cookies)
-# (JWT pur en header => pas obligatoire, mais safe)
+# ✅ CSRF / Trusted origins
 # ===============================
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
+
 # ===============================
 # App custom
 # ===============================
 PUBLIC_BASE_URL = "https://ton-domaine.com"
 
-PDF_SHOW_BRUT_PAYMENT = False  # recommandé
+PDF_SHOW_BRUT_PAYMENT = False
 # PDF_SHOW_BRUT_PAYMENT = True  # si tu veux afficher le brut
+
 
 # Templates
 TEMPLATES[0]["DIRS"] = [BASE_DIR / "templates"]
+
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

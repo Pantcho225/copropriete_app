@@ -9,6 +9,7 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createContrat, getContrat, getEmployes, updateContrat } from "../../api/rh";
 import type { ContratEmployePayload, ContratStatut, Employe } from "../../api/types";
+import { PRODUCT_WORDING } from "../../constants/productWording";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -38,9 +39,9 @@ const TYPE_CONTRAT_OPTIONS = [
 ];
 
 const STATUT_OPTIONS: Array<{ value: ContratStatut; label: string }> = [
-  { value: "ACTIF", label: "Actif" },
-  { value: "TERMINE", label: "Terminé" },
-  { value: "BROUILLON", label: "Brouillon" },
+  { value: "ACTIF", label: PRODUCT_WORDING.rh.contracts.status.inProgress },
+  { value: "TERMINE", label: PRODUCT_WORDING.rh.contracts.status.completed },
+  { value: "BROUILLON", label: PRODUCT_WORDING.statuses.draft },
 ];
 
 function PageShell({ children }: { children: ReactNode }) {
@@ -225,7 +226,7 @@ export default function ContratForm() {
       } catch (e) {
         if (!isMounted) return;
         setState("error");
-        setError(getErrorMessage(e, "Impossible de charger le formulaire du contrat."));
+        setError(getErrorMessage(e, PRODUCT_WORDING.rh.contracts.loadError));
       }
     }
 
@@ -237,7 +238,7 @@ export default function ContratForm() {
   }, [isEdit, contratId]);
 
   const pageTitle = useMemo(
-    () => (isEdit ? "Modifier le contrat" : "Nouveau contrat"),
+    () => (isEdit ? PRODUCT_WORDING.rh.contracts.editTitle : PRODUCT_WORDING.rh.contracts.createTitle),
     [isEdit]
   );
 
@@ -315,24 +316,17 @@ export default function ContratForm() {
     try {
       if (isEdit && contratId) {
         await updateContrat(contratId, payload);
-        setSuccess("Le contrat a bien été mis à jour.");
+        setSuccess(PRODUCT_WORDING.rh.contracts.updateSuccess);
       } else {
         await createContrat(payload);
-        setSuccess("Le contrat a bien été créé.");
+        setSuccess(PRODUCT_WORDING.rh.contracts.createSuccess);
       }
 
       window.setTimeout(() => {
         navigate("/rh/contrats");
       }, 500);
     } catch (e) {
-      setError(
-        getErrorMessage(
-          e,
-          isEdit
-            ? "Impossible de modifier ce contrat pour le moment."
-            : "Impossible d’enregistrer ce contrat pour le moment."
-        )
-      );
+      setError(getErrorMessage(e, PRODUCT_WORDING.rh.contracts.saveError));
     } finally {
       setSaving(false);
     }
@@ -504,15 +498,15 @@ export default function ContratForm() {
                 opacity: saving ? 0.7 : 1,
               }}
             >
-              Annuler
+              {PRODUCT_WORDING.actions.cancel}
             </Link>
 
             <button type="submit" disabled={isBusy} style={primaryButton}>
               {saving
                 ? "Enregistrement..."
                 : isEdit
-                  ? "Enregistrer les modifications"
-                  : "Créer le contrat"}
+                  ? PRODUCT_WORDING.rh.contracts.updateSubmit
+                  : PRODUCT_WORDING.rh.contracts.createSubmit}
             </button>
           </div>
         </form>

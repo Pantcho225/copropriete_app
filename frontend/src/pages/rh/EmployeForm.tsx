@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type 
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createEmploye, getEmploye, updateEmploye } from "../../api/rh";
 import type { EmployePayload, EmployeStatut } from "../../api/types";
+import { PRODUCT_WORDING } from "../../constants/productWording";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -30,14 +31,17 @@ const INITIAL_VALUES: FormValues = {
 };
 
 const ROLE_OPTIONS = [
-  { value: "GARDIEN", label: "Gardien" },
-  { value: "AGENT_ENTRETIEN", label: "Agent d’entretien / nettoyage" },
-  { value: "EMPLOYE", label: "Employé" },
+  { value: "GARDIEN", label: PRODUCT_WORDING.rh.roles.GARDIEN },
+  { value: "AGENT_ENTRETIEN", label: PRODUCT_WORDING.rh.roles.AGENT_ENTRETIEN },
+  { value: "AGENT_NETTOYAGE", label: PRODUCT_WORDING.rh.roles.AGENT_NETTOYAGE },
+  { value: "RESPONSABLE_SITE", label: PRODUCT_WORDING.rh.roles.RESPONSABLE_SITE },
+  { value: "ASSISTANT_GESTION", label: PRODUCT_WORDING.rh.roles.ASSISTANT_GESTION },
+  { value: "AUTRE", label: PRODUCT_WORDING.rh.roles.AUTRE },
 ];
 
 const STATUT_OPTIONS: Array<{ value: EmployeStatut; label: string }> = [
-  { value: "ACTIF", label: "Actif" },
-  { value: "INACTIF", label: "Inactif" },
+  { value: "ACTIF", label: PRODUCT_WORDING.rh.employees.status.active },
+  { value: "INACTIF", label: PRODUCT_WORDING.rh.employees.status.inactive },
   { value: "SUSPENDU", label: "Suspendu" },
 ];
 
@@ -172,7 +176,7 @@ function normalizeRole(value?: string | null) {
   if (!role) return "";
 
   const exists = ROLE_OPTIONS.some((opt) => opt.value === role);
-  return exists ? role : "";
+  return exists ? role : "AUTRE";
 }
 
 function RequiredMark() {
@@ -221,7 +225,7 @@ export default function EmployeForm() {
         setState("success");
       } catch (e) {
         setState("error");
-        setError(getErrorMessage(e, "Impossible de charger cet employé."));
+        setError(getErrorMessage(e, PRODUCT_WORDING.rh.employees.loadError));
       }
     }
 
@@ -229,7 +233,7 @@ export default function EmployeForm() {
   }, [isEdit, employeId]);
 
   const pageTitle = useMemo(
-    () => (isEdit ? "Modifier l’employé" : "Nouvel employé"),
+    () => (isEdit ? PRODUCT_WORDING.rh.employees.editTitle : PRODUCT_WORDING.rh.employees.createTitle),
     [isEdit]
   );
 
@@ -290,10 +294,10 @@ export default function EmployeForm() {
     try {
       if (isEdit && employeId) {
         await updateEmploye(employeId, payload);
-        setSuccess("L’employé a bien été mis à jour.");
+        setSuccess(PRODUCT_WORDING.rh.employees.updateSuccess);
       } else {
         await createEmploye(payload);
-        setSuccess("L’employé a bien été créé.");
+        setSuccess(PRODUCT_WORDING.rh.employees.createSuccess);
       }
 
       setTimeout(() => {
@@ -303,7 +307,7 @@ export default function EmployeForm() {
       setError(
         getErrorMessage(
           e,
-          isEdit ? "Impossible de modifier cet employé." : "Impossible d’enregistrer cet employé."
+          isEdit ? PRODUCT_WORDING.rh.employees.saveError : PRODUCT_WORDING.rh.employees.saveError
         )
       );
     } finally {
@@ -478,11 +482,15 @@ export default function EmployeForm() {
 
           <div style={actions}>
             <Link to="/rh/employes" style={secondaryLink}>
-              Annuler
+              {PRODUCT_WORDING.actions.cancel}
             </Link>
 
             <button type="submit" disabled={saving} style={primaryButton}>
-              {saving ? "Enregistrement..." : isEdit ? "Enregistrer les modifications" : "Créer l’employé"}
+              {saving
+                ? "Enregistrement..."
+                : isEdit
+                  ? PRODUCT_WORDING.rh.employees.updateSubmit
+                  : PRODUCT_WORDING.rh.employees.createSubmit}
             </button>
           </div>
         </form>

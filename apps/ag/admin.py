@@ -1,3 +1,4 @@
+# apps/ag/admin.py
 from django.contrib import admin
 
 from .models import AssembleeGenerale, PresenceLot, Resolution, Vote
@@ -10,6 +11,7 @@ class AssembleeGeneraleAdmin(admin.ModelAdmin):
         "copropriete",
         "titre",
         "date_ag",
+        "tantieme_categorie",
         "statut",
         "pv_locked",
         "closed_at",
@@ -21,6 +23,7 @@ class AssembleeGeneraleAdmin(admin.ModelAdmin):
         "date_ag",
         "copropriete",
         "exercice",
+        "tantieme_categorie",
     )
     search_fields = (
         "titre",
@@ -48,6 +51,7 @@ class AssembleeGeneraleAdmin(admin.ModelAdmin):
                     "titre",
                     "date_ag",
                     "lieu",
+                    "tantieme_categorie",
                     "statut",
                 )
             },
@@ -135,6 +139,7 @@ class ResolutionAdmin(admin.ModelAdmin):
         "ordre",
         "titre",
         "type_majorite",
+        "tantieme_categorie",
         "travaux_dossier",
         "budget_vote",
         "cloturee",
@@ -143,6 +148,7 @@ class ResolutionAdmin(admin.ModelAdmin):
         "type_majorite",
         "cloturee",
         "ag",
+        "tantieme_categorie",
     )
     search_fields = (
         "titre",

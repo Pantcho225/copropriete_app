@@ -1,4 +1,3 @@
-# apps/ag/services/pdf.py
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -17,14 +16,13 @@ DEC0 = Decimal("0.00")
 
 def _decision_for_resolution(resolution: Resolution) -> dict:
     """
-    Calcule les résultats d'une résolution:
-    - tantièmes pour/contre/abstention/exprimes
+    Calcule les résultats d'une résolution :
+    - tantièmes pour / contre / abstention / exprimés
     - ratio POUR / exprimés
     - décision selon type_majorite
     """
     agg = (
-        Vote.objects
-        .filter(resolution_id=resolution.id)
+        Vote.objects.filter(resolution_id=resolution.id)
         .values("choix")
         .annotate(t=Sum("tantiemes"))
     )
@@ -94,7 +92,7 @@ def _media_url(request, file_field) -> str | None:
 def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
     """
     Génère et retourne le PV en bytes (WeasyPrint).
-    À utiliser pour:
+    À utiliser pour :
     - signature PAdES (pyHanko)
     - archivage FileField (pv_pdf)
     """
@@ -119,25 +117,44 @@ def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
                 "id": r.id,
                 "ordre": r.ordre,
                 "titre": r.titre,
-                "texte": r.texte,
-                "cloturee": bool(r.cloturee),
+                "texte": getattr(r, "texte", "") or "",
+                "cloturee": bool(getattr(r, "cloturee", False)),
                 **res_data,
             }
         )
 
-    # ✅ Signatures visuelles (optionnelles)
+    # Signatures visuelles optionnelles
     signature_president_url = _media_url(request, getattr(ag, "signature_president", None))
     signature_secretaire_url = _media_url(request, getattr(ag, "signature_secretaire", None))
     cachet_image_url = _media_url(request, getattr(ag, "cachet_image", None))
 
     generated_at = timezone.now()
 
-    # ✅ Infos entête + signature numérique (si PV déjà signé)
     copropriete_label = str(getattr(ag, "copropriete", "") or "")
     exercice_label = str(getattr(ag, "exercice", "") or "")
 
     pv_signed_at = getattr(ag, "pv_signed_at", None)
     pv_signer_subject = getattr(ag, "pv_signer_subject", "") or ""
+    pv_locked = bool(getattr(ag, "pv_locked", False))
+
+    # État documentaire / signature
+    has_visual_signatures = bool(
+        signature_president_url or signature_secretaire_url or cachet_image_url
+    )
+
+    # Détection plus robuste de la signature numérique
+    has_digital_signature = bool(
+        getattr(ag, "pv_signed_pdf", None) or pv_signed_at
+    )
+
+    # Message volontairement neutre et toujours vrai,
+    # pour éviter qu’un PDF archivé puis signé garde un faux bandeau “non signé”.
+    pv_signature_state = "INFORMATION_DOCUMENTAIRE"
+    pv_signature_message = (
+        "Ce procès-verbal peut faire l’objet d’une signature numérique (PAdES). "
+        "L’état réel de signature doit être vérifié dans le lecteur PDF "
+        "ou dans le registre documentaire de l’application."
+    )
 
     context = {
         "ag": ag,
@@ -148,26 +165,35 @@ def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
         "presences": presences,
         "resolutions_rows": resolutions_rows,
 
-        # ✅ Entête (copro + exercice)
+        # Entête
         "copropriete_label": copropriete_label,
         "exercice_label": exercice_label,
 
-        # ✅ Signature numérique (si disponible)
+        # État signature / traçabilité
         "pv_signed_at": pv_signed_at,
         "pv_signer_subject": pv_signer_subject,
+        "pv_locked": pv_locked,
+        "pv_signature_state": pv_signature_state,
+        "pv_signature_message": pv_signature_message,
+        "has_digital_signature": has_digital_signature,
+        "has_visual_signatures": has_visual_signatures,
 
-        # noms (modèle)
-        "president_nom": getattr(ag, "president_nom", ""),
-        "secretaire_nom": getattr(ag, "secretaire_nom", ""),
+        # Signataires métier
+        "president_nom": getattr(ag, "president_nom", "") or "",
+        "secretaire_nom": getattr(ag, "secretaire_nom", "") or "",
 
-        # urls images
+        # URLs images
         "signature_president_url": signature_president_url,
         "signature_secretaire_url": signature_secretaire_url,
         "cachet_image_url": cachet_image_url,
     }
 
     html_string = render_to_string("ag/pv_pdf.html", context)
-    pdf_bytes = HTML(string=html_string, base_url=_build_base_url(request)).write_pdf()
+    pdf_bytes = HTML(
+        string=html_string,
+        base_url=_build_base_url(request),
+    ).write_pdf()
+
     return pdf_bytes
 
 
