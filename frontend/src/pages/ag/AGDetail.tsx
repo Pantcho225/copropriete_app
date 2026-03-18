@@ -3,9 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 
 type LoadState = "idle" | "loading" | "success" | "error";
-type AGStatus = "BROUILLON" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE";
+type AGStatus = "BROUILLON" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ANNULEE";
 type ResolutionStatus = "ADOPTEE" | "REJETEE" | "EN_ATTENTE";
-type PVStatus = "BROUILLON" | "GENERE" | "SIGNE" | "ARCHIVE";
+type PVStatus = "NON_GENERE" | "ARCHIVE" | "SIGNE" | "VERROUILLE";
 type FlashKind = "success" | "info" | "error";
 
 type AGDetailItem = {
@@ -38,6 +38,8 @@ type AGDetailItem = {
 
   closed_at?: string | null;
   closed_by?: number | null;
+
+  has_zero_tantieme_lots?: boolean;
 };
 
 type ResolutionItem = {
@@ -70,15 +72,19 @@ type QuorumPayload = {
   tantiemes_presents: number;
   quorum_atteint: boolean;
   seuil: number;
+  has_zero_tantieme_lots?: boolean;
+};
+
+type ActionResponseLike = {
+  detail?: string;
+  blocking_reasons?: string[];
+  [key: string]: unknown;
 };
 
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || "http://127.0.0.1:8002";
 
-const AG_DETAIL_ENDPOINT_CANDIDATES = (id: string | number) => [
-  `/api/ag/ags/${id}/`,
-  `/api/ag/ags/${id}`,
-];
+const AG_DETAIL_ENDPOINT_CANDIDATES = (id: string | number) => [`/api/ag/ags/${id}/`, `/api/ag/ags/${id}`];
 
 const AG_RESOLUTIONS_ENDPOINT_CANDIDATES = (id: string | number) => [
   `/api/ag/resolutions/?ag=${id}`,
@@ -111,19 +117,46 @@ function toNumberOrNull(value: unknown): number | null {
 
 function toBooleanOrNull(value: unknown): boolean | null {
   if (value === null || value === undefined || value === "") return null;
-
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
 
   if (typeof value === "string") {
     const s = value.trim().toLowerCase();
 
-    if (["true", "1", "oui", "yes", "ok", "atteint", "genere", "généré", "disponible", "locked"].includes(s)) {
+    if (
+      [
+        "true",
+        "1",
+        "oui",
+        "yes",
+        "ok",
+        "atteint",
+        "genere",
+        "généré",
+        "disponible",
+        "locked",
+        "verrouille",
+        "verrouillé",
+        "cloturee",
+        "clôturée",
+      ].includes(s)
+    ) {
       return true;
     }
 
     if (
-      ["false", "0", "non", "no", "non_genere", "non généré", "non genere", "indisponible", "draft"].includes(s)
+      [
+        "false",
+        "0",
+        "non",
+        "no",
+        "non_genere",
+        "non généré",
+        "non genere",
+        "indisponible",
+        "draft",
+        "ouvert",
+      ].includes(s)
     ) {
       return false;
     }
@@ -179,31 +212,114 @@ function toAbsoluteBackendUrl(url?: string | null): string | null {
 function normalizeAGStatus(value: unknown): AGStatus {
   const s = String(value ?? "").trim().toUpperCase();
 
+  if (["CONVOQUEE", "CONVOQUÉE"].includes(s)) return "CONVOQUEE";
   if (["OUVERTE", "OPEN", "ACTIVE", "ACTIF", "EN_COURS"].includes(s)) return "OUVERTE";
-  if (["CLOTUREE", "CLOTURE", "CLOSED", "TERMINEE", "TERMINÉE"].includes(s)) return "CLOTUREE";
-  if (["ARCHIVEE", "ARCHIVÉE", "ARCHIVE", "ARCHIVED"].includes(s)) return "ARCHIVEE";
+  if (["CLOTUREE", "CLÔTURÉE", "CLOTURE", "CLOSED", "TERMINEE", "TERMINÉE"].includes(s)) return "CLOTUREE";
+  if (["ANNULEE", "ANNULÉE", "CANCELED", "CANCELLED"].includes(s)) return "ANNULEE";
   return "BROUILLON";
 }
 
-function normalizeResolutionStatus(value: unknown): ResolutionStatus {
+function normalizeDecisionValue(value: unknown): ResolutionStatus | null {
   const s = String(value ?? "").trim().toUpperCase();
 
-  if (["ADOPTEE", "VALIDEE", "VALIDE", "APPROUVEE"].includes(s)) return "ADOPTEE";
-  if (["REJETEE", "REJETE", "REFUSEE", "REFUSE"].includes(s)) return "REJETEE";
-  return "EN_ATTENTE";
+  if (
+    [
+      "ADOPTEE",
+      "ADOPTÉE",
+      "VALIDEE",
+      "VALIDÉE",
+      "VALIDE",
+      "APPROUVEE",
+      "APPROUVÉE",
+      "ADOPTED",
+      "POUR",
+    ].includes(s)
+  ) {
+    return "ADOPTEE";
+  }
+
+  if (
+    [
+      "REJETEE",
+      "REJETÉE",
+      "REJETE",
+      "REFUSEE",
+      "REFUSÉE",
+      "REFUSE",
+      "REJECTED",
+      "CONTRE",
+    ].includes(s)
+  ) {
+    return "REJETEE";
+  }
+
+  if (["EN_ATTENTE", "PENDING"].includes(s)) {
+    return "EN_ATTENTE";
+  }
+
+  return null;
 }
 
-function inferPVStatus(row: Record<string, unknown>): PVStatus {
+function normalizeResolutionStatusFromRow(row: Record<string, unknown>, cloturee?: boolean | null): ResolutionStatus {
+  const resultatDetail = isRecord(row.resultat_detail) ? row.resultat_detail : null;
+
+  const candidates = [
+    row.decision,
+    row.statut_resolution,
+    resultatDetail?.decision,
+    row.resultat,
+    row.result,
+    row.status_result,
+    row.vote_result,
+    row.outcome,
+    row.statut,
+    row.status,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeDecisionValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  const adoptedFlag =
+    toBooleanOrNull(row.adoptee) ??
+    toBooleanOrNull(row.adopted) ??
+    toBooleanOrNull(row.is_adoptee) ??
+    toBooleanOrNull(row.is_adopted) ??
+    null;
+
+  if (adoptedFlag === true) return "ADOPTEE";
+
+  const rejectedFlag =
+    toBooleanOrNull(row.rejetee) ??
+    toBooleanOrNull(row.rejected) ??
+    toBooleanOrNull(row.is_rejetee) ??
+    toBooleanOrNull(row.is_rejected) ??
+    null;
+
+  if (rejectedFlag === true) return "REJETEE";
+
+  return cloturee ? "EN_ATTENTE" : "EN_ATTENTE";
+}
+
+function normalizePVStatus(value: unknown, row: Record<string, unknown>): PVStatus {
+  const explicit = String(value ?? "").trim().toUpperCase();
+
+  if (["NON_GENERE", "NON GÉNÉRÉ", "NON GENERE"].includes(explicit)) return "NON_GENERE";
+  if (["ARCHIVE", "ARCHIVÉ", "ARCHIVEE", "ARCHIVÉE"].includes(explicit)) return "ARCHIVE";
+  if (["SIGNE", "SIGNÉ"].includes(explicit)) return "SIGNE";
+  if (["VERROUILLE", "VERROUILLÉ", "LOCKED"].includes(explicit)) return "VERROUILLE";
+
   const pvLocked = toBoolean(row.pv_locked);
   const signedPdfUrl = pickNullableString(row.pv_signed_pdf_url);
   const signedAt = pickNullableString(row.pv_signed_at);
   const pdfUrl = pickNullableString(row.pv_pdf_url);
   const generatedAt = pickNullableString(row.pv_generated_at);
 
-  if (pvLocked && (signedPdfUrl || signedAt)) return "ARCHIVE";
+  if (pvLocked && (signedPdfUrl || signedAt)) return "VERROUILLE";
   if (signedPdfUrl || signedAt) return "SIGNE";
-  if (pdfUrl || generatedAt) return "GENERE";
-  return "BROUILLON";
+  if (pdfUrl || generatedAt) return "ARCHIVE";
+  return "NON_GENERE";
 }
 
 function formatDateShort(iso?: string | null): string {
@@ -262,6 +378,16 @@ function truncateText(value?: string | null, max = 24): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
+function extractBlockingReasons(data: unknown): string[] {
+  if (!isRecord(data)) return [];
+
+  const value = data.blocking_reasons;
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  return [];
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   const err = error as {
     response?: {
@@ -269,6 +395,7 @@ function getErrorMessage(error: unknown, fallback: string) {
         detail?: string | string[];
         message?: string;
         errors?: Record<string, string[]>;
+        blocking_reasons?: string[];
         [key: string]: unknown;
       };
     };
@@ -276,6 +403,12 @@ function getErrorMessage(error: unknown, fallback: string) {
   };
 
   const data = err?.response?.data;
+  const reasons = extractBlockingReasons(data);
+
+  if (reasons.length > 0) {
+    return reasons.join(" ");
+  }
+
   if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
   if (Array.isArray(data?.detail) && typeof data.detail[0] === "string") return data.detail[0];
   if (typeof data?.message === "string" && data.message.trim()) return data.message;
@@ -319,13 +452,14 @@ function normalizeAGDetail(raw: unknown, fallbackId: string): AGDetailItem {
     heure_ag: pickString(row.heure_ag, row.heure, row.time, row.heure_reunion),
     lieu: pickString(row.lieu, row.location, row.endroit) || "—",
     statut: normalizeAGStatus(row.statut ?? row.status ?? row.etat),
-    quorum_atteint: toBooleanOrNull(row.quorum_atteint) ?? toBooleanOrNull(row.quorum) ?? toBooleanOrNull(row.quorum_ok),
+    quorum_atteint:
+      toBooleanOrNull(row.quorum_atteint) ?? toBooleanOrNull(row.quorum) ?? toBooleanOrNull(row.quorum_ok),
     description:
       pickString(row.description, row.notes, row.commentaire, row.resume, row.objet) ||
       "Aucune description détaillée n’est encore disponible pour cette assemblée.",
 
     pv_locked: toBoolean(row.pv_locked),
-    pv_status: inferPVStatus(row),
+    pv_status: normalizePVStatus(row.pv_status, row),
     pv_pdf_url: toAbsoluteBackendUrl(pickNullableString(row.pv_pdf_url)),
     pv_pdf_hash: pickNullableString(row.pv_pdf_hash),
     pv_generated_at: pickNullableString(row.pv_generated_at),
@@ -342,6 +476,8 @@ function normalizeAGDetail(raw: unknown, fallbackId: string): AGDetailItem {
 
     closed_at: pickNullableString(row.closed_at),
     closed_by: toNumberOrNull(row.closed_by),
+
+    has_zero_tantieme_lots: toBoolean(row.has_zero_tantieme_lots),
   };
 }
 
@@ -350,6 +486,7 @@ function normalizeResolution(raw: unknown, index: number): ResolutionItem {
 
   const id = toNumberOrNull(row.id) ?? toNumberOrNull(row.resolution_id) ?? toNumberOrNull(row.pk) ?? index + 1;
   const ordre = toNumberOrNull(row.ordre) ?? toNumberOrNull(row.numero_ordre);
+  const cloturee = toBooleanOrNull(row.cloturee) ?? false;
 
   return {
     id,
@@ -365,11 +502,11 @@ function normalizeResolution(raw: unknown, index: number): ResolutionItem {
     titre: pickString(row.titre, row.title, row.intitule, row.nom, row.objet) || "Résolution sans titre",
     texte: pickNullableString(row.texte, row.description, row.resume),
     type_majorite: pickNullableString(row.type_majorite),
-    tantieme_categorie: pickNullableString(row.tantieme_categorie),
-    cloturee: toBooleanOrNull(row.cloturee) ?? false,
+    tantieme_categorie: pickNullableString(row.tantieme_categorie, row.tantieme_categorie_effective),
+    cloturee,
     budget_vote: toNumberOrNull(row.budget_vote),
     travaux_dossier_titre: pickNullableString(row.travaux_dossier_titre),
-    resultat: normalizeResolutionStatus(row.resultat ?? row.statut ?? row.status ?? row.decision),
+    resultat: normalizeResolutionStatusFromRow(row, cloturee),
   };
 }
 
@@ -394,37 +531,47 @@ function extractResolutionRows(data: unknown): ResolutionItem[] {
   return [];
 }
 
-function getStatusMeta(status: AGStatus): { label: string; kind: "neutral" | "success" | "warning" | "info" } {
+function getStatusMeta(status: AGStatus): { label: string; kind: BadgeKind } {
   switch (status) {
+    case "CONVOQUEE":
+      return { label: "Convoquée", kind: "neutral" };
     case "OUVERTE":
       return { label: "Ouverte", kind: "info" };
     case "CLOTUREE":
       return { label: "Clôturée", kind: "success" };
-    case "ARCHIVEE":
-      return { label: "Archivée", kind: "neutral" };
+    case "ANNULEE":
+      return { label: "Annulée", kind: "danger" };
     default:
       return { label: "Brouillon", kind: "warning" };
   }
 }
 
-function getQuorumMeta(value?: boolean | null): { label: string; kind: "success" | "danger" | "warning" } {
+function getQuorumMeta(value?: boolean | null): { label: string; kind: BadgeKind } {
   if (value === true) return { label: "Atteint", kind: "success" };
   if (value === false) return { label: "Non atteint", kind: "danger" };
   return { label: "À vérifier", kind: "warning" };
 }
 
-function getPVMeta(status: PVStatus): { label: string; kind: "neutral" | "success" | "warning" | "info" } {
+function getPVMeta(status: PVStatus): { label: string; kind: BadgeKind } {
   switch (status) {
-    case "GENERE":
-      return { label: "Généré", kind: "info" };
+    case "ARCHIVE":
+      return { label: "Archivé", kind: "info" };
     case "SIGNE":
       return { label: "Signé", kind: "success" };
-    case "ARCHIVE":
-      return { label: "Archivé", kind: "neutral" };
+    case "VERROUILLE":
+      return { label: "Verrouillé", kind: "neutral" };
     default:
-      return { label: "Brouillon", kind: "warning" };
+      return { label: "Non généré", kind: "warning" };
   }
 }
+
+function formatMoneyLikeNumber(value?: number | null) {
+  if (value === null || value === undefined) return "0";
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
+}
+
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
 
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
@@ -535,10 +682,7 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
   );
 }
 
-function Badge(props: {
-  text: string;
-  kind?: "neutral" | "success" | "warning" | "danger" | "info";
-}) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -571,21 +715,42 @@ function Badge(props: {
   );
 }
 
-function SmallButton(props: {
+function AppButton(props: {
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
-  primary?: boolean;
+  variant?: ButtonVariant;
 }) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
   return (
     <button
       type="button"
       onClick={props.onClick}
       disabled={props.disabled}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -616,7 +781,7 @@ function KeyValueRow(props: { label: string; value: ReactNode }) {
   );
 }
 
-function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -635,7 +800,8 @@ function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
@@ -654,9 +820,9 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
       <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
       {props.actionLabel && props.onAction ? (
         <div style={{ marginTop: 12 }}>
-          <SmallButton onClick={props.onAction} primary>
+          <AppButton onClick={props.onAction} variant="primary">
             {props.actionLabel}
-          </SmallButton>
+          </AppButton>
         </div>
       ) : null}
     </div>
@@ -664,8 +830,8 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
 }
 
 function getResolutionBadge(item: ResolutionItem) {
-  if (item.cloturee && item.resultat === "ADOPTEE") return <Badge text="Adoptée" kind="success" />;
-  if (item.cloturee && item.resultat === "REJETEE") return <Badge text="Rejetée" kind="danger" />;
+  if (item.resultat === "ADOPTEE") return <Badge text="Adoptée" kind="success" />;
+  if (item.resultat === "REJETEE") return <Badge text="Rejetée" kind="danger" />;
   if (item.cloturee) return <Badge text="Clôturée" kind="neutral" />;
   return <Badge text="En attente" kind="warning" />;
 }
@@ -704,6 +870,7 @@ export default function AGDetail() {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ kind: FlashKind; text: string } | null>(null);
+  const [blockingReasons, setBlockingReasons] = useState<string[]>([]);
 
   const [ag, setAg] = useState<AGDetailItem | null>(null);
   const [resolutions, setResolutions] = useState<ResolutionItem[]>([]);
@@ -735,7 +902,12 @@ export default function AGDetail() {
         const resolutionsRes = await apiGetFirst(AG_RESOLUTIONS_ENDPOINT_CANDIDATES(agId));
         loadedResolutions = extractResolutionRows(resolutionsRes?.data)
           .filter((item) => item.id > 0)
-          .sort((a, b) => (a.ordre ?? 9999) - (b.ordre ?? 9999));
+          .sort((a, b) => {
+            const ao = a.ordre ?? a.id;
+            const bo = b.ordre ?? b.id;
+            if (ao !== bo) return ao - bo;
+            return a.id - b.id;
+          });
       } catch {
         loadedResolutions = [];
       }
@@ -756,22 +928,42 @@ export default function AGDetail() {
 
   async function runAction(
     actionKey: string,
-    callback: () => Promise<void>,
+    callback: () => Promise<ActionResponseLike | void>,
     successMessage?: string,
   ) {
     setBusyAction(actionKey);
     setActionMessage(null);
+    setBlockingReasons([]);
 
     try {
-      await callback();
-      if (successMessage) {
-        setActionMessage({ kind: "success", text: successMessage });
+      const result = await callback();
+      const reasons = extractBlockingReasons(result);
+
+      if (reasons.length > 0) {
+        setBlockingReasons(reasons);
       }
+
+      if (successMessage) {
+        const detail =
+          isRecord(result) && typeof result.detail === "string" && result.detail.trim()
+            ? result.detail
+            : successMessage;
+
+        setActionMessage({ kind: "success", text: detail });
+      }
+
       await fetchAGDetail();
     } catch (e) {
+      const err = e as { response?: { data?: unknown } };
+      const reasons = extractBlockingReasons(err?.response?.data);
+
+      if (reasons.length > 0) {
+        setBlockingReasons(reasons);
+      }
+
       setActionMessage({
         kind: "error",
-        text: getErrorMessage(e, "Action impossible pour le moment."),
+        text: getErrorMessage(e, "Impossible d’effectuer cette action."),
       });
     } finally {
       setBusyAction(null);
@@ -790,9 +982,11 @@ export default function AGDetail() {
           tantiemes_presents: Number(data.tantiemes_presents ?? 0),
           quorum_atteint: Boolean(data.quorum_atteint),
           seuil: Number(data.seuil ?? 0.5),
+          has_zero_tantieme_lots: Boolean(data.has_zero_tantieme_lots),
         });
+        return res?.data;
       },
-      "Calcul du quorum mis à jour.",
+      "Calcul du quorum mis à jour avec succès.",
     );
   }
 
@@ -800,7 +994,8 @@ export default function AGDetail() {
     await runAction(
       "init-presences",
       async () => {
-        await apiPostFirst(endpointActionCandidates(agId, "init-presences"), {});
+        const res = await apiPostFirst(endpointActionCandidates(agId, "init-presences"), {});
+        return res?.data;
       },
       "Présences initialisées avec succès.",
     );
@@ -810,7 +1005,8 @@ export default function AGDetail() {
     await runAction(
       "pv-archive",
       async () => {
-        await apiPostFirst(endpointActionCandidates(agId, "pv/archive"), {});
+        const res = await apiPostFirst(endpointActionCandidates(agId, "pv/archive"), {});
+        return res?.data;
       },
       "PV archivé avec succès.",
     );
@@ -820,20 +1016,22 @@ export default function AGDetail() {
     await runAction(
       "pv-lock",
       async () => {
-        await apiPostFirst(endpointActionCandidates(agId, "pv/lock"), {});
+        const res = await apiPostFirst(endpointActionCandidates(agId, "pv/lock"), {});
+        return res?.data;
       },
-      "PV verrouillé.",
+      "PV verrouillé avec succès.",
     );
   }
 
   async function handleCloseAg() {
-    const ok = window.confirm("Confirmer la clôture de cette AG ?");
+    const ok = window.confirm("Voulez-vous vraiment clôturer cette assemblée générale ?");
     if (!ok) return;
 
     await runAction(
       "close-ag",
       async () => {
-        await apiPostFirst(endpointActionCandidates(agId, "close"), {});
+        const res = await apiPostFirst(endpointActionCandidates(agId, "close"), {});
+        return res?.data;
       },
       "AG clôturée avec succès.",
     );
@@ -842,11 +1040,11 @@ export default function AGDetail() {
   async function handleClosePendingResolutions() {
     const pending = resolutions.filter((x) => !x.cloturee);
     if (pending.length === 0) {
-      setActionMessage({ kind: "info", text: "Toutes les résolutions de cette AG sont déjà clôturées." });
+      setActionMessage({ kind: "info", text: "Toutes les résolutions sont déjà clôturées." });
       return;
     }
 
-    const ok = window.confirm(`Clôturer ${pending.length} résolution(s) encore en attente pour cette AG ?`);
+    const ok = window.confirm(`Voulez-vous vraiment clôturer ${pending.length} résolution(s) en attente ?`);
     if (!ok) return;
 
     await runAction(
@@ -854,11 +1052,10 @@ export default function AGDetail() {
       async () => {
         for (const item of pending) {
           const payload =
-            item.budget_vote !== null && item.budget_vote !== undefined
-              ? { budget_vote: item.budget_vote }
-              : {};
+            item.budget_vote !== null && item.budget_vote !== undefined ? { budget_vote: item.budget_vote } : {};
           await api.post(`/api/ag/resolutions/${item.id}/cloturer/`, payload);
         }
+        return { detail: "Résolutions clôturées avec succès." };
       },
       "Résolutions clôturées avec succès.",
     );
@@ -908,9 +1105,10 @@ export default function AGDetail() {
         formData.append("pfx", file);
         formData.append("password", password);
 
-        await apiPostFirst(endpointActionCandidates(agId, "pv/sign"), formData, {
+        const res = await apiPostFirst(endpointActionCandidates(agId, "pv/sign"), formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
+        return res?.data;
       },
       "PV signé avec succès.",
     );
@@ -923,7 +1121,7 @@ export default function AGDetail() {
   const stats = useMemo(() => {
     const adoptees = resolutions.filter((x) => x.resultat === "ADOPTEE").length;
     const rejetees = resolutions.filter((x) => x.resultat === "REJETEE").length;
-    const enAttente = resolutions.filter((x) => !x.cloturee || x.resultat === "EN_ATTENTE").length;
+    const enAttente = resolutions.filter((x) => x.resultat === "EN_ATTENTE").length;
 
     return {
       resolutions: resolutions.length,
@@ -940,12 +1138,16 @@ export default function AGDetail() {
   const isLoading = state === "loading";
 
   const pendingResolutions = resolutions.filter((x) => !x.cloturee);
-  const canEdit = Boolean(agId) && !ag?.pv_locked && ag?.statut !== "CLOTUREE";
-  const canArchive = ag?.statut !== "CLOTUREE" && !ag?.pv_locked;
-  const canSign = Boolean(ag?.pv_pdf_url) && !ag?.pv_locked && ag?.statut !== "CLOTUREE";
-  const canLock = Boolean(ag?.pv_signed_pdf_url) && !ag?.pv_locked && ag?.statut !== "CLOTUREE";
-  const canCloseResolutions = pendingResolutions.length > 0 && ag?.statut !== "CLOTUREE" && !ag?.pv_locked;
-  const canClose = Boolean(ag?.pv_locked) && ag?.statut !== "CLOTUREE";
+  const isOpen = ag?.statut === "OUVERTE";
+  const isClosed = ag?.statut === "CLOTUREE";
+  const isCancelled = ag?.statut === "ANNULEE";
+
+  const canEdit = Boolean(agId) && isOpen && !ag?.pv_locked;
+  const canArchive = isOpen && !ag?.pv_locked;
+  const canSign = isOpen && !ag?.pv_locked && ag?.pv_status === "ARCHIVE" && Boolean(ag?.pv_pdf_url);
+  const canLock = isOpen && !ag?.pv_locked && Boolean(ag?.pv_signed_pdf_url);
+  const canCloseResolutions = pendingResolutions.length > 0 && isOpen && !ag?.pv_locked;
+  const canClose = isOpen && Boolean(ag?.pv_locked);
   const hasSignedPdf = Boolean(ag?.pv_signed_pdf_url || ag?.pv_pdf_url);
 
   return (
@@ -963,39 +1165,46 @@ export default function AGDetail() {
 
       <SectionTitle
         title="Détail de l’assemblée"
-        subtitle="Consultez les informations principales, le statut, le quorum, les résolutions et l’état documentaire réel du procès-verbal."
+        subtitle="Consultez le statut, le quorum, les résolutions et le suivi documentaire du procès-verbal depuis une vue unique."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/ag/assemblees")}>Retour à la liste</SmallButton>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/modifier`)} disabled={!canEdit}>
+            <AppButton onClick={() => navigate("/ag/assemblees")} variant="secondary">
+              Retour à la liste
+            </AppButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/modifier`)} disabled={!canEdit} variant="secondary">
               Modifier
-            </SmallButton>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/presences`)}>
+            </AppButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/presences`)} variant="secondary">
               Voir les présences
-            </SmallButton>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/votes`)}>
+            </AppButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/votes`)} variant="secondary">
               Voir les votes
-            </SmallButton>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/pv`)} disabled={!agId}>
+            </AppButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/pv`)} disabled={!agId} variant="secondary">
               Voir le PV
-            </SmallButton>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/resolutions`)} primary>
+            </AppButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/resolutions`)} variant="primary">
               Voir les résolutions
-            </SmallButton>
+            </AppButton>
           </div>
         }
       />
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Impossible de charger le détail de l’assemblée.">
+          {error}
         </AlertBox>
       ) : null}
 
-      {actionMessage ? (
-        <AlertBox kind={actionMessage.kind}>
-          <div style={{ fontSize: 13 }}>{actionMessage.text}</div>
+      {actionMessage ? <AlertBox kind={actionMessage.kind}>{actionMessage.text}</AlertBox> : null}
+
+      {blockingReasons.length > 0 ? (
+        <AlertBox kind="error" title="Blocages métier détectés">
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+            {blockingReasons.map((reason, index) => (
+              <li key={`${reason}-${index}`}>{reason}</li>
+            ))}
+          </ul>
         </AlertBox>
       ) : null}
 
@@ -1013,6 +1222,12 @@ export default function AGDetail() {
           isLoading={isLoading}
         />
         <StatCard
+          title="Rejetées"
+          value={stats.rejetees}
+          sub="Résolutions clôturées mais non adoptées."
+          isLoading={isLoading}
+        />
+        <StatCard
           title="En attente"
           value={stats.enAttente}
           sub="Résolutions encore non clôturées ou non tranchées."
@@ -1026,69 +1241,97 @@ export default function AGDetail() {
         />
       </div>
 
-      <Card title="Actions métier AG" right={<Badge text="Backend branché" kind="success" />}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <SmallButton onClick={() => void handleFetchQuorum()} disabled={busyAction !== null}>
-            {busyAction === "quorum" ? "Calcul..." : "Voir le quorum"}
-          </SmallButton>
+      <Card title="Pilotage de l’assemblée" right={statusMeta ? <Badge text={statusMeta.label} kind={statusMeta.kind} /> : undefined}>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <AppButton onClick={() => void handleFetchQuorum()} disabled={busyAction !== null} variant="secondary">
+              {busyAction === "quorum" ? "Calcul..." : "Voir le quorum"}
+            </AppButton>
 
-          <SmallButton
-            onClick={() => void handleInitPresences()}
-            disabled={busyAction !== null || ag?.pv_locked || ag?.statut === "CLOTUREE"}
-          >
-            {busyAction === "init-presences" ? "Initialisation..." : "Initialiser les présences"}
-          </SmallButton>
+            <AppButton
+              onClick={() => void handleInitPresences()}
+              disabled={busyAction !== null || !isOpen || !!ag?.pv_locked}
+              variant="secondary"
+            >
+              {busyAction === "init-presences" ? "Initialisation..." : "Initialiser les présences"}
+            </AppButton>
 
-          <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/presences`)} disabled={!agId}>
-            Gérer les présences
-          </SmallButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/presences`)} disabled={!agId} variant="secondary">
+              Gérer les présences
+            </AppButton>
 
-          <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/votes`)} disabled={!agId}>
-            Gérer les votes
-          </SmallButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/votes`)} disabled={!agId} variant="secondary">
+              Gérer les votes
+            </AppButton>
 
-          <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}/pv`)} disabled={!agId}>
-            Ouvrir la page PV
-          </SmallButton>
+            <AppButton onClick={() => navigate(`/ag/assemblees/${agId}/pv`)} disabled={!agId} variant="secondary">
+              Ouvrir la page PV
+            </AppButton>
 
-          <SmallButton
-            onClick={() => void handleClosePendingResolutions()}
-            disabled={busyAction !== null || !canCloseResolutions}
-          >
-            {busyAction === "close-resolutions" ? "Clôture..." : "Clôturer les résolutions"}
-          </SmallButton>
+            <AppButton
+              onClick={() => void handleArchivePv()}
+              disabled={busyAction !== null || !canArchive}
+              variant="secondary"
+            >
+              {busyAction === "pv-archive" ? "Archivage..." : "Archiver le PV"}
+            </AppButton>
 
-          <SmallButton onClick={() => void handleArchivePv()} disabled={busyAction !== null || !canArchive}>
-            {busyAction === "pv-archive" ? "Archivage..." : "Archiver le PV"}
-          </SmallButton>
+            <AppButton onClick={handleSelectPfx} disabled={busyAction !== null || !canSign} variant="primary">
+              {busyAction === "pv-sign" ? "Signature..." : "Signer le PV"}
+            </AppButton>
 
-          <SmallButton onClick={handleSelectPfx} disabled={busyAction !== null || !canSign}>
-            {busyAction === "pv-sign" ? "Signature..." : "Signer le PV"}
-          </SmallButton>
+            <AppButton
+              onClick={() => void handleLockPv()}
+              disabled={busyAction !== null || !canLock}
+              variant="secondary"
+            >
+              {busyAction === "pv-lock" ? "Verrouillage..." : "Verrouiller le PV"}
+            </AppButton>
 
-          <SmallButton onClick={() => void handleLockPv()} disabled={busyAction !== null || !canLock}>
-            {busyAction === "pv-lock" ? "Verrouillage..." : "Verrouiller le PV"}
-          </SmallButton>
+            <AppButton
+              onClick={() => void handleClosePendingResolutions()}
+              disabled={busyAction !== null || !canCloseResolutions}
+              variant="secondary"
+            >
+              {busyAction === "close-resolutions" ? "Clôture..." : "Clôturer les résolutions"}
+            </AppButton>
 
-          <SmallButton onClick={() => void handleCloseAg()} disabled={busyAction !== null || !canClose}>
-            {busyAction === "close-ag" ? "Clôture..." : "Clôturer l’AG"}
-          </SmallButton>
+            <AppButton onClick={() => void handleCloseAg()} disabled={busyAction !== null || !canClose} variant="danger">
+              {busyAction === "close-ag" ? "Clôture..." : "Clôturer l’AG"}
+            </AppButton>
 
-          <SmallButton onClick={handleOpenSignedBackend} disabled={!hasSignedPdf}>
-            Ouvrir le PV signé
-          </SmallButton>
-        </div>
-
-        {quorumData ? (
-          <div style={{ marginTop: 14 }}>
-            <div style={infoBox}>
-              Quorum : {formatMoneyLikeNumber(quorumData.tantiemes_presents)} /{" "}
-              {formatMoneyLikeNumber(quorumData.total_tantiemes_copro)} tantièmes présents — seuil{" "}
-              {Math.round((quorumData.seuil || 0) * 100)}% —{" "}
-              {quorumData.quorum_atteint ? "atteint" : "non atteint"}.
-            </div>
+            <AppButton onClick={handleOpenSignedBackend} disabled={!hasSignedPdf} variant="secondary">
+              Ouvrir le PV signé
+            </AppButton>
           </div>
-        ) : null}
+
+          {quorumData ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={infoBox}>
+                <strong>Lecture du quorum :</strong> {formatMoneyLikeNumber(quorumData.tantiemes_presents)} /{" "}
+                {formatMoneyLikeNumber(quorumData.total_tantiemes_copro)} tantièmes présents — seuil{" "}
+                {Math.round((quorumData.seuil || 0) * 100)}% —{" "}
+                {quorumData.quorum_atteint ? "quorum atteint" : "quorum non atteint"}.
+              </div>
+
+              {quorumData.has_zero_tantieme_lots ? (
+                <div style={warningBox}>
+                  Certains lots ont 0 tantième. Ils restent visibles dans l’assemblée mais ne pèsent pas dans le calcul pondéré.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isOpen ? (
+            <div style={infoBox}>
+              {isClosed
+                ? "Cette assemblée est clôturée. Les modifications métier ordinaires sont désormais bloquées."
+                : isCancelled
+                  ? "Cette assemblée est annulée. Les actions métier sont désactivées."
+                  : "Cette assemblée n’est pas encore ouverte. Les actions de saisie doivent attendre son ouverture."}
+            </div>
+          ) : null}
+        </div>
       </Card>
 
       <div className="ag-detail-main-grid">
@@ -1098,7 +1341,7 @@ export default function AGDetail() {
           minHeight={320}
         >
           {isLoading ? (
-            <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des informations générales…</div>
+            <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des informations générales...</div>
           ) : !ag ? (
             <EmptyState
               title="Assemblée introuvable"
@@ -1126,9 +1369,19 @@ export default function AGDetail() {
                 label="Verrouillage PV"
                 value={
                   ag.pv_locked ? (
-                    <Badge text="Verrouillé" kind="neutral" />
+                    <Badge text="Verrouillé" kind="success" />
                   ) : (
                     <Badge text="Non verrouillé" kind="warning" />
+                  )
+                }
+              />
+              <KeyValueRow
+                label="Lots à 0 tantième"
+                value={
+                  ag.has_zero_tantieme_lots ? (
+                    <Badge text="Présents" kind="warning" />
+                  ) : (
+                    <Badge text="Aucun" kind="success" />
                   )
                 }
               />
@@ -1137,9 +1390,9 @@ export default function AGDetail() {
           )}
         </Card>
 
-        <Card title="État documentaire du PV" minHeight={320} right={<Badge text="Traçabilité" kind="info" />}>
+        <Card title="Suivi documentaire du PV" minHeight={320} right={<Badge text="Traçabilité" kind="info" />}>
           {isLoading ? (
-            <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des informations documentaires…</div>
+            <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des informations documentaires...</div>
           ) : !ag ? (
             <div style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.7 }}>
               Aucune information documentaire n’est disponible pour cette assemblée.
@@ -1149,7 +1402,7 @@ export default function AGDetail() {
               <div style={{ display: "grid", gap: 10 }}>
                 <KeyValueRow label="État PV" value={pvMeta ? <Badge text={pvMeta.label} kind={pvMeta.kind} /> : "—"} />
                 <KeyValueRow label="Hash PDF" value={truncateText(ag.pv_signed_hash || ag.pv_pdf_hash, 26)} />
-                <KeyValueRow label="Généré le" value={formatDateTimeShort(ag.pv_generated_at)} />
+                <KeyValueRow label="Archivé le" value={formatDateTimeShort(ag.pv_generated_at)} />
                 <KeyValueRow label="Signé le" value={formatDateTimeShort(ag.pv_signed_at)} />
                 <KeyValueRow label="Signataire" value={ag.pv_signer_subject || "—"} />
                 <KeyValueRow label="Président" value={ag.president_nom || "—"} />
@@ -1165,7 +1418,7 @@ export default function AGDetail() {
 
                 {!ag.pv_signed_pdf_url && ag.pv_pdf_url ? (
                   <a href={ag.pv_pdf_url} target="_blank" rel="noreferrer" style={secondaryMiniLink}>
-                    Ouvrir le PDF
+                    Ouvrir le PDF archivé
                   </a>
                 ) : null}
 
@@ -1190,8 +1443,7 @@ export default function AGDetail() {
 
               <div style={{ marginTop: 16 }}>
                 <div style={infoBox}>
-                  Cette vue détail reflète l’état documentaire réel exposé par le backend : génération,
-                  signature, verrouillage et éléments de traçabilité du procès-verbal.
+                  Cette section présente l’état documentaire réel du procès-verbal : archivage, signature, verrouillage et traçabilité disponible.
                 </div>
               </div>
             </>
@@ -1199,9 +1451,9 @@ export default function AGDetail() {
         </Card>
       </div>
 
-      <Card title="Résolutions liées à cette assemblée" right={<Badge text="Aperçu métier" kind="info" />} minHeight={120}>
+      <Card title="Résolutions liées à cette assemblée" right={<Badge text="Lecture métier" kind="info" />} minHeight={120}>
         {isLoading ? (
-          <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des résolutions…</div>
+          <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des résolutions...</div>
         ) : resolutions.length === 0 ? (
           <EmptyState
             title="Aucune résolution liée"
@@ -1252,7 +1504,7 @@ export default function AGDetail() {
       <style>{`
         .ag-detail-stat-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 14px;
         }
 
@@ -1260,6 +1512,12 @@ export default function AGDetail() {
           display: grid;
           grid-template-columns: 1.05fr 0.95fr;
           gap: 14px;
+        }
+
+        @media (max-width: 1400px) {
+          .ag-detail-stat-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
         }
 
         @media (max-width: 1200px) {
@@ -1288,17 +1546,22 @@ export default function AGDetail() {
   );
 }
 
-function formatMoneyLikeNumber(value?: number | null) {
-  if (value === null || value === undefined) return "0";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
-}
-
 const infoBox: CSSProperties = {
   padding: 14,
   borderRadius: 14,
   background: "#f8fafc",
   border: "1px solid #e2e8f0",
   color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
+const warningBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 14,
+  background: "#fffbeb",
+  border: "1px solid #fde68a",
+  color: "#92400e",
   fontSize: 13,
   lineHeight: 1.6,
 };

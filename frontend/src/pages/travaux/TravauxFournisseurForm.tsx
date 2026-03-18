@@ -11,6 +11,9 @@ import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "idle" | "loading" | "success" | "error";
+type FlashKind = "success" | "error" | "info";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
 
 type FournisseurResponse = {
   id: number;
@@ -87,6 +90,10 @@ function extractActif(data?: FournisseurResponse | null) {
 
 function humanizeActif(value: boolean) {
   return value ? "Actif" : "Inactif";
+}
+
+function getActifKind(value: boolean): BadgeKind {
+  return value ? "success" : "warning";
 }
 
 function getErrorMessage(e: unknown, fallback: string) {
@@ -198,7 +205,7 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function AlertBox(props: { kind: "error" | "success" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -218,13 +225,126 @@ function AlertBox(props: { kind: "error" | "success" | "info"; children: ReactNo
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
+  );
+}
+
+function AppButton(props: {
+  children: ReactNode;
+  to?: string;
+  onClick?: () => void;
+  variant?: ButtonVariant;
+  disabled?: boolean;
+}) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
+  if (props.to) {
+    return (
+      <Link
+        to={props.to}
+        aria-disabled={props.disabled}
+        onClick={(e) => {
+          if (props.disabled) e.preventDefault();
+        }}
+        style={{
+          border: styles.border,
+          background: props.disabled ? "#f9fafb" : styles.background,
+          color: props.disabled ? "#9ca3af" : styles.color,
+          borderRadius: 12,
+          padding: "10px 14px",
+          fontSize: 13,
+          fontWeight: 800,
+          textDecoration: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          whiteSpace: "nowrap",
+          cursor: props.disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        {props.children}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      style={{
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {props.children}
+    </button>
   );
 }
 
 function RequiredMark() {
   return <span style={requiredMark}>*</span>;
+}
+
+function Badge(props: { text: string; kind?: BadgeKind }) {
+  const styles =
+    props.kind === "success"
+      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
+      : props.kind === "warning"
+        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
+        : props.kind === "danger"
+          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+          : props.kind === "info"
+            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
+            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        border: `1px solid ${styles.border}`,
+        background: styles.background,
+        color: styles.color,
+      }}
+    >
+      {props.text}
+    </span>
+  );
 }
 
 function InfoCard(props: { title: string; children: ReactNode }) {
@@ -246,11 +366,7 @@ function InfoCard(props: { title: string; children: ReactNode }) {
 }
 
 function FieldHint(props: { children: ReactNode }) {
-  return (
-    <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-      {props.children}
-    </div>
-  );
+  return <div style={hint}>{props.children}</div>;
 }
 
 export default function TravauxFournisseurForm() {
@@ -300,7 +416,7 @@ export default function TravauxFournisseurForm() {
 
   const pageTitle = useMemo(
     () => (isEdit ? "Modifier le fournisseur" : "Nouveau fournisseur"),
-    [isEdit]
+    [isEdit],
   );
 
   const pageSubtitle = useMemo(
@@ -308,11 +424,17 @@ export default function TravauxFournisseurForm() {
       isEdit
         ? "Mettez à jour les informations de la fiche fournisseur sélectionnée."
         : "Renseignez les informations utiles pour enregistrer un nouveau fournisseur dans le module Travaux.",
-    [isEdit]
+    [isEdit],
   );
 
   function updateField<K extends keyof FormValues>(field: K, value: FormValues[K]) {
     setValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function resetForm() {
+    setValues(INITIAL_VALUES);
+    setError(null);
+    setSuccess(null);
   }
 
   function buildPayload(): FournisseurPayload {
@@ -361,6 +483,7 @@ export default function TravauxFournisseurForm() {
       } else {
         await api.post(ENDPOINTS.travauxFournisseurs, payload);
         setSuccess("Le fournisseur a bien été créé.");
+        setValues(INITIAL_VALUES);
       }
 
       window.setTimeout(() => {
@@ -370,8 +493,8 @@ export default function TravauxFournisseurForm() {
       setError(
         getErrorMessage(
           e,
-          isEdit ? "Impossible de modifier ce fournisseur." : "Impossible d’enregistrer ce fournisseur."
-        )
+          isEdit ? "Impossible de modifier ce fournisseur." : "Impossible d’enregistrer ce fournisseur.",
+        ),
       );
     } finally {
       setSaving(false);
@@ -387,31 +510,35 @@ export default function TravauxFournisseurForm() {
         title={pageTitle}
         subtitle={pageSubtitle}
         right={
-          <Link to="/travaux/fournisseurs" style={ghostLink}>
-            Retour à la liste
-          </Link>
+          <>
+            <AppButton to="/travaux/fournisseurs" variant="secondary">
+              Retour à la liste
+            </AppButton>
+
+            {isEdit && id ? (
+              <AppButton to="/travaux/fournisseurs" variant="secondary">
+                Voir la liste
+              </AppButton>
+            ) : null}
+          </>
         }
       />
 
       {state === "loading" ? (
-        <div style={card}>
-          <div style={{ color: "#6b7280" }}>Chargement du fournisseur...</div>
-        </div>
+        <AlertBox kind="info" title="Chargement du formulaire">
+          Récupération des informations du fournisseur en cours.
+        </AlertBox>
       ) : null}
 
       {error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>
-            {isEdit ? "Mise à jour impossible" : "Enregistrement impossible"}
-          </div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title={isEdit ? "Mise à jour impossible" : "Enregistrement impossible"}>
+          {error}
         </AlertBox>
       ) : null}
 
       {success ? (
-        <AlertBox kind="success">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Opération réussie</div>
-          <div style={{ fontSize: 13 }}>{success}</div>
+        <AlertBox kind="success" title="Opération réussie">
+          {success}
         </AlertBox>
       ) : null}
 
@@ -420,14 +547,15 @@ export default function TravauxFournisseurForm() {
           <InfoCard title="ID fournisseur">#{loaded.id}</InfoCard>
           <InfoCard title="Créé le">{fmtDateTime(loaded.created_at)}</InfoCard>
           <InfoCard title="Mis à jour le">{fmtDateTime(loaded.updated_at)}</InfoCard>
-          <InfoCard title="État">{humanizeActif(values.is_active)}</InfoCard>
+          <InfoCard title="État">
+            <Badge text={humanizeActif(values.is_active)} kind={getActifKind(values.is_active)} />
+          </InfoCard>
         </div>
       ) : null}
 
       {isEdit && loaded ? (
-        <AlertBox kind="info">
-          Cette fiche permet de maintenir les informations du prestataire. La liaison directe entre fournisseur et
-          dossier travaux pourra être renforcée plus tard sans bloquer l’exploitation actuelle.
+        <AlertBox kind="info" title="Lecture métier du fournisseur">
+          Cette fiche permet de maintenir les informations du prestataire. La liaison directe entre fournisseur et dossier travaux pourra être renforcée plus tard sans bloquer l’exploitation actuelle.
         </AlertBox>
       ) : null}
 
@@ -538,16 +666,15 @@ export default function TravauxFournisseurForm() {
           </div>
 
           <div style={actions}>
-            <Link
-              to="/travaux/fournisseurs"
-              style={{
-                ...secondaryLink,
-                pointerEvents: saving ? "none" : "auto",
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              Annuler
-            </Link>
+            {!isEdit ? (
+              <AppButton onClick={resetForm} variant="secondary" disabled={isBusy}>
+                Réinitialiser
+              </AppButton>
+            ) : (
+              <AppButton to="/travaux/fournisseurs" variant="secondary" disabled={saving}>
+                Annuler
+              </AppButton>
+            )}
 
             <button
               type="submit"
@@ -558,15 +685,16 @@ export default function TravauxFournisseurForm() {
                 cursor: isBusy ? "not-allowed" : "pointer",
               }}
             >
-              {saving
-                ? "Enregistrement..."
-                : isEdit
-                  ? "Enregistrer les modifications"
-                  : "Créer le fournisseur"}
+              {saving ? "Enregistrement..." : isEdit ? "Enregistrer les modifications" : "Créer le fournisseur"}
             </button>
           </div>
         </form>
       ) : null}
+
+      <AlertBox kind="info" title="Lecture métier du formulaire">
+        Ce formulaire sert à créer ou mettre à jour les informations principales d’un fournisseur du module Travaux.
+        Les futurs liens directs avec les dossiers travaux pourront être enrichis sans remettre en cause cette fiche de base.
+      </AlertBox>
 
       <style>{`
         @media (max-width: 900px) {
@@ -618,6 +746,12 @@ const label: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   color: "#374151",
+};
+
+const hint: CSSProperties = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.45,
 };
 
 const requiredMark: CSSProperties = {
@@ -675,30 +809,4 @@ const primaryButton: CSSProperties = {
   padding: "11px 16px",
   fontSize: 14,
   fontWeight: 800,
-};
-
-const secondaryLink: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
-  borderRadius: 12,
-  padding: "11px 16px",
-  fontSize: 14,
-  fontWeight: 800,
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-};
-
-const ghostLink: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
-  borderRadius: 12,
-  padding: "10px 14px",
-  fontSize: 13,
-  fontWeight: 800,
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
 };

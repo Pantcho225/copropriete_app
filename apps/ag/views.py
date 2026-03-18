@@ -1,4 +1,3 @@
-# apps/ag/views.py
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -10,7 +9,6 @@ from typing import Any, Optional, Iterable, List
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
-from django.db.models import Sum
 from django.utils import timezone
 
 from rest_framework import status, viewsets
@@ -29,6 +27,7 @@ from .serializers import (
     ResolutionSerializer,
     VoteSerializer,
 )
+from .services.results import compute_resolution_result
 
 
 def generate_ag_pv_pdf_bytes(ag: AssembleeGenerale, *, request) -> bytes:
@@ -54,9 +53,6 @@ def sign_pdf_pades(
     )
 
 
-# =========================
-# Helpers sécurité / headers
-# =========================
 def _require_copro_id(request) -> str:
     copro_id = getattr(request, "copropriete_id", None)
     if not copro_id:
@@ -79,19 +75,51 @@ def _assert_ag_writable(ag: AssembleeGenerale):
         raise ValidationError({"detail": "PV verrouillé : modification interdite."})
 
 
-def _assert_ag_closable(ag: AssembleeGenerale):
-    if getattr(ag, "statut", None) == "ANNULEE":
-        raise ValidationError({"detail": "AG annulée : clôture interdite."})
+def _assert_ag_open_and_writable(ag: AssembleeGenerale, *, what: str):
+    statut = getattr(ag, "statut", None)
+    if statut != "OUVERTE":
+        raise ValidationError({"detail": f"AG non ouverte : {what} interdit."})
+    if statut == "CLOTUREE":
+        raise ValidationError({"detail": f"AG clôturée : {what} interdit."})
+    if getattr(ag, "pv_locked", False):
+        raise ValidationError({"detail": f"PV verrouillé : {what} interdit."})
 
-    if (
-        not getattr(ag, "pv_signed_pdf", None)
-        or not getattr(ag, "pv_signed_hash", "")
-        or not getattr(ag, "pv_signed_at", None)
-    ):
-        raise ValidationError({"detail": "PV signé obligatoire avant clôture (faites pv/sign)."})
+
+def _get_ag_closing_blockers(ag: AssembleeGenerale) -> list[str]:
+    blockers: list[str] = []
+
+    if getattr(ag, "statut", None) == "ANNULEE":
+        blockers.append("AG annulée : clôture interdite.")
+
+    if not getattr(ag, "pv_signed_pdf", None) or not getattr(ag, "pv_signed_hash", "") or not getattr(ag, "pv_signed_at", None):
+        blockers.append("PV signé obligatoire avant clôture.")
 
     if not getattr(ag, "pv_locked", False):
-        raise ValidationError({"detail": "PV doit être verrouillé avant clôture."})
+        blockers.append("PV doit être verrouillé avant clôture.")
+
+    if not ag.presences.exists():
+        blockers.append("Aucune présence enregistrée.")
+
+    if not ag.presences.filter(present_ou_represente=True).exists():
+        blockers.append("Aucun lot présent ou représenté.")
+
+    if not ag.resolutions.exists():
+        blockers.append("Aucune résolution enregistrée.")
+
+    for res in ag.resolutions.all().order_by("ordre", "id"):
+        if not res.votes.exists():
+            blockers.append(f"Aucun vote enregistré pour la résolution #{res.ordre}.")
+
+    if not ag.quorum_atteint():
+        blockers.append("Quorum non atteint.")
+
+    return blockers
+
+
+def _assert_ag_closable(ag: AssembleeGenerale):
+    blockers = _get_ag_closing_blockers(ag)
+    if blockers:
+        raise ValidationError({"detail": "Clôture impossible.", "blocking_reasons": blockers})
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -106,61 +134,12 @@ def _parse_decimal(value: Any, field_name: str) -> Decimal:
     return d
 
 
-def _compute_resolution_result(res: Resolution) -> dict:
-    agg = (
-        Vote.objects.filter(resolution_id=res.id)
-        .values("choix")
-        .annotate(t=Sum("tantiemes"))
-    )
-    by = {row["choix"]: Decimal(str(row["t"] or 0)) for row in agg}
-
-    pour = by.get("POUR", Decimal("0"))
-    contre = by.get("CONTRE", Decimal("0"))
-    abst = by.get("ABSTENTION", Decimal("0"))
-    exprimes = pour + contre
-
-    def ratio(x: Decimal, denom: Decimal) -> float:
-        return float(x / denom) if denom and denom > 0 else 0.0
-
-    decision = "REJETEE"
-    maj = res.type_majorite
-
-    if maj == "SIMPLE":
-        if pour > contre:
-            decision = "ADOPTEE"
-    elif maj == "ABSOLUE":
-        if exprimes > 0 and pour > (exprimes * Decimal("0.50")):
-            decision = "ADOPTEE"
-    elif maj == "QUALIFIEE_2_3":
-        if exprimes > 0 and pour >= (exprimes * Decimal("0.6667")):
-            decision = "ADOPTEE"
-    elif maj == "UNANIMITE":
-        if exprimes > 0 and contre == 0 and pour == exprimes:
-            decision = "ADOPTEE"
-
-    return {
-        "resolution_id": res.id,
-        "type_majorite": maj,
-        "tantiemes": {
-            "pour": float(pour),
-            "contre": float(contre),
-            "abstention": float(abst),
-            "exprimes": float(exprimes),
-            "ratio_pour_exprimes": ratio(pour, exprimes),
-        },
-        "decision": decision,
-    }
-
-
 def _safe_uploaded_filename(name: str) -> str:
     if not name:
         return ""
     return os.path.basename(name)
 
 
-# =========================
-# Helpers robustesse (anti-500)
-# =========================
 def _model_field_names(obj) -> set[str]:
     try:
         return {f.name for f in obj._meta.get_fields()}
@@ -191,9 +170,6 @@ def _getattr_any(obj, candidates: List[str], default=None):
     return default
 
 
-# =========================
-# Helpers Travaux
-# =========================
 def _fetch_dossier_travaux_for_resolution(*, res: Resolution):
     try:
         from apps.travaux.models import DossierTravaux
@@ -343,19 +319,7 @@ def _close_resolution_and_apply_travaux(
     res: Resolution,
     budget_vote: Optional[Decimal],
 ) -> tuple[dict, Optional[dict]]:
-    """
-    Service interne réutilisable :
-    - calcule résultat
-    - clôture la résolution (idempotent)
-    - applique Travaux si dossier lié et décision ADOPTEE
-    Retourne (resultat_resolution_dict, dossier_payload)
-
-    IMPORTANT:
-    - pendant close_ag, le PV peut déjà être verrouillé
-    - le modèle Resolution.save() peut refuser toute modif si AG.pv_locked == True
-    - on bypass donc save/full_clean pour le champ technique "cloturee"
-    """
-    result = _compute_resolution_result(res)
+    result = compute_resolution_result(res)
     decision = result["decision"]
 
     if not res.cloturee:
@@ -379,9 +343,6 @@ def _close_resolution_and_apply_travaux(
     return result, dossier_payload
 
 
-# =========================
-# Audit log
-# =========================
 try:
     from .models_audit import AGAuditLog  # type: ignore
 except Exception:
@@ -452,6 +413,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "tantiemes_presents": float(presents),
                 "quorum_atteint": bool(atteint),
                 "seuil": 0.50,
+                "has_zero_tantieme_lots": ag.presences.filter(tantiemes__lte=0).exists(),
             },
             status=status.HTTP_200_OK,
         )
@@ -460,7 +422,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
     def init_presences(self, request, pk=None):
         ag = self.get_object()
         _assert_same_copro(request, ag)
-        _assert_ag_writable(ag)
+        _assert_ag_open_and_writable(ag, what="initialisation des présences")
 
         lots = Lot.objects.filter(copropriete_id=ag.copropriete_id).order_by("id")
         if not lots.exists():
@@ -526,7 +488,6 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             ag.pv_pdf_hash = sha
             ag.pv_generated_at = timezone.now()
 
-            # Reset complet de l'état signé si on régénère / réarchive le PV
             if _has_model_field(ag, "pv_signed_pdf"):
                 ag.pv_signed_pdf = None
             if _has_model_field(ag, "pv_signed_hash"):
@@ -571,6 +532,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_signed_at": ag.pv_signed_at.isoformat() if getattr(ag, "pv_signed_at", None) else None,
                 "pv_signer_subject": getattr(ag, "pv_signer_subject", ""),
                 "pv_locked": getattr(ag, "pv_locked", False),
+                "pv_status": "ARCHIVE",
             },
             status=status.HTTP_200_OK,
         )
@@ -700,6 +662,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_signed_at": ag.pv_signed_at.isoformat() if ag.pv_signed_at else None,
                 "pv_signer_subject": ag.pv_signer_subject,
                 "pv_locked": ag.pv_locked,
+                "pv_status": "VERROUILLE",
             },
             status=status.HTTP_200_OK,
         )
@@ -748,7 +711,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         _log_ag_event(request, ag, event="PV_LOCKED", meta={"pv_locked": True})
 
-        return Response({"ag_id": ag.id, "pv_locked": True}, status=status.HTTP_200_OK)
+        return Response({"ag_id": ag.id, "pv_locked": True, "pv_status": "VERROUILLE"}, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -767,9 +730,6 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             )
 
         _assert_ag_closable(ag)
-
-        if not ag.quorum_atteint():
-            raise ValidationError({"detail": "Quorum non atteint. Impossible de clôturer l’AG."})
 
         closed_resolutions = 0
         dossiers_valides = 0
@@ -816,10 +776,12 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             {
                 "ag_id": ag.id,
                 "statut": ag.statut,
-                "detail": "AG clôturée (Phase 2.4).",
+                "detail": "AG clôturée.",
+                "blocking_reasons": [],
                 "resolutions_cloturees": closed_resolutions,
                 "dossiers_travaux": dossiers,
                 "dossiers_travaux_valides": dossiers_valides,
+                "pv_status": "VERROUILLE",
             },
             status=status.HTTP_200_OK,
         )
@@ -845,20 +807,20 @@ class PresenceLotViewSet(viewsets.ModelViewSet):
         ag = serializer.validated_data.get("ag")
         if ag:
             _assert_same_copro(self.request, ag)
-            _assert_ag_writable(ag)
+            _assert_ag_open_and_writable(ag, what="création des présences")
         serializer.save()
 
     def perform_update(self, serializer):
         _require_copro_id(self.request)
         instance = self.get_object()
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_writable(instance.ag)
+        _assert_ag_open_and_writable(instance.ag, what="modification des présences")
         serializer.save()
 
     def perform_destroy(self, instance):
         _require_copro_id(self.request)
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_writable(instance.ag)
+        _assert_ag_open_and_writable(instance.ag, what="suppression des présences")
         super().perform_destroy(instance)
 
 
@@ -883,14 +845,14 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         res = self.get_object()
         _assert_same_copro(request, res.ag)
 
-        return Response(_compute_resolution_result(res), status=status.HTTP_200_OK)
+        return Response(compute_resolution_result(res), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="cloturer")
     def cloturer(self, request, pk=None):
         _require_copro_id(request)
         res = self.get_object()
         _assert_same_copro(request, res.ag)
-        _assert_ag_writable(res.ag)
+        _assert_ag_open_and_writable(res.ag, what="clôture de résolution")
 
         budget_vote: Optional[Decimal] = None
         if request.data and request.data.get("budget_vote") is not None:
@@ -907,7 +869,7 @@ class ResolutionViewSet(viewsets.ModelViewSet):
                 )
 
                 if res.cloturee:
-                    result = _compute_resolution_result(res)
+                    result = compute_resolution_result(res)
                     return Response(
                         {
                             "resolution_id": res.id,
@@ -947,20 +909,20 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         ag = serializer.validated_data.get("ag")
         if ag:
             _assert_same_copro(self.request, ag)
-            _assert_ag_writable(ag)
+            _assert_ag_open_and_writable(ag, what="création des résolutions")
         serializer.save()
 
     def perform_update(self, serializer):
         _require_copro_id(self.request)
         instance = self.get_object()
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_writable(instance.ag)
+        _assert_ag_open_and_writable(instance.ag, what="modification des résolutions")
         serializer.save()
 
     def perform_destroy(self, instance):
         _require_copro_id(self.request)
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_writable(instance.ag)
+        _assert_ag_open_and_writable(instance.ag, what="suppression des résolutions")
         super().perform_destroy(instance)
 
 
@@ -984,7 +946,7 @@ class VoteViewSet(viewsets.ModelViewSet):
         resolution = serializer.validated_data.get("resolution")
         if resolution:
             _assert_same_copro(self.request, resolution.ag)
-            _assert_ag_writable(resolution.ag)
+            _assert_ag_open_and_writable(resolution.ag, what="création des votes")
 
         try:
             serializer.save()

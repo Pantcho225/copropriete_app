@@ -30,8 +30,6 @@ def compute_dossier_statut(*, dossier: DossierImpaye) -> str:
 
 @transaction.atomic
 def refresh_dossier_status(dossier: DossierImpaye, *, save: bool = True) -> DossierImpaye:
-    dossier.statut = compute_dossier_statut(dossier=dossier)
-
     if dossier.reste_a_payer <= DECIMAL_ZERO:
         if not dossier.est_regularise:
             dossier.est_regularise = True
@@ -40,12 +38,43 @@ def refresh_dossier_status(dossier: DossierImpaye, *, save: bool = True) -> Doss
         dossier.est_regularise = False
         dossier.regularise_at = None
 
+    dossier.statut = compute_dossier_statut(dossier=dossier)
+
     if save:
         dossier.save(
             update_fields=[
                 "statut",
                 "est_regularise",
                 "regularise_at",
+                "updated_at",
+            ]
+        )
+
+    return dossier
+
+
+def _recompute_relance_counters(dossier: DossierImpaye, *, save: bool = True) -> DossierImpaye:
+    relances_qs = dossier.relances.all().order_by("-date_envoi", "-created_at", "-id")
+
+    total_relances = relances_qs.count()
+    derniere_relance = relances_qs.first()
+
+    dossier.relances_count = total_relances
+    dossier.derniere_relance_at = getattr(derniere_relance, "date_envoi", None) if derniere_relance else None
+
+    active_relance = (
+        relances_qs.exclude(statut=Relance.Statut.ANNULEE)
+        .order_by("-niveau", "-date_envoi", "-created_at", "-id")
+        .first()
+    )
+    dossier.niveau_relance = getattr(active_relance, "niveau", 0) if active_relance else 0
+
+    if save:
+        dossier.save(
+            update_fields=[
+                "relances_count",
+                "derniere_relance_at",
+                "niveau_relance",
                 "updated_at",
             ]
         )
@@ -64,8 +93,17 @@ def create_relance(
     statut: str = Relance.Statut.ENVOYEE,
     document_pdf=None,
 ) -> Relance:
+    refresh_dossier_status(dossier)
+
     if dossier.reste_a_payer <= DECIMAL_ZERO:
         raise ValidationError("Impossible de créer une relance pour un dossier soldé.")
+
+    if dossier.est_regularise:
+        raise ValidationError("Impossible de créer une relance pour un dossier déjà régularisé.")
+
+    canal = (canal or "").strip()
+    if not canal:
+        raise ValidationError("Le canal est obligatoire.")
 
     niveau = (dossier.niveau_relance or 0) + 1
 
@@ -77,26 +115,16 @@ def create_relance(
         coproprietaire=dossier.coproprietaire,
         niveau=niveau,
         canal=canal,
-        statut=statut,
-        objet=objet,
-        message=message,
+        statut=statut or Relance.Statut.ENVOYEE,
+        objet=(objet or "").strip(),
+        message=(message or "").strip(),
         montant_du_message=dossier.reste_a_payer,
         reste_a_payer_au_moment_envoi=dossier.reste_a_payer,
         document_pdf=document_pdf,
         envoye_par=utilisateur if getattr(utilisateur, "is_authenticated", False) else None,
     )
 
-    dossier.niveau_relance = niveau
-    dossier.relances_count = (dossier.relances_count or 0) + 1
-    dossier.derniere_relance_at = timezone.now()
-    dossier.save(
-        update_fields=[
-            "niveau_relance",
-            "relances_count",
-            "derniere_relance_at",
-            "updated_at",
-        ]
-    )
+    _recompute_relance_counters(dossier)
 
     return relance
 
@@ -114,7 +142,7 @@ def cancel_relance(
     relance.statut = Relance.Statut.ANNULEE
     relance.annulee_at = timezone.now()
     relance.annulee_par = utilisateur if getattr(utilisateur, "is_authenticated", False) else None
-    relance.motif_annulation = motif_annulation or ""
+    relance.motif_annulation = (motif_annulation or "").strip()
     relance.save(
         update_fields=[
             "statut",
@@ -124,6 +152,11 @@ def cancel_relance(
             "updated_at",
         ]
     )
+
+    dossier = relance.dossier
+    _recompute_relance_counters(dossier)
+    refresh_dossier_status(dossier)
+
     return relance
 
 
@@ -154,7 +187,7 @@ def generate_avis_regularisation(
             "date_regularisation": dossier.regularise_at or timezone.now(),
             "canal": canal,
             "statut": AvisRegularisation.Statut.GENERE,
-            "message": message or "",
+            "message": (message or "").strip(),
             "genere_par": utilisateur if getattr(utilisateur, "is_authenticated", False) else None,
         },
     )
@@ -164,7 +197,8 @@ def generate_avis_regularisation(
         avis.montant_total_regle = dossier.montant_paye
         avis.date_regularisation = dossier.regularise_at or timezone.now()
         avis.canal = canal
-        avis.message = message or avis.message
+        avis.statut = AvisRegularisation.Statut.GENERE
+        avis.message = (message or "").strip() or avis.message
         if getattr(utilisateur, "is_authenticated", False):
             avis.genere_par = utilisateur
         avis.save(
@@ -173,6 +207,7 @@ def generate_avis_regularisation(
                 "montant_total_regle",
                 "date_regularisation",
                 "canal",
+                "statut",
                 "message",
                 "genere_par",
                 "updated_at",

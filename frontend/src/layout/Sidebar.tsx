@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
+import { SIDEBAR_SECTIONS } from "../config/productNavigation";
 
 const SIDEBAR_WIDTH = 276;
 
@@ -27,7 +28,7 @@ function SectionTitle({ children }: { children: ReactNode }) {
         padding: "0 6px",
         fontSize: 11,
         fontWeight: 900,
-        opacity: 0.55,
+        opacity: 0.62,
         letterSpacing: 1,
         textTransform: "uppercase",
         color: "#475569",
@@ -41,7 +42,12 @@ function SectionTitle({ children }: { children: ReactNode }) {
 function SidebarLink(props: { to: string; children: ReactNode }) {
   return (
     <NavLink to={props.to} style={({ isActive }) => buildLinkStyle(isActive)}>
-      {props.children}
+      {({ isActive }) => (
+        <>
+          <Dot active={isActive} />
+          <span>{props.children}</span>
+        </>
+      )}
     </NavLink>
   );
 }
@@ -69,8 +75,26 @@ function Dot({ active = false }: { active?: boolean }) {
         borderRadius: 999,
         background: active ? "#4f46e5" : "#cbd5e1",
         flexShrink: 0,
+        transition: "background 0.2s ease",
       }}
     />
+  );
+}
+
+function ProductLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        marginBottom: 6,
+        fontSize: 11,
+        fontWeight: 900,
+        color: "#64748b",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -172,18 +196,7 @@ export default function Sidebar() {
             color: "#475569",
           }}
         >
-          <div
-            style={{
-              marginBottom: 5,
-              fontWeight: 800,
-              color: "#64748b",
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
-              fontSize: 11,
-            }}
-          >
-            Copropriété active
-          </div>
+          <ProductLabel>Copropriété active</ProductLabel>
 
           <div
             style={{
@@ -209,99 +222,19 @@ export default function Sidebar() {
           paddingRight: 2,
         }}
       >
-        <SidebarLink to="/">
-          <Dot active />
-          <span>Tableau de bord</span>
-        </SidebarLink>
+        <SidebarLink to="/">Tableau de bord</SidebarLink>
 
-        <SectionTitle>Comptabilité</SectionTitle>
+        {SIDEBAR_SECTIONS.map((section) => (
+          <div key={section.title}>
+            <SectionTitle>{section.title}</SectionTitle>
 
-        <SidebarLink to="/compta/import">
-          <Dot />
-          <span>Importer un relevé</span>
-        </SidebarLink>
-
-        <SidebarLink to="/compta/imports">
-          <Dot />
-          <span>Imports bancaires</span>
-        </SidebarLink>
-
-        <SidebarLink to="/compta/mouvements">
-          <Dot />
-          <span>Mouvements bancaires</span>
-        </SidebarLink>
-
-        <SidebarLink to="/compta/stats">
-          <Dot />
-          <span>Statistiques comptables</span>
-        </SidebarLink>
-
-        <SectionTitle>Ressources humaines</SectionTitle>
-
-        <SidebarLink to="/rh/employes">
-          <Dot />
-          <span>Employés</span>
-        </SidebarLink>
-
-        <SidebarLink to="/rh/contrats">
-          <Dot />
-          <span>Contrats</span>
-        </SidebarLink>
-
-        <SectionTitle>Lots</SectionTitle>
-
-        <SidebarLink to="/lots">
-          <Dot />
-          <span>Lots</span>
-        </SidebarLink>
-
-        <SidebarLink to="/lots/nouveau">
-          <Dot />
-          <span>Nouveau lot</span>
-        </SidebarLink>
-
-        <SectionTitle>Travaux</SectionTitle>
-
-        <SidebarLink to="/travaux/dossiers">
-          <Dot />
-          <span>Dossiers travaux</span>
-        </SidebarLink>
-
-        <SidebarLink to="/travaux/dossiers/nouveau">
-          <Dot />
-          <span>Nouveau dossier</span>
-        </SidebarLink>
-
-        <SidebarLink to="/travaux/fournisseurs">
-          <Dot />
-          <span>Fournisseurs</span>
-        </SidebarLink>
-
-        <SidebarLink to="/travaux/fournisseurs/nouveau">
-          <Dot />
-          <span>Nouveau fournisseur</span>
-        </SidebarLink>
-
-        <SectionTitle>Assemblées générales</SectionTitle>
-
-        <SidebarLink to="/ag">
-          <Dot />
-          <span>Assemblées générales</span>
-        </SidebarLink>
-
-        <SectionTitle>Facturation</SectionTitle>
-
-        <SidebarLink to="/billing">
-          <Dot />
-          <span>Facturation</span>
-        </SidebarLink>
-
-        <SectionTitle>Administration plateforme</SectionTitle>
-
-        <SidebarLink to="/platform-admin">
-          <Dot />
-          <span>Administration plateforme</span>
-        </SidebarLink>
+            {section.items.map((item) => (
+              <SidebarLink key={item.to} to={item.to}>
+                {item.label}
+              </SidebarLink>
+            ))}
+          </div>
+        ))}
       </nav>
 
       <div

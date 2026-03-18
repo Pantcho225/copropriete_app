@@ -10,7 +10,10 @@ type PresenceItem = {
   ag: number;
   lot: number;
   lot_reference: string;
+  lot_type_lot?: string | null;
   tantiemes: number;
+  tantiemes_recalcules?: number | null;
+  is_zero_tantieme: boolean;
   present_ou_represente: boolean;
   representant_nom: string;
   commentaire: string;
@@ -37,7 +40,6 @@ const INITIAL_FORM: PresenceFormValues = {
   commentaire: "",
 };
 
-// Endpoints canoniques DRF : toujours avec slash final.
 const AGS_ENDPOINT = "/api/ag/ags/";
 const PRESENCES_ENDPOINT = "/api/ag/presences/";
 
@@ -77,13 +79,21 @@ function formatNumber(value?: number | null): string {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
 }
 
+function extractBlockingReasons(data: unknown): string[] {
+  if (!isRecord(data)) return [];
+  const value = data.blocking_reasons;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   const err = error as {
     response?: {
       data?: {
-        detail?: string;
+        detail?: string | string[];
         message?: string;
         errors?: Record<string, string[]>;
+        blocking_reasons?: string[];
         [key: string]: unknown;
       };
       status?: number;
@@ -92,8 +102,12 @@ function getErrorMessage(error: unknown, fallback: string) {
   };
 
   const data = err?.response?.data;
+  const reasons = extractBlockingReasons(data);
+
+  if (reasons.length > 0) return reasons.join(" ");
 
   if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
+  if (Array.isArray(data?.detail) && typeof data.detail[0] === "string") return data.detail[0];
   if (typeof data?.message === "string" && data.message.trim()) return data.message;
 
   if (data?.errors && typeof data.errors === "object") {
@@ -101,11 +115,20 @@ function getErrorMessage(error: unknown, fallback: string) {
     if (Array.isArray(firstEntry) && typeof firstEntry[0] === "string") return firstEntry[0];
   }
 
+  if (isRecord(data)) {
+    for (const value of Object.values(data)) {
+      if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+      if (typeof value === "string" && value.trim()) return value;
+    }
+  }
+
   return err?.message || fallback;
 }
 
 function normalizePresenceItem(raw: unknown): PresenceItem {
   const row = isRecord(raw) ? raw : {};
+
+  const tantiemes = toNumberOrNull(row.tantiemes) ?? 0;
 
   return {
     id: toNumberOrNull(row.id) ?? toNumberOrNull(row.pk) ?? 0,
@@ -119,7 +142,10 @@ function normalizePresenceItem(raw: unknown): PresenceItem {
         row.reference,
         isRecord(row.lot_obj) ? row.lot_obj.reference : undefined,
       ) || `Lot #${toNumberOrNull(row.lot) ?? toNumberOrNull(row.lot_id) ?? "?"}`,
-    tantiemes: toNumberOrNull(row.tantiemes) ?? 0,
+    lot_type_lot: pickString(row.lot_type_lot, row.type_lot) || null,
+    tantiemes,
+    tantiemes_recalcules: toNumberOrNull(row.tantiemes_recalcules),
+    is_zero_tantieme: toBoolean(row.is_zero_tantieme) || tantiemes <= 0,
     present_ou_represente: toBoolean(row.present_ou_represente),
     representant_nom: pickString(row.representant_nom, row.nom_representant),
     commentaire: pickString(row.commentaire, row.note, row.notes),
@@ -248,9 +274,7 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
         minHeight: 112,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>
-        {props.title}
-      </div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>{props.title}</div>
       <div
         style={{
           fontSize: 28,
@@ -263,9 +287,7 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
         {props.isLoading ? "…" : props.value}
       </div>
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
       ) : null}
     </div>
   );
@@ -350,9 +372,7 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
-        {props.title}
-      </div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
       <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
       {props.actionLabel && props.onAction ? (
         <div style={{ marginTop: 12 }}>
@@ -406,6 +426,7 @@ export default function AGPresences() {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: FlashKind; text: string } | null>(null);
+  const [blockingReasons, setBlockingReasons] = useState<string[]>([]);
   const [rows, setRows] = useState<PresenceItem[]>([]);
   const [form, setForm] = useState<PresenceFormValues>(INITIAL_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -425,9 +446,7 @@ export default function AGPresences() {
     try {
       const res = await api.get<unknown>(buildAgPresencesListUrl(agId));
 
-      const normalized = extractPresenceRows(res.data).sort((a, b) =>
-        a.lot_reference.localeCompare(b.lot_reference, "fr"),
-      );
+      const normalized = extractPresenceRows(res.data).sort((a, b) => a.lot_reference.localeCompare(b.lot_reference, "fr"));
 
       setRows(normalized);
       setState("success");
@@ -449,9 +468,11 @@ export default function AGPresences() {
     return rows.filter((item) => {
       const haystack = [
         item.lot_reference,
+        item.lot_type_lot ?? "",
         item.representant_nom,
         item.commentaire,
         item.present_ou_represente ? "présent représenté oui" : "absent non",
+        item.is_zero_tantieme ? "zero tantieme poids nul" : "",
       ]
         .join(" ")
         .toLowerCase();
@@ -462,12 +483,14 @@ export default function AGPresences() {
 
   const stats = useMemo(() => {
     const presents = rows.filter((x) => x.present_ou_represente);
+    const zeroTantieme = rows.filter((x) => x.is_zero_tantieme);
 
     return {
       totalLots: rows.length,
       presents: presents.length,
       absents: rows.filter((x) => !x.present_ou_represente).length,
       tantiemesPresents: presents.reduce((sum, item) => sum + item.tantiemes, 0),
+      zeroTantieme: zeroTantieme.length,
     };
   }, [rows]);
 
@@ -500,12 +523,16 @@ export default function AGPresences() {
 
     setBusyAction("init");
     setMessage(null);
+    setBlockingReasons([]);
 
     try {
-      await api.post(buildAgInitPresencesUrl(agId), {});
+      const res = await api.post(buildAgInitPresencesUrl(agId), {});
       setMessage({ kind: "success", text: "Présences initialisées avec succès." });
+      setBlockingReasons(extractBlockingReasons(res?.data));
       await fetchPresences();
     } catch (e) {
+      const err = e as { response?: { data?: unknown } };
+      setBlockingReasons(extractBlockingReasons(err?.response?.data));
       setMessage({
         kind: "error",
         text: getErrorMessage(e, "Impossible d’initialiser les présences."),
@@ -526,6 +553,7 @@ export default function AGPresences() {
 
     setBusyAction(editingId ? "update" : "create");
     setMessage(null);
+    setBlockingReasons([]);
 
     const payload = {
       ag: Number(agId),
@@ -547,6 +575,8 @@ export default function AGPresences() {
       resetForm();
       await fetchPresences();
     } catch (e) {
+      const err = e as { response?: { data?: unknown } };
+      setBlockingReasons(extractBlockingReasons(err?.response?.data));
       setMessage({
         kind: "error",
         text: getErrorMessage(e, "Impossible d’enregistrer la présence."),
@@ -562,6 +592,7 @@ export default function AGPresences() {
 
     setBusyAction(`delete-${id}`);
     setMessage(null);
+    setBlockingReasons([]);
 
     try {
       await api.delete(buildPresenceDetailUrl(id));
@@ -573,6 +604,8 @@ export default function AGPresences() {
 
       await fetchPresences();
     } catch (e) {
+      const err = e as { response?: { data?: unknown } };
+      setBlockingReasons(extractBlockingReasons(err?.response?.data));
       setMessage({
         kind: "error",
         text: getErrorMessage(e, "Impossible de supprimer la présence."),
@@ -586,17 +619,11 @@ export default function AGPresences() {
     <PageShell>
       <SectionTitle
         title="Présences AG"
-        subtitle="Gérez les présences et représentations des lots pour cette assemblée générale, avec suivi des tantièmes et de l’état de participation."
+        subtitle="Gérez les présences et représentations des lots pour cette assemblée générale, avec suivi des tantièmes effectivement retenus pour l’AG."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>
-              Retour au détail AG
-            </SmallButton>
-            <SmallButton
-              onClick={() => void handleInitPresences()}
-              primary
-              disabled={busyAction !== null || !agId}
-            >
+            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>Retour au détail AG</SmallButton>
+            <SmallButton onClick={() => void handleInitPresences()} primary disabled={busyAction !== null || !agId}>
               {busyAction === "init" ? "Initialisation..." : "Initialiser les présences"}
             </SmallButton>
           </div>
@@ -613,6 +640,17 @@ export default function AGPresences() {
       {message ? (
         <AlertBox kind={message.kind}>
           <div style={{ fontSize: 13 }}>{message.text}</div>
+        </AlertBox>
+      ) : null}
+
+      {blockingReasons.length > 0 ? (
+        <AlertBox kind="error">
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Blocages métier détectés</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+            {blockingReasons.map((reason, index) => (
+              <li key={`${reason}-${index}`}>{reason}</li>
+            ))}
+          </ul>
         </AlertBox>
       ) : null}
 
@@ -638,7 +676,16 @@ export default function AGPresences() {
         <StatCard
           title="Tantièmes présents"
           value={formatNumber(stats.tantiemesPresents)}
-          sub="Somme des tantièmes présents ou représentés."
+          sub="Somme des tantièmes AG présents ou représentés."
+          isLoading={state === "loading"}
+        />
+      </div>
+
+      <div className="ag-presences-stat-grid ag-presences-stat-grid-secondary">
+        <StatCard
+          title="Lots à 0 tantième"
+          value={stats.zeroTantieme}
+          sub="Ils restent visibles mais ne pèsent pas dans le calcul pondéré."
           isLoading={state === "loading"}
         />
       </div>
@@ -646,9 +693,7 @@ export default function AGPresences() {
       <div className="ag-presences-main-grid">
         <Card
           title={editingId ? "Modifier une présence" : "Nouvelle présence"}
-          right={
-            editingId ? <Badge text="Mode édition" kind="info" /> : <Badge text="Saisie" kind="neutral" />
-          }
+          right={editingId ? <Badge text="Mode édition" kind="info" /> : <Badge text="Saisie" kind="neutral" />}
         >
           <div style={{ display: "grid", gap: 14 }}>
             <div style={field}>
@@ -714,6 +759,10 @@ export default function AGPresences() {
               />
             </div>
 
+            <div style={infoBox}>
+              Le poids de présence en tantièmes est calculé par le backend. Il n’est pas saisi manuellement dans ce formulaire.
+            </div>
+
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <SmallButton
                 onClick={() => void handleSubmit()}
@@ -777,31 +826,49 @@ export default function AGPresences() {
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{item.lot_reference}</div>
+
+                        {item.lot_type_lot ? <Badge text={item.lot_type_lot} kind="neutral" /> : null}
+
                         <Badge
                           text={item.present_ou_represente ? "Présent / représenté" : "Absent"}
                           kind={item.present_ou_represente ? "success" : "warning"}
                         />
+
                         <Badge text={`${formatNumber(item.tantiemes)} tantièmes`} kind="info" />
+
+                        {item.is_zero_tantieme ? <Badge text="0 tantième" kind="warning" /> : null}
                       </div>
 
                       <div style={{ fontSize: 13, color: "#374151" }}>
                         <strong>Représentant :</strong> {item.representant_nom || "—"}
                       </div>
 
+                      <div style={{ fontSize: 13, color: "#374151" }}>
+                        <strong>Tantièmes AG retenus :</strong> {formatNumber(item.tantiemes)}
+                        {item.tantiemes_recalcules !== null && item.tantiemes_recalcules !== undefined ? (
+                          <span style={{ color: "#6b7280" }}>
+                            {" "}
+                            — référence recalculée : {formatNumber(item.tantiemes_recalcules)}
+                          </span>
+                        ) : null}
+                      </div>
+
                       <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
                         <strong>Commentaire :</strong> {item.commentaire || "—"}
                       </div>
+
+                      {item.is_zero_tantieme ? (
+                        <div style={warningBox}>
+                          Ce lot a 0 tantième. Il reste visible dans l’AG mais ne sera pas pris en compte dans le calcul pondéré.
+                        </div>
+                      ) : null}
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <SmallButton onClick={() => fillForm(item)} disabled={busyAction !== null}>
                         Modifier
                       </SmallButton>
-                      <SmallButton
-                        danger
-                        onClick={() => void handleDelete(item.id)}
-                        disabled={busyAction !== null}
-                      >
+                      <SmallButton danger onClick={() => void handleDelete(item.id)} disabled={busyAction !== null}>
                         {busyAction === `delete-${item.id}` ? "Suppression..." : "Supprimer"}
                       </SmallButton>
                     </div>
@@ -820,6 +887,10 @@ export default function AGPresences() {
           gap: 14px;
         }
 
+        .ag-presences-stat-grid-secondary {
+          grid-template-columns: repeat(1, minmax(0, 1fr));
+        }
+
         .ag-presences-main-grid {
           display: grid;
           grid-template-columns: 0.95fr 1.05fr;
@@ -829,6 +900,10 @@ export default function AGPresences() {
         @media (max-width: 1200px) {
           .ag-presences-stat-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ag-presences-stat-grid-secondary {
+            grid-template-columns: 1fr;
           }
 
           .ag-presences-main-grid {
@@ -880,4 +955,24 @@ const checkboxRow: CSSProperties = {
   gap: 8,
   fontSize: 14,
   color: "#111827",
+};
+
+const infoBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
+const warningBox: CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  background: "#fffbeb",
+  border: "1px solid #fde68a",
+  color: "#92400e",
+  fontSize: 12,
+  lineHeight: 1.55,
 };

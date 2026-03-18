@@ -1,3 +1,5 @@
+from django.db import IntegrityError
+from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 
 from apps.core.api import CoproScopedModelViewSet
@@ -21,6 +23,26 @@ class LotViewSet(CoproScopedModelViewSet):
         else:
             permission_classes = [IsAuthenticated, IsCoproMember]
         return [p() for p in permission_classes]
+
+    def perform_create(self, serializer):
+        try:
+            serializer.save()
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {
+                    "reference": "Un lot avec cette référence existe déjà dans cette copropriété."
+                }
+            )
+
+    def perform_update(self, serializer):
+        try:
+            serializer.save()
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {
+                    "reference": "Un lot avec cette référence existe déjà dans cette copropriété."
+                }
+            )
 
 
 class TantiemeCategorieViewSet(CoproScopedModelViewSet):

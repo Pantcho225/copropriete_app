@@ -5,6 +5,33 @@ from rest_framework import serializers
 from .models import AvisRegularisation, DossierImpaye, Relance
 
 
+def _get_person_display(cp) -> str | None:
+    if not cp:
+        return None
+
+    for attr in ("nom_complet", "full_name", "nom"):
+        value = getattr(cp, attr, None)
+        if value:
+            return value
+
+    prenom = getattr(cp, "prenom", "") or ""
+    nom = getattr(cp, "nom", "") or ""
+    full = f"{prenom} {nom}".strip()
+    return full or str(cp)
+
+
+def _get_appel_display(appel) -> str | None:
+    if not appel:
+        return None
+
+    for attr in ("reference", "numero", "libelle", "titre"):
+        value = getattr(appel, attr, None)
+        if value:
+            return value
+
+    return str(appel)
+
+
 class DossierImpayeListSerializer(serializers.ModelSerializer):
     copropriete_nom = serializers.CharField(source="copropriete.nom", read_only=True)
     lot_numero = serializers.CharField(source="lot.reference", read_only=True)
@@ -43,27 +70,10 @@ class DossierImpayeListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_coproprietaire_nom(self, obj):
-        cp = obj.coproprietaire
-        if not cp:
-            return None
-
-        for attr in ("nom_complet", "full_name", "nom"):
-            value = getattr(cp, attr, None)
-            if value:
-                return value
-
-        prenom = getattr(cp, "prenom", "") or ""
-        nom = getattr(cp, "nom", "") or ""
-        full = f"{prenom} {nom}".strip()
-        return full or str(cp)
+        return _get_person_display(obj.coproprietaire)
 
     def get_appel_reference(self, obj):
-        appel = obj.appel
-        for attr in ("reference", "numero", "libelle", "titre"):
-            value = getattr(appel, attr, None)
-            if value:
-                return value
-        return str(appel)
+        return _get_appel_display(obj.appel)
 
 
 class RelanceSerializer(serializers.ModelSerializer):
@@ -126,27 +136,10 @@ class RelanceSerializer(serializers.ModelSerializer):
         ]
 
     def get_coproprietaire_nom(self, obj):
-        cp = obj.coproprietaire
-        if not cp:
-            return None
-
-        for attr in ("nom_complet", "full_name", "nom"):
-            value = getattr(cp, attr, None)
-            if value:
-                return value
-
-        prenom = getattr(cp, "prenom", "") or ""
-        nom = getattr(cp, "nom", "") or ""
-        full = f"{prenom} {nom}".strip()
-        return full or str(cp)
+        return _get_person_display(obj.coproprietaire)
 
     def get_appel_reference(self, obj):
-        appel = obj.appel
-        for attr in ("reference", "numero", "libelle", "titre"):
-            value = getattr(appel, attr, None)
-            if value:
-                return value
-        return str(appel)
+        return _get_appel_display(obj.appel)
 
 
 class RelanceCreateSerializer(serializers.ModelSerializer):
@@ -154,63 +147,63 @@ class RelanceCreateSerializer(serializers.ModelSerializer):
         model = Relance
         fields = [
             "id",
-            "copropriete",
             "dossier",
-            "appel",
-            "lot",
-            "coproprietaire",
-            "niveau",
             "canal",
-            "statut",
             "objet",
             "message",
+            "document_pdf",
+            "niveau",
             "montant_du_message",
             "reste_a_payer_au_moment_envoi",
-            "document_pdf",
         ]
         read_only_fields = ["id"]
 
     def validate(self, attrs):
         dossier = attrs.get("dossier")
-        appel = attrs.get("appel")
-        lot = attrs.get("lot")
-        copropriete = attrs.get("copropriete")
-        coproprietaire = attrs.get("coproprietaire", None)
+        if not dossier:
+            raise serializers.ValidationError({"dossier": "Le dossier impayé est obligatoire."})
 
-        if dossier:
-            if appel and dossier.appel_id != appel.id:
-                raise serializers.ValidationError(
-                    {"appel": "Cet appel ne correspond pas au dossier sélectionné."}
-                )
+        request = self.context.get("request")
+        request_copro_id = None
+        if request is not None:
+            request_copro_id = getattr(request, "copropriete_id", None) or request.headers.get("X-Copropriete-Id")
 
-            if lot and dossier.lot_id != lot.id:
-                raise serializers.ValidationError(
-                    {"lot": "Ce lot ne correspond pas au dossier sélectionné."}
-                )
+        if request_copro_id and str(dossier.copropriete_id) != str(request_copro_id):
+            raise serializers.ValidationError(
+                {"dossier": "Le dossier ne correspond pas à la copropriété courante."}
+            )
 
-            if copropriete and dossier.copropriete_id != copropriete.id:
-                raise serializers.ValidationError(
-                    {"copropriete": "Cette copropriété ne correspond pas au dossier sélectionné."}
-                )
+        if dossier.reste_a_payer <= 0:
+            raise serializers.ValidationError(
+                {"dossier": "Impossible de créer une relance pour un dossier soldé."}
+            )
 
-            if coproprietaire and dossier.coproprietaire_id != coproprietaire.id:
-                raise serializers.ValidationError(
-                    {"coproprietaire": "Ce copropriétaire ne correspond pas au dossier sélectionné."}
-                )
+        if getattr(dossier, "est_regularise", False):
+            raise serializers.ValidationError(
+                {"dossier": "Impossible de créer une relance pour un dossier déjà régularisé."}
+            )
 
-            if dossier.reste_a_payer <= 0:
-                raise serializers.ValidationError(
-                    {"dossier": "Impossible de créer une relance pour un dossier soldé."}
-                )
+        canal = (attrs.get("canal") or "").strip()
+        if not canal:
+            raise serializers.ValidationError({"canal": "Le canal est obligatoire."})
 
-            if attrs.get("reste_a_payer_au_moment_envoi") is None:
-                attrs["reste_a_payer_au_moment_envoi"] = dossier.reste_a_payer
+        # Source de vérité = dossier
+        attrs["copropriete"] = dossier.copropriete
+        attrs["appel"] = dossier.appel
+        attrs["lot"] = dossier.lot
+        attrs["coproprietaire"] = dossier.coproprietaire
 
-            if attrs.get("montant_du_message") is None:
-                attrs["montant_du_message"] = dossier.reste_a_payer
+        if attrs.get("reste_a_payer_au_moment_envoi") is None:
+            attrs["reste_a_payer_au_moment_envoi"] = dossier.reste_a_payer
 
-            if not attrs.get("niveau"):
-                attrs["niveau"] = (dossier.niveau_relance or 0) + 1
+        if attrs.get("montant_du_message") is None:
+            attrs["montant_du_message"] = dossier.reste_a_payer
+
+        if not attrs.get("niveau"):
+            attrs["niveau"] = (dossier.niveau_relance or 0) + 1
+
+        # On ne laisse pas le client imposer un statut incohérent à la création
+        attrs["statut"] = getattr(Relance.Statut, "ENVOYEE", "ENVOYEE")
 
         return attrs
 
@@ -268,27 +261,10 @@ class AvisRegularisationSerializer(serializers.ModelSerializer):
         ]
 
     def get_coproprietaire_nom(self, obj):
-        cp = obj.coproprietaire
-        if not cp:
-            return None
-
-        for attr in ("nom_complet", "full_name", "nom"):
-            value = getattr(cp, attr, None)
-            if value:
-                return value
-
-        prenom = getattr(cp, "prenom", "") or ""
-        nom = getattr(cp, "nom", "") or ""
-        full = f"{prenom} {nom}".strip()
-        return full or str(cp)
+        return _get_person_display(obj.coproprietaire)
 
     def get_appel_reference(self, obj):
-        appel = obj.appel
-        for attr in ("reference", "numero", "libelle", "titre"):
-            value = getattr(appel, attr, None)
-            if value:
-                return value
-        return str(appel)
+        return _get_appel_display(obj.appel)
 
 
 class DossierImpayeDetailSerializer(DossierImpayeListSerializer):

@@ -11,6 +11,9 @@ import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "idle" | "loading" | "success" | "error";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
+type FlashKind = "success" | "error" | "info";
 
 type TravauxStatut =
   | "BROUILLON"
@@ -107,7 +110,7 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function AlertBox(props: { kind: "error" | "success" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -127,8 +130,87 @@ function AlertBox(props: { kind: "error" | "success" | "info"; children: ReactNo
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
+  );
+}
+
+function AppButton(props: {
+  children: ReactNode;
+  to?: string;
+  onClick?: () => void;
+  variant?: ButtonVariant;
+  disabled?: boolean;
+}) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
+  if (props.to) {
+    return (
+      <Link
+        to={props.to}
+        aria-disabled={props.disabled}
+        onClick={(e) => {
+          if (props.disabled) e.preventDefault();
+        }}
+        style={{
+          border: styles.border,
+          background: props.disabled ? "#f9fafb" : styles.background,
+          color: props.disabled ? "#9ca3af" : styles.color,
+          borderRadius: 12,
+          padding: "10px 14px",
+          fontSize: 13,
+          fontWeight: 800,
+          textDecoration: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          whiteSpace: "nowrap",
+          cursor: props.disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        {props.children}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      style={{
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {props.children}
+    </button>
   );
 }
 
@@ -138,6 +220,39 @@ function RequiredMark() {
 
 function FieldHint(props: { children: ReactNode }) {
   return <div style={hint}>{props.children}</div>;
+}
+
+function Badge(props: { text: string; kind?: BadgeKind }) {
+  const styles =
+    props.kind === "success"
+      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
+      : props.kind === "warning"
+        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
+        : props.kind === "danger"
+          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+          : props.kind === "info"
+            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
+            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        border: `1px solid ${styles.border}`,
+        background: styles.background,
+        color: styles.color,
+      }}
+    >
+      {props.text}
+    </span>
+  );
 }
 
 function fmtMoney(value?: string | number | null) {
@@ -186,42 +301,14 @@ function humanizeStatut(value?: string | null) {
     .join(" ");
 }
 
-function getStatutStyle(statut?: string | null): CSSProperties {
+function getStatutKind(statut?: string | null): BadgeKind {
   const s = normalizeStatut(statut);
 
-  if (s === "VALIDE" || s === "TERMINE") {
-    return {
-      ...badgeBase,
-      color: "#166534",
-      background: "#ecfdf5",
-      border: "1px solid #a7f3d0",
-    };
-  }
-
-  if (s === "SOUMIS_AG" || s === "EN_COURS") {
-    return {
-      ...badgeBase,
-      color: "#1d4ed8",
-      background: "#eff6ff",
-      border: "1px solid #bfdbfe",
-    };
-  }
-
-  if (s === "BROUILLON") {
-    return {
-      ...badgeBase,
-      color: "#374151",
-      background: "#f3f4f6",
-      border: "1px solid #e5e7eb",
-    };
-  }
-
-  return {
-    ...badgeBase,
-    color: "#92400e",
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-  };
+  if (s === "VALIDE" || s === "TERMINE") return "success";
+  if (s === "SOUMIS_AG" || s === "EN_COURS") return "info";
+  if (s === "BROUILLON") return "neutral";
+  if (s === "ARCHIVE") return "warning";
+  return "neutral";
 }
 
 function getErrorMessage(e: unknown, fallback: string) {
@@ -240,14 +327,8 @@ function getErrorMessage(e: unknown, fallback: string) {
   const data = err?.response?.data;
 
   if (data && typeof data === "object") {
-    if (typeof data.detail === "string" && data.detail.trim()) {
-      return data.detail;
-    }
-
-    if (typeof data.message === "string" && data.message.trim()) {
-      return data.message;
-    }
-
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+    if (typeof data.message === "string" && data.message.trim()) return data.message;
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
     }
@@ -359,21 +440,24 @@ export default function TravauxDossierForm() {
     void run();
   }, [isEdit, dossierId]);
 
-  const pageTitle = useMemo(
-    () => (isEdit ? "Modifier le dossier" : "Nouveau dossier"),
-    [isEdit]
-  );
+  const pageTitle = useMemo(() => (isEdit ? "Modifier le dossier" : "Nouveau dossier"), [isEdit]);
 
   const pageSubtitle = useMemo(
     () =>
       isEdit
         ? "Mettez à jour les informations générales du dossier sélectionné. Les données budgétaires avancées et le statut d’exécution restent pilotés par le flux métier."
         : "Renseignez les informations nécessaires pour enregistrer un nouveau dossier dans le module Travaux.",
-    [isEdit]
+    [isEdit],
   );
 
   function updateField<K extends keyof FormValues>(field: K, value: FormValues[K]) {
     setValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function resetForm() {
+    setValues(INITIAL_VALUES);
+    setError(null);
+    setSuccess(null);
   }
 
   function buildPayload(): DossierTravauxPayload {
@@ -433,6 +517,7 @@ export default function TravauxDossierForm() {
         const { data } = await api.post<DossierTravauxResponse>(ENDPOINTS.travauxDossiers, payload);
         savedId = data?.id ? String(data.id) : undefined;
         setSuccess("Le dossier a bien été créé.");
+        setValues(INITIAL_VALUES);
       }
 
       window.setTimeout(() => {
@@ -446,8 +531,8 @@ export default function TravauxDossierForm() {
       setError(
         getErrorMessage(
           e,
-          isEdit ? "Impossible de modifier ce dossier." : "Impossible d’enregistrer ce dossier."
-        )
+          isEdit ? "Impossible de modifier ce dossier." : "Impossible d’enregistrer ce dossier.",
+        ),
       );
     } finally {
       setSaving(false);
@@ -465,45 +550,41 @@ export default function TravauxDossierForm() {
         subtitle={pageSubtitle}
         right={
           <>
-            <Link to="/travaux/dossiers" style={ghostLink}>
+            <AppButton to="/travaux/dossiers" variant="secondary">
               Retour à la liste
-            </Link>
+            </AppButton>
 
             {isEdit && dossierId ? (
-              <Link to={`/travaux/dossiers/${dossierId}`} style={ghostLink}>
+              <AppButton to={`/travaux/dossiers/${dossierId}`} variant="secondary">
                 Ouvrir le dossier
-              </Link>
+              </AppButton>
             ) : null}
           </>
         }
       />
 
       {state === "loading" ? (
-        <div style={card}>
-          <div style={{ color: "#6b7280" }}>Chargement du formulaire...</div>
-        </div>
+        <AlertBox kind="info" title="Chargement du formulaire">
+          Récupération des informations du dossier en cours.
+        </AlertBox>
       ) : null}
 
       {error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>
-            {isEdit ? "Mise à jour impossible" : "Enregistrement impossible"}
-          </div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title={isEdit ? "Mise à jour impossible" : "Enregistrement impossible"}>
+          {error}
         </AlertBox>
       ) : null}
 
       {success ? (
-        <AlertBox kind="success">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Opération réussie</div>
-          <div style={{ fontSize: 13 }}>{success}</div>
+        <AlertBox kind="success" title="Opération réussie">
+          {success}
         </AlertBox>
       ) : null}
 
       {isEdit && loaded ? (
         <div style={infoGrid} className="travaux-form-info-grid">
           <InfoCard title="Statut actuel">
-            <span style={getStatutStyle(String(loaded.statut ?? ""))}>{humanizeStatut(String(loaded.statut ?? ""))}</span>
+            <Badge text={humanizeStatut(String(loaded.statut ?? ""))} kind={getStatutKind(String(loaded.statut ?? ""))} />
           </InfoCard>
 
           <InfoCard title="Budget estimé">{fmtMoney(loaded.budget_estime)}</InfoCard>
@@ -511,11 +592,9 @@ export default function TravauxDossierForm() {
           <InfoCard title="Budget de référence">{fmtMoney(loaded.budget_reference)}</InfoCard>
           <InfoCard title="Total payé">{fmtMoney(loaded.total_paye)}</InfoCard>
           <InfoCard title="Reste à payer">{fmtMoney(loaded.reste_a_payer)}</InfoCard>
-
           <InfoCard title="Verrouillage">
-            {isLocked ? "Dossier verrouillé" : "Dossier non verrouillé"}
+            <Badge text={isLocked ? "Dossier verrouillé" : "Dossier non verrouillé"} kind={isLocked ? "success" : "warning"} />
           </InfoCard>
-
           <InfoCard title="Créé le">{fmtDateTime(loaded.created_at)}</InfoCard>
           <InfoCard title="Mis à jour le">{fmtDateTime(loaded.updated_at)}</InfoCard>
           <InfoCard title="Résolution liée">
@@ -525,16 +604,13 @@ export default function TravauxDossierForm() {
       ) : null}
 
       {isEdit && isLocked ? (
-        <AlertBox kind="info">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Modification non disponible</div>
-          <div style={{ fontSize: 13 }}>
-            Ce dossier est verrouillé. La fiche reste consultable, mais le backend refuse toute modification via le formulaire standard.
-          </div>
+        <AlertBox kind="info" title="Modification non disponible">
+          Ce dossier est verrouillé. La fiche reste consultable, mais le backend refuse toute modification via le formulaire standard.
         </AlertBox>
       ) : null}
 
       {isEdit && loaded && !isLocked ? (
-        <AlertBox kind="info">
+        <AlertBox kind="info" title="Lecture métier du dossier">
           Cette fiche permet de maintenir les informations générales du dossier. Le budget voté, le verrouillage et la résolution liée dépendent du flux métier global du module Travaux.
         </AlertBox>
       ) : null}
@@ -601,16 +677,15 @@ export default function TravauxDossierForm() {
           </div>
 
           <div style={actions}>
-            <Link
-              to={isEdit && dossierId ? `/travaux/dossiers/${dossierId}` : "/travaux/dossiers"}
-              style={{
-                ...secondaryLink,
-                pointerEvents: saving ? "none" : "auto",
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              Annuler
-            </Link>
+            {!isEdit ? (
+              <AppButton onClick={resetForm} variant="secondary" disabled={isBusy}>
+                Réinitialiser
+              </AppButton>
+            ) : (
+              <AppButton to={isEdit && dossierId ? `/travaux/dossiers/${dossierId}` : "/travaux/dossiers"} variant="secondary" disabled={saving}>
+                Annuler
+              </AppButton>
+            )}
 
             <button
               type="submit"
@@ -621,15 +696,15 @@ export default function TravauxDossierForm() {
                 cursor: isBusy || isLocked ? "not-allowed" : "pointer",
               }}
             >
-              {saving
-                ? "Enregistrement..."
-                : isEdit
-                  ? "Enregistrer les modifications"
-                  : "Créer le dossier"}
+              {saving ? "Enregistrement..." : isEdit ? "Enregistrer les modifications" : "Créer le dossier"}
             </button>
           </div>
         </form>
       ) : null}
+
+      <AlertBox kind="info" title="Lecture métier du formulaire">
+        Ce formulaire sert à créer ou mettre à jour les informations générales d’un dossier travaux. Les montants avancés, le verrouillage et la validation AG restent pilotés par le flux métier global.
+      </AlertBox>
 
       <style>{`
         @media (max-width: 900px) {
@@ -648,16 +723,7 @@ export default function TravauxDossierForm() {
   );
 }
 
-const badgeBase: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "4px 10px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-  whiteSpace: "nowrap",
-};
+
 
 const card: CSSProperties = {
   border: "1px solid #e5e7eb",
@@ -746,30 +812,4 @@ const primaryButton: CSSProperties = {
   padding: "11px 16px",
   fontSize: 14,
   fontWeight: 800,
-};
-
-const secondaryLink: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
-  borderRadius: 12,
-  padding: "11px 16px",
-  fontSize: 14,
-  fontWeight: 800,
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-};
-
-const ghostLink: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
-  borderRadius: 12,
-  padding: "10px 14px",
-  fontSize: 13,
-  fontWeight: 800,
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
 };

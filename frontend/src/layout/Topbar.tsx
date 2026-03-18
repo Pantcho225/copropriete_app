@@ -1,4 +1,3 @@
-// src/layout/Topbar.tsx
 import {
   useEffect,
   useMemo,
@@ -8,145 +7,13 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
+import { getPageSubtitle, getPageTitle } from "../config/productNavigation";
 
 function isValidCoproId(v: string) {
   const s = (v ?? "").trim();
   if (!s) return false;
   const n = Number(s);
   return Number.isFinite(n) && n > 0 && Number.isInteger(n);
-}
-
-function getPageTitle(pathname: string) {
-  if (pathname === "/") return "Tableau de bord";
-
-  // Comptabilité
-  if (pathname === "/compta/import") return "Importer un relevé";
-  if (pathname === "/compta/imports") return "Imports bancaires";
-  if (pathname.startsWith("/compta/imports/") && pathname.endsWith("/lignes")) {
-    return "Lignes importées";
-  }
-  if (pathname === "/compta/mouvements") return "Mouvements bancaires";
-  if (pathname === "/compta/stats") return "Statistiques comptables";
-
-  // RH
-  if (pathname === "/rh/employes") return "Employés";
-  if (pathname === "/rh/employes/nouveau") return "Nouvel employé";
-  if (pathname.startsWith("/rh/employes/") && pathname.endsWith("/modifier")) {
-    return "Modifier l’employé";
-  }
-
-  if (pathname === "/rh/contrats") return "Contrats";
-  if (pathname === "/rh/contrats/nouveau") return "Nouveau contrat";
-  if (pathname.startsWith("/rh/contrats/") && pathname.endsWith("/modifier")) {
-    return "Modifier le contrat";
-  }
-
-  // Travaux
-  if (pathname === "/travaux/dossiers") return "Dossiers travaux";
-  if (pathname === "/travaux/dossiers/nouveau") return "Nouveau dossier";
-  if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
-    return "Modifier le dossier";
-  }
-  if (
-    pathname.startsWith("/travaux/dossiers/") &&
-    !pathname.endsWith("/modifier")
-  ) {
-    return "Détail du dossier travaux";
-  }
-
-  if (pathname === "/travaux/fournisseurs") return "Fournisseurs";
-  if (pathname === "/travaux/fournisseurs/nouveau") return "Nouveau fournisseur";
-  if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
-    return "Modifier le fournisseur";
-  }
-
-  return "Espace de gestion";
-}
-
-function getPageSubtitle(pathname: string) {
-  if (pathname === "/") {
-    return "Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire et centralisée.";
-  }
-
-  // Comptabilité
-  if (pathname === "/compta/import") {
-    return "Importez un relevé bancaire pour faciliter le traitement et le rapprochement des opérations.";
-  }
-
-  if (pathname === "/compta/imports") {
-    return "Consultez l’historique des imports bancaires et leur état de traitement.";
-  }
-
-  if (pathname.startsWith("/compta/imports/") && pathname.endsWith("/lignes")) {
-    return "Traitez les lignes importées, rapprochez-les ou marquez-les selon leur statut métier.";
-  }
-
-  if (pathname === "/compta/mouvements") {
-    return "Suivez les mouvements bancaires et les opérations enregistrées pour cette copropriété.";
-  }
-
-  if (pathname === "/compta/stats") {
-    return "Analysez les principaux indicateurs comptables et l’activité bancaire.";
-  }
-
-  // RH
-  if (pathname === "/rh/employes") {
-    return "Gérez les employés rattachés à cette copropriété.";
-  }
-
-  if (pathname === "/rh/employes/nouveau") {
-    return "Renseignez les informations nécessaires pour enregistrer un nouvel employé.";
-  }
-
-  if (pathname.startsWith("/rh/employes/") && pathname.endsWith("/modifier")) {
-    return "Mettez à jour les informations de l’employé sélectionné.";
-  }
-
-  if (pathname === "/rh/contrats") {
-    return "Suivez les contrats, leurs périodes d’activité et leur statut.";
-  }
-
-  if (pathname === "/rh/contrats/nouveau") {
-    return "Renseignez les informations nécessaires pour enregistrer un nouveau contrat.";
-  }
-
-  if (pathname.startsWith("/rh/contrats/") && pathname.endsWith("/modifier")) {
-    return "Mettez à jour les informations du contrat sélectionné.";
-  }
-
-  // Travaux
-  if (pathname === "/travaux/dossiers") {
-    return "Pilotez les dossiers travaux, leur budget, leur résolution liée et leur niveau de verrouillage.";
-  }
-
-  if (pathname === "/travaux/dossiers/nouveau") {
-    return "Renseignez les informations nécessaires pour enregistrer un nouveau dossier dans le module Travaux.";
-  }
-
-  if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
-    return "Mettez à jour les informations générales du dossier sélectionné.";
-  }
-
-  if (
-    pathname.startsWith("/travaux/dossiers/") &&
-    !pathname.endsWith("/modifier")
-  ) {
-    return "Consultez la fiche détaillée du dossier, sa situation budgétaire, la résolution liée et le niveau de verrouillage.";
-  }
-
-  if (pathname === "/travaux/fournisseurs") {
-    return "Consultez les fournisseurs enregistrés dans le module Travaux et maintenez leurs fiches.";
-  }
-
-  if (pathname === "/travaux/fournisseurs/nouveau") {
-    return "Renseignez les informations utiles pour enregistrer un nouveau fournisseur dans le module Travaux.";
-  }
-
-  if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
-    return "Mettez à jour les informations de la fiche fournisseur sélectionnée.";
-  }
-
-  return "Interface de gestion de la copropriété.";
 }
 
 function SmallButton(props: {
@@ -191,6 +58,7 @@ function SmallButton(props: {
         opacity: props.disabled ? 0.65 : 1,
         lineHeight: 1.2,
         whiteSpace: "nowrap",
+        transition: "all 0.2s ease",
       }}
     >
       {props.children}
@@ -430,7 +298,7 @@ export default function Topbar() {
               >
                 Saisissez l’identifiant de la copropriété à charger.
                 <br />
-                Copropriété actuelle :{" "}
+                Copropriété active actuelle :{" "}
                 <strong style={{ color: "#111827" }}>
                   {coproprieteId ? `#${coproprieteId}` : "Aucune copropriété sélectionnée"}
                 </strong>

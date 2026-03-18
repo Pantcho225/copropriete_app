@@ -6,7 +6,8 @@ import AdminLayout from "./layout/AdminLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 
-// Finances
+// Comptabilité
+import ComptaHome from "./pages/compta/ComptaHome";
 import ImportCSV from "./pages/compta/ImportCSV";
 import RelevesImports from "./pages/compta/RelevesImports";
 import ReleveLignes from "./pages/compta/ReleveLignes";
@@ -26,7 +27,7 @@ import TravauxDossierDetail from "./pages/travaux/TravauxDossierDetail";
 import TravauxFournisseurs from "./pages/travaux/TravauxFournisseurs";
 import TravauxFournisseurForm from "./pages/travaux/TravauxFournisseurForm";
 
-// AG
+// Assemblées générales
 import AGHome from "./pages/ag/AGHome";
 import AGList from "./pages/ag/AGList";
 import AGForm from "./pages/ag/AGForm";
@@ -36,15 +37,22 @@ import AGPV from "./pages/ag/AGPV";
 import AGPresences from "./pages/ag/AGPresences";
 import AGVotes from "./pages/ag/AGVotes";
 
-// Billing
+// Facturation
 import BillingHome from "./pages/billing/BillingHome";
 
-// Platform Admin
+// Plateforme
 import PlatformAdminHome from "./pages/platform-admin/PlatformAdminHome";
 
 // Lots
 import LotsList from "./pages/lots/LotsList";
 import LotForm from "./pages/lots/LotForm";
+
+// Relances
+import RelancesDashboard from "./pages/relances/RelancesDashboard";
+import DossiersImpayesList from "./pages/relances/DossiersImpayesList";
+import DossierImpayeDetail from "./pages/relances/DossierImpayeDetail";
+import RelancesHistorique from "./pages/relances/RelancesHistorique";
+import AvisRegularisationList from "./pages/relances/AvisRegularisationList";
 
 export default function App() {
   return (
@@ -65,9 +73,9 @@ export default function App() {
           {/* Tableau de bord */}
           <Route index element={<Dashboard />} />
 
-          {/* Finances / comptabilité */}
+          {/* Comptabilité */}
           <Route path="compta">
-            <Route index element={<Navigate to="imports" replace />} />
+            <Route index element={<ComptaHome />} />
             <Route path="releves" element={<Navigate to="imports" replace />} />
             <Route path="import" element={<ImportCSV />} />
             <Route path="imports" element={<RelevesImports />} />
@@ -109,8 +117,6 @@ export default function App() {
           {/* Assemblées générales */}
           <Route path="ag">
             <Route index element={<AGHome />} />
-            <Route path="/ag/assemblees/:id/resolutions" element={<AGResolutions />} />
-
             <Route path="assemblees" element={<AGList />} />
             <Route path="assemblees/nouveau" element={<AGForm />} />
             <Route path="assemblees/:id/modifier" element={<AGForm />} />
@@ -118,11 +124,20 @@ export default function App() {
             <Route path="assemblees/:id/presences" element={<AGPresences />} />
             <Route path="assemblees/:id/votes" element={<AGVotes />} />
             <Route path="assemblees/:id/pv" element={<AGPV />} />
-
+            <Route path="assemblees/:id/resolutions" element={<AGResolutions />} />
             <Route path="resolutions" element={<AGResolutions />} />
 
-            {/* Compatibilité / ancienne route */}
+            {/* Compatibilité ancienne route */}
             <Route path="pv" element={<Navigate to="/ag/assemblees" replace />} />
+          </Route>
+
+          {/* Relances */}
+          <Route path="relances">
+            <Route index element={<RelancesDashboard />} />
+            <Route path="dossiers" element={<DossiersImpayesList />} />
+            <Route path="dossiers/:id" element={<DossierImpayeDetail />} />
+            <Route path="historique" element={<RelancesHistorique />} />
+            <Route path="avis" element={<AvisRegularisationList />} />
           </Route>
 
           {/* Facturation */}
@@ -130,13 +145,13 @@ export default function App() {
             <Route index element={<BillingHome />} />
           </Route>
 
-          {/* Administration plateforme */}
+          {/* Plateforme */}
           <Route path="platform-admin">
             <Route index element={<PlatformAdminHome />} />
           </Route>
         </Route>
 
-        {/* Fallback global */}
+        {/* Redirection globale */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -4,6 +4,9 @@ import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "idle" | "loading" | "success" | "error";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
+type FlashKind = "success" | "error" | "info";
 
 type DRFPage<T> = {
   count: number;
@@ -30,7 +33,7 @@ function isDRFPage<T>(x: unknown): x is DRFPage<T> {
     x &&
       typeof x === "object" &&
       Array.isArray((x as DRFPage<T>).results) &&
-      typeof (x as DRFPage<T>).count === "number"
+      typeof (x as DRFPage<T>).count === "number",
   );
 }
 
@@ -141,31 +144,10 @@ function humanizeActif(value: boolean | null) {
   return "Non renseigné";
 }
 
-function getActifStyle(value: boolean | null): CSSProperties {
-  if (value === true) {
-    return {
-      ...badgeBase,
-      color: "#166534",
-      background: "#ecfdf5",
-      border: "1px solid #a7f3d0",
-    };
-  }
-
-  if (value === false) {
-    return {
-      ...badgeBase,
-      color: "#991b1b",
-      background: "#fef2f2",
-      border: "1px solid #fecaca",
-    };
-  }
-
-  return {
-    ...badgeBase,
-    color: "#6b7280",
-    background: "#f9fafb",
-    border: "1px solid #e5e7eb",
-  };
+function getActifKind(value: boolean | null): BadgeKind {
+  if (value === true) return "success";
+  if (value === false) return "danger";
+  return "neutral";
 }
 
 function PageShell({ children }: { children: ReactNode }) {
@@ -241,11 +223,13 @@ function StatCard(props: { title: string; value: string | number; sub?: string }
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
-      : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
+      : props.kind === "success"
+        ? { bg: "#ecfdf5", border: "#a7f3d0", text: "#166534" }
+        : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
 
   return (
     <div
@@ -259,26 +243,48 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
 
-function SmallButton(props: {
+function AppButton(props: {
   children: ReactNode;
   to?: string;
   onClick?: () => void;
-  primary?: boolean;
+  variant?: ButtonVariant;
   disabled?: boolean;
 }) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
   if (props.to) {
     return (
       <Link
         to={props.to}
         style={{
-          border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-          background: props.primary ? "#eef2ff" : "#fff",
-          color: props.primary ? "#3730a3" : "#111827",
+          border: styles.border,
+          background: styles.background,
+          color: styles.color,
           borderRadius: 12,
           padding: "10px 14px",
           fontSize: 13,
@@ -301,9 +307,9 @@ function SmallButton(props: {
       onClick={props.onClick}
       disabled={props.disabled}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -334,12 +340,45 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
 
       {props.actionLabel && props.actionTo ? (
         <div style={{ marginTop: 12 }}>
-          <SmallButton to={props.actionTo} primary>
+          <AppButton to={props.actionTo} variant="primary">
             {props.actionLabel}
-          </SmallButton>
+          </AppButton>
         </div>
       ) : null}
     </div>
+  );
+}
+
+function Badge(props: { text: string; kind?: BadgeKind }) {
+  const styles =
+    props.kind === "success"
+      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
+      : props.kind === "warning"
+        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
+        : props.kind === "danger"
+          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+          : props.kind === "info"
+            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
+            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        border: `1px solid ${styles.border}`,
+        background: styles.background,
+        color: styles.color,
+      }}
+    >
+      {props.text}
+    </span>
   );
 }
 
@@ -403,14 +442,7 @@ export default function TravauxFournisseurs() {
               ? item.actif === false
               : item.actif === null;
 
-      const haystack = [
-        item.nom,
-        item.email ?? "",
-        item.telephone ?? "",
-        item.adresse ?? "",
-        item.specialite ?? "",
-        String(item.id),
-      ]
+      const haystack = [item.nom, item.email ?? "", item.telephone ?? "", item.adresse ?? "", item.specialite ?? "", String(item.id)]
         .join(" ")
         .toLowerCase();
 
@@ -438,10 +470,12 @@ export default function TravauxFournisseurs() {
         subtitle="Consultez les prestataires enregistrés dans le module Travaux, recherchez rapidement un fournisseur et accédez à sa fiche de modification."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/travaux/dossiers")}>Retour aux dossiers</SmallButton>
-            <SmallButton to="/travaux/fournisseurs/nouveau" primary>
+            <AppButton onClick={() => navigate("/travaux/dossiers")} variant="secondary">
+              Retour aux dossiers
+            </AppButton>
+            <AppButton to="/travaux/fournisseurs/nouveau" variant="primary">
               Nouveau fournisseur
-            </SmallButton>
+            </AppButton>
           </div>
         }
       />
@@ -457,17 +491,12 @@ export default function TravauxFournisseurs() {
         <StatCard title="Fournisseurs affichés" value={stats.total} sub="Résultats visibles après filtres." />
         <StatCard title="Actifs" value={stats.actifs} sub="Prestataires disponibles pour l’exploitation." />
         <StatCard title="Inactifs" value={stats.inactifs} sub="Prestataires désactivés ou suspendus." />
-        <StatCard
-          title="Statut non renseigné"
-          value={stats.nonRenseignes}
-          sub="Fiches à compléter côté données."
-        />
+        <StatCard title="Statut non renseigné" value={stats.nonRenseignes} sub="Fiches à compléter côté données." />
       </div>
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Impossible de charger les fournisseurs</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Impossible de charger les fournisseurs.">
+          {error}
         </AlertBox>
       ) : null}
 
@@ -487,15 +516,13 @@ export default function TravauxFournisseurs() {
             <option value="INCONNU">Statut non renseigné</option>
           </select>
 
-          <SmallButton onClick={() => void fetchData()} disabled={isLoading}>
+          <AppButton onClick={() => void fetchData()} disabled={isLoading} variant="secondary">
             {isLoading ? "Actualisation..." : "Actualiser"}
-          </SmallButton>
+          </AppButton>
         </div>
 
         <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading
-            ? "Chargement des fournisseurs..."
-            : `${filtered.length} fournisseur(s) affiché(s) sur ${rows.length}`}
+          {isLoading ? "Chargement des fournisseurs..." : `${filtered.length} fournisseur(s) affiché(s) sur ${rows.length}`}
         </div>
       </div>
 
@@ -524,12 +551,10 @@ export default function TravauxFournisseurs() {
 
             {!isLoading &&
               filtered.map((item) => (
-                <tr key={item.id} style={{ transition: "background 0.2s ease" }}>
+                <tr key={item.id}>
                   <td style={td}>
                     <div style={{ display: "grid", gap: 4 }}>
-                      <div style={{ fontWeight: 800, color: "#111827", fontSize: 14 }}>
-                        {truncateText(item.nom, 42)}
-                      </div>
+                      <div style={{ fontWeight: 800, color: "#111827", fontSize: 14 }}>{truncateText(item.nom, 42)}</div>
 
                       <MetaLine>
                         ID fournisseur : <span style={{ fontWeight: 800, color: "#374151" }}>#{item.id}</span>
@@ -541,7 +566,7 @@ export default function TravauxFournisseurs() {
 
                   <td style={td}>
                     {item.specialite ? (
-                      <span style={neutralBadge}>{truncateText(item.specialite, 30)}</span>
+                      <Badge text={truncateText(item.specialite, 30)} kind="neutral" />
                     ) : (
                       <span style={{ color: "#9ca3af" }}>Non renseignée</span>
                     )}
@@ -551,7 +576,7 @@ export default function TravauxFournisseurs() {
                   <td style={td}>{item.email || "—"}</td>
 
                   <td style={td}>
-                    <span style={getActifStyle(item.actif)}>{humanizeActif(item.actif)}</span>
+                    <Badge text={humanizeActif(item.actif)} kind={getActifKind(item.actif)} />
                   </td>
 
                   <td style={td}>{fmtDate(item.createdAt)}</td>
@@ -599,10 +624,8 @@ export default function TravauxFournisseurs() {
       </div>
 
       {state === "success" && rows.length > 0 ? (
-        <AlertBox kind="info">
-          Le sous-module Fournisseurs est prêt pour une finition produit plus poussée. La liaison directe entre
-          un dossier travaux et un fournisseur pourra être ajoutée plus tard comme amélioration structurante,
-          sans bloquer l’usage actuel.
+        <AlertBox kind="info" title="Lecture métier du sous-module">
+          Ce sous-module centralise la gestion des prestataires. Une liaison directe entre un dossier travaux et un fournisseur principal pourra être ajoutée plus tard sans bloquer l’usage actuel.
         </AlertBox>
       ) : null}
 
@@ -628,24 +651,6 @@ export default function TravauxFournisseurs() {
     </PageShell>
   );
 }
-
-const badgeBase: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "4px 10px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-  whiteSpace: "nowrap",
-};
-
-const neutralBadge: CSSProperties = {
-  ...badgeBase,
-  color: "#374151",
-  background: "#f9fafb",
-  border: "1px solid #e5e7eb",
-};
 
 const toolbar: CSSProperties = {
   display: "flex",

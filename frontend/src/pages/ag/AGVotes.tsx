@@ -17,6 +17,7 @@ type PresenceOption = {
   lot: number;
   lot_reference: string;
   tantiemes: number;
+  is_zero_tantieme: boolean;
   present_ou_represente: boolean;
   representant_nom: string;
 };
@@ -29,6 +30,7 @@ type VoteItem = {
   lot_reference: string;
   choix: VoteChoice;
   tantiemes: number;
+  is_zero_tantieme: boolean;
   created_at?: string | null;
 };
 
@@ -110,6 +112,13 @@ function formatDateTimeShort(value?: string | null): string {
   return value;
 }
 
+function extractBlockingReasons(data: unknown): string[] {
+  if (!isRecord(data)) return [];
+  const value = data.blocking_reasons;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   const err = error as {
     response?: {
@@ -117,6 +126,7 @@ function getErrorMessage(error: unknown, fallback: string) {
         detail?: string | string[];
         message?: string;
         errors?: Record<string, string[]>;
+        blocking_reasons?: string[];
         [key: string]: unknown;
       };
     };
@@ -124,6 +134,9 @@ function getErrorMessage(error: unknown, fallback: string) {
   };
 
   const data = err?.response?.data;
+  const reasons = extractBlockingReasons(data);
+
+  if (reasons.length > 0) return reasons.join(" ");
 
   if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
   if (Array.isArray(data?.detail) && typeof data.detail[0] === "string") return data.detail[0];
@@ -150,6 +163,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function normalizeVoteItem(raw: unknown): VoteItem {
   const row = isRecord(raw) ? raw : {};
+  const tantiemes = toNumberOrNull(row.tantiemes) ?? 0;
 
   return {
     id: toNumberOrNull(row.id) ?? toNumberOrNull(row.pk) ?? 0,
@@ -179,7 +193,8 @@ function normalizeVoteItem(raw: unknown): VoteItem {
         isRecord(row.lot_obj) ? row.lot_obj.reference : undefined,
       ) || `Lot #${toNumberOrNull(row.lot) ?? 0}`,
     choix: normalizeChoice(row.choix),
-    tantiemes: toNumberOrNull(row.tantiemes) ?? 0,
+    tantiemes,
+    is_zero_tantieme: toBoolean(row.is_zero_tantieme) || tantiemes <= 0,
     created_at: pickString(row.created_at, row.date_vote, row.created, row.timestamp) || null,
   };
 }
@@ -199,6 +214,7 @@ function normalizeResolutionOption(raw: unknown, index: number): ResolutionOptio
 
 function normalizePresenceOption(raw: unknown): PresenceOption {
   const row = isRecord(raw) ? raw : {};
+  const tantiemes = toNumberOrNull(row.tantiemes) ?? 0;
 
   return {
     id: toNumberOrNull(row.id) ?? 0,
@@ -211,7 +227,8 @@ function normalizePresenceOption(raw: unknown): PresenceOption {
         row.lot_ref,
         isRecord(row.lot_obj) ? row.lot_obj.reference : undefined,
       ) || `Lot #${toNumberOrNull(row.lot) ?? 0}`,
-    tantiemes: toNumberOrNull(row.tantiemes) ?? 0,
+    tantiemes,
+    is_zero_tantieme: toBoolean(row.is_zero_tantieme) || tantiemes <= 0,
     present_ou_represente: toBoolean(row.present_ou_represente),
     representant_nom: pickString(row.representant_nom, row.present_nom, row.nom_representant),
   };
@@ -548,6 +565,7 @@ export default function AGVotes() {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: FlashKind; text: string } | null>(null);
+  const [blockingReasons, setBlockingReasons] = useState<string[]>([]);
 
   const [rows, setRows] = useState<VoteItem[]>([]);
   const [resolutionOptions, setResolutionOptions] = useState<ResolutionOption[]>([]);
@@ -573,14 +591,10 @@ export default function AGVotes() {
         fetchPresencesForAg(agId),
       ]);
 
-      const resolutionLabelMap = new Map<number, string>(
-        normalizedResolutions.map((item) => [item.id, item.label]),
-      );
+      const resolutionLabelMap = new Map<number, string>(normalizedResolutions.map((item) => [item.id, item.label]));
 
       const voteGroups = await Promise.all(
-        normalizedResolutions.map((resolution) =>
-          fetchVotesForResolution(resolution.id, resolutionLabelMap),
-        ),
+        normalizedResolutions.map((resolution) => fetchVotesForResolution(resolution.id, resolutionLabelMap)),
       );
 
       const normalizedVotes = voteGroups
@@ -603,9 +617,7 @@ export default function AGVotes() {
             : normalizedResolutions[0]?.id ?? null;
 
         const nextLot =
-          prev.lot && votablePresences.some((item) => item.lot === prev.lot)
-            ? prev.lot
-            : votablePresences[0]?.lot ?? null;
+          prev.lot && votablePresences.some((item) => item.lot === prev.lot) ? prev.lot : votablePresences[0]?.lot ?? null;
 
         return {
           ...prev,
@@ -633,7 +645,15 @@ export default function AGVotes() {
     if (!q) return rows;
 
     return rows.filter((item) => {
-      const haystack = [item.resolution_label, item.lot_reference, item.choix].join(" ").toLowerCase();
+      const haystack = [
+        item.resolution_label,
+        item.lot_reference,
+        item.choix,
+        item.is_zero_tantieme ? "zero tantieme poids nul" : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
       return haystack.includes(q);
     });
   }, [rows, query]);
@@ -648,8 +668,8 @@ export default function AGVotes() {
       contre: contre.length,
       abstention: rows.filter((x) => x.choix === "ABSTENTION").length,
       tantiemesExprimes:
-        pour.reduce((sum, x) => sum + x.tantiemes, 0) +
-        contre.reduce((sum, x) => sum + x.tantiemes, 0),
+        pour.reduce((sum, x) => sum + x.tantiemes, 0) + contre.reduce((sum, x) => sum + x.tantiemes, 0),
+      zeroTantieme: rows.filter((x) => x.is_zero_tantieme).length,
     };
   }, [rows]);
 
@@ -686,6 +706,7 @@ export default function AGVotes() {
 
     setBusyAction("create");
     setMessage(null);
+    setBlockingReasons([]);
 
     try {
       await api.post(VOTES_ENDPOINT, {
@@ -698,6 +719,8 @@ export default function AGVotes() {
       resetForm();
       await fetchVotes();
     } catch (e) {
+      const err = e as { response?: { data?: unknown } };
+      setBlockingReasons(extractBlockingReasons(err?.response?.data));
       setMessage({ kind: "error", text: getErrorMessage(e, "Impossible d’enregistrer le vote.") });
     } finally {
       setBusyAction(null);
@@ -711,9 +734,7 @@ export default function AGVotes() {
         subtitle="Enregistrez et consultez les votes des lots sur les résolutions de cette assemblée générale."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>
-              Retour au détail AG
-            </SmallButton>
+            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>Retour au détail AG</SmallButton>
           </div>
         }
       />
@@ -728,6 +749,17 @@ export default function AGVotes() {
       {message ? (
         <AlertBox kind={message.kind}>
           <div style={{ fontSize: 13 }}>{message.text}</div>
+        </AlertBox>
+      ) : null}
+
+      {blockingReasons.length > 0 ? (
+        <AlertBox kind="error">
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Blocages métier détectés</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+            {blockingReasons.map((reason, index) => (
+              <li key={`${reason}-${index}`}>{reason}</li>
+            ))}
+          </ul>
         </AlertBox>
       ) : null}
 
@@ -754,6 +786,15 @@ export default function AGVotes() {
           title="Tantièmes exprimés"
           value={formatNumber(stats.tantiemesExprimes)}
           sub="Somme des tantièmes pour + contre."
+          isLoading={state === "loading"}
+        />
+      </div>
+
+      <div className="ag-votes-stat-grid ag-votes-stat-grid-secondary">
+        <StatCard
+          title="Votes à 0 tantième"
+          value={stats.zeroTantieme}
+          sub="Ils restent tracés mais ne pèsent pas dans le calcul pondéré."
           isLoading={state === "loading"}
         />
       </div>
@@ -785,8 +826,7 @@ export default function AGVotes() {
                 <div style={fieldHint}>Aucune résolution chargée pour cette AG.</div>
               ) : (
                 <div style={fieldHint}>
-                  Sélection métier : vous choisissez la résolution par son libellé, sans saisir son identifiant à la
-                  main.
+                  Sélection métier : vous choisissez la résolution par son libellé, sans saisir son identifiant à la main.
                 </div>
               )}
             </div>
@@ -808,14 +848,14 @@ export default function AGVotes() {
                   <option key={item.id} value={item.lot}>
                     {item.lot_reference} — {formatNumber(item.tantiemes)} tantièmes
                     {item.representant_nom ? ` — ${item.representant_nom}` : ""}
+                    {item.is_zero_tantieme ? " — 0 tantième" : ""}
                   </option>
                 ))}
               </select>
 
               {presenceOptions.length === 0 ? (
                 <div style={fieldHint}>
-                  Aucun lot présent ou représenté n’est disponible. Revenez dans l’écran Présences pour marquer les
-                  lots votants.
+                  Aucun lot présent ou représenté n’est disponible. Revenez dans l’écran Présences pour marquer les lots votants.
                 </div>
               ) : selectedPresence ? (
                 <div style={hintBox}>
@@ -828,7 +868,14 @@ export default function AGVotes() {
                     ) : (
                       <Badge text="Présence directe" kind="neutral" />
                     )}
+                    {selectedPresence.is_zero_tantieme ? <Badge text="0 tantième" kind="warning" /> : null}
                   </div>
+
+                  {selectedPresence.is_zero_tantieme ? (
+                    <div style={warningBox}>
+                      Ce lot peut voter, mais son poids est nul dans le calcul pondéré.
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div style={fieldHint}>
@@ -853,6 +900,11 @@ export default function AGVotes() {
                 <option value="CONTRE">Contre</option>
                 <option value="ABSTENTION">Abstention</option>
               </select>
+            </div>
+
+            <div style={infoBox}>
+              Le poids du vote en tantièmes est calculé par le backend à partir de la présence AG. Il n’est pas saisi
+              manuellement dans ce formulaire.
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -911,11 +963,10 @@ export default function AGVotes() {
                   >
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
-                          {item.resolution_label}
-                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{item.resolution_label}</div>
                         {choiceBadge(item.choix)}
                         <Badge text={`${formatNumber(item.tantiemes)} tantièmes`} kind="info" />
+                        {item.is_zero_tantieme ? <Badge text="0 tantième" kind="warning" /> : null}
                       </div>
 
                       <div style={{ fontSize: 13, color: "#374151" }}>
@@ -925,6 +976,12 @@ export default function AGVotes() {
                       <div style={{ fontSize: 12, color: "#6b7280" }}>
                         <strong>Enregistré le :</strong> {formatDateTimeShort(item.created_at)}
                       </div>
+
+                      {item.is_zero_tantieme ? (
+                        <div style={warningBox}>
+                          Ce vote est tracé, mais son poids est nul dans le calcul pondéré.
+                        </div>
+                      ) : null}
                     </div>
 
                     <div>
@@ -945,6 +1002,10 @@ export default function AGVotes() {
           gap: 14px;
         }
 
+        .ag-votes-stat-grid-secondary {
+          grid-template-columns: repeat(1, minmax(0, 1fr));
+        }
+
         .ag-votes-main-grid {
           display: grid;
           grid-template-columns: 0.95fr 1.05fr;
@@ -954,6 +1015,10 @@ export default function AGVotes() {
         @media (max-width: 1200px) {
           .ag-votes-stat-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .ag-votes-stat-grid-secondary {
+            grid-template-columns: 1fr;
           }
 
           .ag-votes-main-grid {
@@ -1015,4 +1080,24 @@ const hintTitle: CSSProperties = {
   color: "#475569",
   textTransform: "uppercase",
   letterSpacing: 0.4,
+};
+
+const infoBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.6,
+};
+
+const warningBox: CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  background: "#fffbeb",
+  border: "1px solid #fde68a",
+  color: "#92400e",
+  fontSize: 12,
+  lineHeight: 1.55,
 };

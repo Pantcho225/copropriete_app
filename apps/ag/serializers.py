@@ -5,6 +5,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from .models import AssembleeGenerale, PresenceLot, Resolution, Vote
+from .services.results import compute_resolution_result
 
 
 DEC0 = Decimal("0.00")
@@ -18,7 +19,22 @@ def _is_ag_locked(ag) -> bool:
     return bool(ag) and bool(getattr(ag, "pv_locked", False))
 
 
+def _is_ag_open(ag) -> bool:
+    return bool(ag) and getattr(ag, "statut", None) == "OUVERTE"
+
+
 def _assert_ag_writable(ag, *, what: str):
+    if _is_ag_closed(ag):
+        raise serializers.ValidationError(f"AG clôturée : {what} interdit.")
+    if _is_ag_locked(ag):
+        raise serializers.ValidationError(f"PV verrouillé : {what} interdit.")
+
+
+def _assert_ag_open_and_writable(ag, *, what: str):
+    if not ag:
+        raise serializers.ValidationError(f"AG invalide : {what} interdit.")
+    if getattr(ag, "statut", None) != "OUVERTE":
+        raise serializers.ValidationError(f"AG non ouverte : {what} interdit.")
     if _is_ag_closed(ag):
         raise serializers.ValidationError(f"AG clôturée : {what} interdit.")
     if _is_ag_locked(ag):
@@ -36,6 +52,8 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
     quorum_atteint = serializers.SerializerMethodField(read_only=True)
     total_tantiemes_copro = serializers.SerializerMethodField(read_only=True)
     total_tantiemes_presents = serializers.SerializerMethodField(read_only=True)
+    has_zero_tantieme_lots = serializers.SerializerMethodField(read_only=True)
+    pv_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = AssembleeGenerale
@@ -53,6 +71,8 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
             "quorum_atteint",
             "total_tantiemes_copro",
             "total_tantiemes_presents",
+            "has_zero_tantieme_lots",
+            "pv_status",
             "pv_pdf",
             "pv_pdf_url",
             "pv_pdf_hash",
@@ -79,6 +99,8 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
             "quorum_atteint",
             "total_tantiemes_copro",
             "total_tantiemes_presents",
+            "has_zero_tantieme_lots",
+            "pv_status",
             "pv_pdf_hash",
             "pv_generated_at",
             "pv_locked",
@@ -115,6 +137,26 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
             return float(obj.total_tantiemes_presents())
         except Exception:
             return 0.0
+
+    def get_has_zero_tantieme_lots(self, obj):
+        try:
+            return obj.presences.filter(tantiemes__lte=0).exists()
+        except Exception:
+            return False
+
+    def get_pv_status(self, obj):
+        try:
+            if getattr(obj, "statut", None) == "CLOTUREE" and getattr(obj, "pv_locked", False):
+                return "VERROUILLE"
+            if getattr(obj, "pv_locked", False) and getattr(obj, "pv_signed_pdf", None):
+                return "VERROUILLE"
+            if getattr(obj, "pv_signed_pdf", None):
+                return "SIGNE"
+            if getattr(obj, "pv_pdf", None):
+                return "ARCHIVE"
+            return "NON_GENERE"
+        except Exception:
+            return "NON_GENERE"
 
     def get_pv_pdf_url(self, obj):
         if obj.pv_pdf:
@@ -190,6 +232,7 @@ class PresenceLotSerializer(serializers.ModelSerializer):
     lot_reference = serializers.CharField(source="lot.reference", read_only=True)
     lot_type_lot = serializers.CharField(source="lot.type_lot", read_only=True)
     tantiemes_recalcules = serializers.SerializerMethodField(read_only=True)
+    is_zero_tantieme = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PresenceLot
@@ -201,11 +244,12 @@ class PresenceLotSerializer(serializers.ModelSerializer):
             "lot_type_lot",
             "tantiemes",
             "tantiemes_recalcules",
+            "is_zero_tantieme",
             "present_ou_represente",
             "representant_nom",
             "commentaire",
         ]
-        read_only_fields = ["tantiemes", "tantiemes_recalcules"]
+        read_only_fields = ["tantiemes", "tantiemes_recalcules", "is_zero_tantieme"]
 
     def get_tantiemes_recalcules(self, obj):
         try:
@@ -215,6 +259,12 @@ class PresenceLotSerializer(serializers.ModelSerializer):
             pass
         return 0.0
 
+    def get_is_zero_tantieme(self, obj):
+        try:
+            return Decimal(str(obj.tantiemes or 0)) <= 0
+        except Exception:
+            return True
+
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
@@ -222,7 +272,7 @@ class PresenceLotSerializer(serializers.ModelSerializer):
         lot = attrs.get("lot") or (instance.lot if instance else None)
 
         if ag:
-            _assert_ag_writable(ag, what="création/modification des présences")
+            _assert_ag_open_and_writable(ag, what="création/modification des présences")
 
         if ag and lot:
             if str(getattr(lot, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
@@ -241,7 +291,6 @@ class PresenceLotSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.refresh_tantiemes()
         instance.save()
         return instance
 
@@ -250,6 +299,10 @@ class ResolutionSerializer(serializers.ModelSerializer):
     travaux_dossier_id = serializers.IntegerField(source="travaux_dossier.id", read_only=True)
     travaux_dossier_titre = serializers.CharField(source="travaux_dossier.titre", read_only=True)
     tantieme_categorie_effective = serializers.SerializerMethodField(read_only=True)
+
+    decision = serializers.SerializerMethodField(read_only=True)
+    statut_resolution = serializers.SerializerMethodField(read_only=True)
+    resultat_detail = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Resolution
@@ -267,8 +320,16 @@ class ResolutionSerializer(serializers.ModelSerializer):
             "travaux_dossier_id",
             "travaux_dossier_titre",
             "budget_vote",
+            "decision",
+            "statut_resolution",
+            "resultat_detail",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = [
+            "id",
+            "decision",
+            "statut_resolution",
+            "resultat_detail",
+        ]
 
     def get_fields(self):
         fields = super().get_fields()
@@ -288,12 +349,61 @@ class ResolutionSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def _build_resolution_result(self, obj):
+        try:
+            return compute_resolution_result(obj)
+        except Exception:
+            return None
+
+    def get_decision(self, obj):
+        result = self._build_resolution_result(obj)
+
+        if isinstance(result, dict):
+            decision = str(result.get("decision", "")).strip().upper()
+            if decision in {"ADOPTEE", "REJETEE"}:
+                return decision
+
+        return "EN_ATTENTE"
+
+    def get_statut_resolution(self, obj):
+        return self.get_decision(obj)
+
+    def get_resultat_detail(self, obj):
+        result = self._build_resolution_result(obj)
+
+        if not isinstance(result, dict):
+            return {
+                "decision": "EN_ATTENTE",
+                "type_majorite": getattr(obj, "type_majorite", None),
+                "tantiemes": {
+                    "pour": 0.0,
+                    "contre": 0.0,
+                    "abstention": 0.0,
+                    "exprimes": 0.0,
+                    "ratio_pour_exprimes": 0.0,
+                },
+            }
+
+        tantiemes = result.get("tantiemes") if isinstance(result.get("tantiemes"), dict) else {}
+
+        return {
+            "decision": str(result.get("decision", "EN_ATTENTE")).strip().upper() or "EN_ATTENTE",
+            "type_majorite": result.get("type_majorite") or getattr(obj, "type_majorite", None),
+            "tantiemes": {
+                "pour": float(tantiemes.get("pour", 0.0) or 0.0),
+                "contre": float(tantiemes.get("contre", 0.0) or 0.0),
+                "abstention": float(tantiemes.get("abstention", 0.0) or 0.0),
+                "exprimes": float(tantiemes.get("exprimes", 0.0) or 0.0),
+                "ratio_pour_exprimes": float(tantiemes.get("ratio_pour_exprimes", 0.0) or 0.0),
+            },
+        }
+
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
         ag = attrs.get("ag") or (instance.ag if instance else None)
         if ag:
-            _assert_ag_writable(ag, what="création/modification des résolutions")
+            _assert_ag_open_and_writable(ag, what="création/modification des résolutions")
 
         tantieme_categorie = attrs.get("tantieme_categorie")
         if tantieme_categorie is None and instance is not None:
@@ -329,6 +439,7 @@ class VoteSerializer(serializers.ModelSerializer):
     lot_reference = serializers.CharField(source="lot.reference", read_only=True)
     tantiemes_recalcules = serializers.SerializerMethodField(read_only=True)
     tantieme_categorie_effective = serializers.SerializerMethodField(read_only=True)
+    is_zero_tantieme = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Vote
@@ -341,9 +452,16 @@ class VoteSerializer(serializers.ModelSerializer):
             "tantiemes",
             "tantiemes_recalcules",
             "tantieme_categorie_effective",
+            "is_zero_tantieme",
             "created_at",
         ]
-        read_only_fields = ["tantiemes", "tantiemes_recalcules", "tantieme_categorie_effective", "created_at"]
+        read_only_fields = [
+            "tantiemes",
+            "tantiemes_recalcules",
+            "tantieme_categorie_effective",
+            "is_zero_tantieme",
+            "created_at",
+        ]
 
     def get_tantiemes_recalcules(self, obj):
         try:
@@ -365,6 +483,12 @@ class VoteSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def get_is_zero_tantieme(self, obj):
+        try:
+            return Decimal(str(obj.tantiemes or 0)) <= 0
+        except Exception:
+            return True
+
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
@@ -377,10 +501,7 @@ class VoteSerializer(serializers.ModelSerializer):
 
             ag = getattr(resolution, "ag", None)
             if ag:
-                if _is_ag_closed(ag):
-                    raise serializers.ValidationError({"resolution": "AG clôturée : aucun vote accepté."})
-                if _is_ag_locked(ag):
-                    raise serializers.ValidationError({"resolution": "PV verrouillé : aucun vote accepté."})
+                _assert_ag_open_and_writable(ag, what="création d’un vote")
 
         if resolution and lot:
             ag = getattr(resolution, "ag", None)
@@ -388,17 +509,16 @@ class VoteSerializer(serializers.ModelSerializer):
             if ag and str(getattr(lot, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
                 raise serializers.ValidationError({"lot": "Le lot doit appartenir à la copropriété de l'AG."})
 
-            has_presences = PresenceLot.objects.filter(ag_id=resolution.ag_id).exists()
-            if has_presences:
-                ok = PresenceLot.objects.filter(
-                    ag_id=resolution.ag_id,
-                    lot_id=lot.id,
-                    present_ou_represente=True,
-                ).exists()
-                if not ok:
-                    raise serializers.ValidationError({"lot": "Ce lot n'est pas présent/représenté pour cette AG."})
+            presence_ok = PresenceLot.objects.filter(
+                ag_id=resolution.ag_id,
+                lot_id=lot.id,
+                present_ou_represente=True,
+            ).exists()
+            if not presence_ok:
+                raise serializers.ValidationError(
+                    {"lot": "Ce lot doit être présent ou représenté pour voter à cette AG."}
+                )
 
-            # Empêche un second vote du même lot sur la même résolution
             existing = Vote.objects.filter(resolution=resolution, lot=lot)
             if instance and instance.pk:
                 existing = existing.exclude(pk=instance.pk)
@@ -418,6 +538,5 @@ class VoteSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.refresh_tantiemes()
         instance.save()
         return instance

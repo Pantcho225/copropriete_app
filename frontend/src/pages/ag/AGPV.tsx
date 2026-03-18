@@ -3,8 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 
 type LoadState = "idle" | "loading" | "success" | "error";
-type PVStatus = "BROUILLON" | "GENERE" | "SIGNE" | "ARCHIVE";
-type AGStatus = "BROUILLON" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE";
+type PVStatus = "NON_GENERE" | "ARCHIVE" | "SIGNE" | "VERROUILLE";
+type AGStatus = "BROUILLON" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ANNULEE";
 
 type PVItem = {
   id: number;
@@ -21,7 +21,7 @@ type PVItem = {
   pv_signed_pdf_url?: string | null;
   genere_le?: string | null;
   signe_le?: string | null;
-  archive_le?: string | null;
+  verrouille_le?: string | null;
   signataire?: string | null;
 };
 
@@ -31,6 +31,9 @@ type DRFPage<T> = {
   previous: string | null;
   results: T[];
 };
+
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || "http://127.0.0.1:8002";
 
 const AG_ENDPOINT_CANDIDATES = ["/api/ag/ags/", "/api/ag/ags"];
 
@@ -52,14 +55,22 @@ function toNumberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function toBoolean(value: unknown): boolean {
+function toBooleanOrNull(value: unknown): boolean | null {
+  if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
+
   if (typeof value === "string") {
     const s = value.trim().toLowerCase();
-    return ["true", "1", "oui", "yes", "ok"].includes(s);
+    if (["true", "1", "oui", "yes", "ok", "verrouille", "verrouillé", "locked"].includes(s)) return true;
+    if (["false", "0", "non", "no", "open", "ouvert"].includes(s)) return false;
   }
-  return false;
+
+  return null;
+}
+
+function toBoolean(value: unknown): boolean {
+  return toBooleanOrNull(value) === true;
 }
 
 function pickString(...values: unknown[]): string {
@@ -81,25 +92,65 @@ function pickDate(...values: unknown[]): string {
   return "";
 }
 
+function toAbsoluteBackendUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+
+  let raw = url.trim();
+
+  if (/^https?:\/\//i.test(raw)) {
+    raw = raw.replace("://localhost:", "://127.0.0.1:");
+    raw = raw.replace("/api/media/", "/media/");
+    return raw;
+  }
+
+  raw = raw.replace(/^\/api\/media\//, "/media/");
+  raw = raw.replace(/^api\/media\//, "media/");
+
+  if (raw.startsWith("/")) {
+    return `${API_BASE_URL}${raw}`;
+  }
+
+  return `${API_BASE_URL}/${raw}`;
+}
+
 function normalizeAGStatus(value: unknown): AGStatus {
   const s = String(value ?? "").trim().toUpperCase();
+
+  if (["CONVOQUEE", "CONVOQUÉE"].includes(s)) return "CONVOQUEE";
   if (["OUVERTE", "OPEN", "ACTIVE", "ACTIF", "EN_COURS"].includes(s)) return "OUVERTE";
-  if (["CLOTUREE", "CLOTURE", "CLOSED", "TERMINEE", "TERMINÉE"].includes(s)) return "CLOTUREE";
-  if (["ARCHIVEE", "ARCHIVÉE", "ARCHIVE", "ARCHIVED"].includes(s)) return "ARCHIVEE";
+  if (["CLOTUREE", "CLÔTUREE", "CLÔTURÉE", "CLOTURE", "CLOSED", "TERMINEE", "TERMINÉE"].includes(s)) {
+    return "CLOTUREE";
+  }
+  if (["ANNULEE", "ANNULÉE", "CANCELED", "CANCELLED"].includes(s)) return "ANNULEE";
+
   return "BROUILLON";
 }
 
+function normalizeExplicitPVStatus(value: unknown): PVStatus | null {
+  const s = String(value ?? "").trim().toUpperCase();
+
+  if (["NON_GENERE", "NON GÉNÉRÉ", "NON GENERE"].includes(s)) return "NON_GENERE";
+  if (["ARCHIVE", "ARCHIVÉ", "ARCHIVEE", "ARCHIVÉE"].includes(s)) return "ARCHIVE";
+  if (["SIGNE", "SIGNÉ"].includes(s)) return "SIGNE";
+  if (["VERROUILLE", "VERROUILLÉ", "LOCKED"].includes(s)) return "VERROUILLE";
+
+  return null;
+}
+
 function inferPVStatus(row: Record<string, unknown>): PVStatus {
+  const explicit = normalizeExplicitPVStatus(row.pv_status);
+  if (explicit) return explicit;
+
   const pvLocked = toBoolean(row.pv_locked);
   const signedPdfUrl = pickNullableString(row.pv_signed_pdf_url);
   const signedAt = pickNullableString(row.pv_signed_at);
   const pdfUrl = pickNullableString(row.pv_pdf_url);
   const generatedAt = pickNullableString(row.pv_generated_at);
 
-  if (pvLocked && (signedPdfUrl || signedAt)) return "ARCHIVE";
+  if (pvLocked && (signedPdfUrl || signedAt)) return "VERROUILLE";
   if (signedPdfUrl || signedAt) return "SIGNE";
-  if (pdfUrl || generatedAt) return "GENERE";
-  return "BROUILLON";
+  if (pdfUrl || generatedAt) return "ARCHIVE";
+  return "NON_GENERE";
 }
 
 function normalizePVItem(raw: unknown, index: number): PVItem {
@@ -111,11 +162,12 @@ function normalizePVItem(raw: unknown, index: number): PVItem {
     toNumberOrNull(row.pk) ??
     index + 1;
 
-  const pvPdfUrl = pickNullableString(row.pv_pdf_url);
-  const pvSignedPdfUrl = pickNullableString(row.pv_signed_pdf_url);
+  const pvPdfUrl = toAbsoluteBackendUrl(pickNullableString(row.pv_pdf_url));
+  const pvSignedPdfUrl = toAbsoluteBackendUrl(pickNullableString(row.pv_signed_pdf_url));
   const genereLe = pickNullableString(row.pv_generated_at);
   const signeLe = pickNullableString(row.pv_signed_at);
   const pvLocked = toBoolean(row.pv_locked);
+  const statut = inferPVStatus(row);
 
   return {
     id: agId,
@@ -124,7 +176,7 @@ function normalizePVItem(raw: unknown, index: number): PVItem {
     assemblee_ref: pickString(row.reference, row.ref, row.code) || `AG-${agId}`,
     assemblee_titre: pickString(row.titre, row.title, row.intitule, row.nom) || "Assemblée générale",
     date_ag: pickDate(row.date_ag, row.date, row.date_assemblee),
-    statut: inferPVStatus(row),
+    statut,
     ag_statut: normalizeAGStatus(row.statut ?? row.status ?? row.etat),
     pv_locked: pvLocked,
     hash: pickNullableString(row.pv_signed_hash, row.pv_pdf_hash) ?? undefined,
@@ -132,7 +184,7 @@ function normalizePVItem(raw: unknown, index: number): PVItem {
     pv_signed_pdf_url: pvSignedPdfUrl,
     genere_le: genereLe,
     signe_le: signeLe,
-    archive_le: pvLocked ? signeLe ?? genereLe : null,
+    verrouille_le: statut === "VERROUILLE" ? signeLe ?? genereLe : null,
     signataire: pickNullableString(row.pv_signer_subject),
   };
 }
@@ -360,25 +412,27 @@ function truncateText(value?: string | null, max = 20) {
 
 function getPVStatusBadge(status: PVStatus) {
   switch (status) {
-    case "GENERE":
-      return <Badge text="Généré" kind="info" />;
+    case "ARCHIVE":
+      return <Badge text="Archivé" kind="info" />;
     case "SIGNE":
       return <Badge text="Signé" kind="success" />;
-    case "ARCHIVE":
-      return <Badge text="Archivé" kind="neutral" />;
+    case "VERROUILLE":
+      return <Badge text="Verrouillé" kind="neutral" />;
     default:
-      return <Badge text="Brouillon" kind="warning" />;
+      return <Badge text="Non généré" kind="warning" />;
   }
 }
 
 function getAGStatusBadge(status: AGStatus) {
   switch (status) {
+    case "CONVOQUEE":
+      return <Badge text="AG convoquée" kind="neutral" />;
     case "OUVERTE":
       return <Badge text="AG ouverte" kind="info" />;
     case "CLOTUREE":
       return <Badge text="AG clôturée" kind="success" />;
-    case "ARCHIVEE":
-      return <Badge text="AG archivée" kind="neutral" />;
+    case "ANNULEE":
+      return <Badge text="AG annulée" kind="danger" />;
     default:
       return <Badge text="AG brouillon" kind="warning" />;
   }
@@ -471,9 +525,10 @@ export default function AGPV() {
   const stats = useMemo(() => {
     return {
       total: rows.length,
-      generes: rows.filter((x) => x.statut === "GENERE").length,
-      signes: rows.filter((x) => x.statut === "SIGNE").length,
+      nonGeneres: rows.filter((x) => x.statut === "NON_GENERE").length,
       archives: rows.filter((x) => x.statut === "ARCHIVE").length,
+      signes: rows.filter((x) => x.statut === "SIGNE").length,
+      verrouilles: rows.filter((x) => x.statut === "VERROUILLE").length,
     };
   }, [rows]);
 
@@ -509,21 +564,27 @@ export default function AGPV() {
           isLoading={isLoading}
         />
         <StatCard
-          title="Générés"
-          value={stats.generes}
-          sub="PV générés mais pas encore signés."
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Signés"
-          value={stats.signes}
-          sub="PV signés numériquement."
+          title="Non générés"
+          value={stats.nonGeneres}
+          sub="Assemblées sans PV documentaire disponible."
           isLoading={isLoading}
         />
         <StatCard
           title="Archivés"
           value={stats.archives}
-          sub="PV verrouillés et figés dans le cycle documentaire."
+          sub="PV générés et archivés, avant signature finale."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Signés"
+          value={stats.signes}
+          sub="PV signés numériquement, pas encore verrouillés."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Verrouillés"
+          value={stats.verrouilles}
+          sub="PV figés dans le cycle documentaire."
           isLoading={isLoading}
         />
       </div>
@@ -551,10 +612,10 @@ export default function AGPV() {
             style={selectInput}
           >
             <option value="TOUS">Tous les statuts</option>
-            <option value="BROUILLON">Brouillons</option>
-            <option value="GENERE">Générés</option>
-            <option value="SIGNE">Signés</option>
+            <option value="NON_GENERE">Non générés</option>
             <option value="ARCHIVE">Archivés</option>
+            <option value="SIGNE">Signés</option>
+            <option value="VERROUILLE">Verrouillés</option>
           </select>
 
           <SmallButton onClick={() => void fetchPVs()} disabled={isLoading}>
@@ -593,7 +654,7 @@ export default function AGPV() {
                 <th style={th}>Assemblée</th>
                 <th style={th}>Date AG</th>
                 <th style={th}>Hash</th>
-                <th style={th}>Généré le</th>
+                <th style={th}>Archivé le</th>
                 <th style={th}>Signé le</th>
                 <th style={th}>Signataire</th>
                 <th style={th}>État</th>
@@ -643,7 +704,7 @@ export default function AGPV() {
                           rel="noreferrer"
                           style={secondaryMiniLink}
                         >
-                          PDF
+                          PDF archivé
                         </a>
                       ) : null}
                     </div>
@@ -658,8 +719,14 @@ export default function AGPV() {
       <style>{`
         .ag-pv-stat-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 14px;
+        }
+
+        @media (max-width: 1300px) {
+          .ag-pv-stat-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
         }
 
         @media (max-width: 1200px) {

@@ -6,6 +6,8 @@ type LoadState = "idle" | "loading" | "success" | "error";
 type ResolutionStatus = "EN_ATTENTE" | "ADOPTEE" | "REJETEE";
 type FlashKind = "success" | "error" | "info";
 type MajoriteType = "SIMPLE" | "ABSOLUE" | "QUALIFIEE_2_3" | "UNANIMITE";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
 
 type ResolutionItem = {
   id: number;
@@ -87,11 +89,17 @@ function toBooleanOrNull(value: unknown): boolean | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
+
   if (typeof value === "string") {
     const s = value.trim().toLowerCase();
-    if (["true", "1", "oui", "yes", "ok"].includes(s)) return true;
-    if (["false", "0", "non", "no"].includes(s)) return false;
+    if (["true", "1", "oui", "yes", "ok", "cloturee", "clôturée", "closed", "done"].includes(s)) {
+      return true;
+    }
+    if (["false", "0", "non", "no", "ouverte", "open", "draft"].includes(s)) {
+      return false;
+    }
   }
+
   return null;
 }
 
@@ -107,14 +115,85 @@ function pickNullableString(...values: unknown[]): string | null {
   return s || null;
 }
 
-function normalizeResolutionStatus(value: unknown, cloturee?: boolean | null): ResolutionStatus {
+function normalizeDecisionValue(value: unknown): ResolutionStatus | null {
   const s = String(value ?? "").trim().toUpperCase();
 
-  if (["ADOPTEE", "VALIDEE", "VALIDE", "APPROUVEE"].includes(s)) return "ADOPTEE";
-  if (["REJETEE", "REJETE", "REFUSEE", "REFUSE"].includes(s)) return "REJETEE";
+  if (
+    [
+      "ADOPTEE",
+      "ADOPTÉE",
+      "VALIDEE",
+      "VALIDÉE",
+      "VALIDE",
+      "APPROUVEE",
+      "APPROUVÉE",
+      "ADOPTED",
+    ].includes(s)
+  ) {
+    return "ADOPTEE";
+  }
 
-  if (cloturee) return "EN_ATTENTE";
-  return "EN_ATTENTE";
+  if (
+    [
+      "REJETEE",
+      "REJETÉE",
+      "REJETE",
+      "REFUSEE",
+      "REFUSÉE",
+      "REFUSE",
+      "REJECTED",
+    ].includes(s)
+  ) {
+    return "REJETEE";
+  }
+
+  if (s === "EN_ATTENTE" || s === "PENDING") {
+    return "EN_ATTENTE";
+  }
+
+  return null;
+}
+
+function normalizeResolutionStatusFromRaw(row: Record<string, unknown>, cloturee?: boolean | null): ResolutionStatus {
+  const candidates = [
+    row.decision,
+    row.statut_resolution,
+    isRecord(row.resultat_detail) ? row.resultat_detail.decision : null,
+    row.resultat,
+    row.result,
+    row.status_result,
+    row.vote_result,
+    row.outcome,
+    row.statut,
+    row.status,
+    row.etat,
+    row.state,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeDecisionValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  const adoptedFlag =
+    toBooleanOrNull(row.adoptee) ??
+    toBooleanOrNull(row.adopted) ??
+    toBooleanOrNull(row.is_adoptee) ??
+    toBooleanOrNull(row.is_adopted) ??
+    null;
+
+  if (adoptedFlag === true) return "ADOPTEE";
+
+  const rejectedFlag =
+    toBooleanOrNull(row.rejetee) ??
+    toBooleanOrNull(row.rejected) ??
+    toBooleanOrNull(row.is_rejetee) ??
+    toBooleanOrNull(row.is_rejected) ??
+    null;
+
+  if (rejectedFlag === true) return "REJETEE";
+
+  return cloturee ? "EN_ATTENTE" : "EN_ATTENTE";
 }
 
 function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
@@ -132,11 +211,15 @@ function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
     toNumberOrNull(assembleeObject?.id) ??
     null;
 
-  const ordre = toNumberOrNull(row.ordre);
-  const cloturee = toBooleanOrNull(row.cloturee) ?? false;
+  const ordre = toNumberOrNull(row.ordre) ?? toNumberOrNull(row.numero_ordre);
+  const cloturee =
+    toBooleanOrNull(row.cloturee) ??
+    toBooleanOrNull(row.est_cloturee) ??
+    toBooleanOrNull(row.closed) ??
+    false;
 
   const numero =
-    pickString(row.numero, row.reference, row.code) ||
+    pickString(row.numero, row.reference, row.code, row.libelle_court) ||
     (ordre !== null ? `R${ordre}` : `R${index + 1}`);
 
   const assembleeRef =
@@ -168,7 +251,7 @@ function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
     assemblee_ref: assembleeRef,
     assemblee_titre: assembleeTitre,
     titre: pickString(row.titre, row.title, row.intitule, row.nom, row.objet) || "Résolution sans titre",
-    texte: pickNullableString(row.texte, row.description, row.contenu),
+    texte: pickNullableString(row.texte, row.description, row.contenu, row.resume),
     type_majorite: pickNullableString(row.type_majorite),
     tantieme_categorie: pickNullableString(
       row.tantieme_categorie_effective,
@@ -182,7 +265,7 @@ function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
       null,
     cloturee,
     travaux_dossier_titre: pickNullableString(row.travaux_dossier_titre),
-    statut: normalizeResolutionStatus(row.decision ?? row.statut ?? row.status ?? row.resultat, cloturee),
+    statut: normalizeResolutionStatusFromRaw(row, cloturee),
   };
 }
 
@@ -204,7 +287,10 @@ function normalizeResolutionResult(raw: unknown): ResolutionResult | null {
       contre: toNumberOrNull(tantiemesRow.contre) ?? 0,
       abstention: toNumberOrNull(tantiemesRow.abstention) ?? 0,
       exprimes: toNumberOrNull(tantiemesRow.exprimes) ?? 0,
-      ratio_pour_exprimes: Number(tantiemesRow.ratio_pour_exprimes ?? 0),
+      ratio_pour_exprimes:
+        typeof tantiemesRow.ratio_pour_exprimes === "number"
+          ? tantiemesRow.ratio_pour_exprimes
+          : Number(tantiemesRow.ratio_pour_exprimes ?? 0),
     },
   };
 }
@@ -241,6 +327,47 @@ function getErrorMessage(error: unknown, fallback: string) {
   }
 
   return err?.message || fallback;
+}
+
+function formatMoneyFCFA(amount?: number | null): string {
+  if (amount === null || amount === undefined) return "—";
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "XOF",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${amount} FCFA`;
+  }
+}
+
+function truncateText(value?: string | null, max = 120): string {
+  if (!value) return "—";
+  const s = String(value).trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function formatPercent(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "0 %";
+  return `${Math.round(value * 100)} %`;
+}
+
+function formatMoneySimple(value?: number | null): string {
+  if (value === null || value === undefined) return "0";
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function buildCreatePayload(values: ResolutionFormValues) {
+  return {
+    ag: values.ag,
+    ordre: values.ordre,
+    titre: values.titre.trim(),
+    texte: values.texte.trim(),
+    type_majorite: values.type_majorite,
+    ...(values.budget_vote.trim() ? { budget_vote: Number(values.budget_vote) } : {}),
+  };
 }
 
 function PageShell({ children }: { children: ReactNode }) {
@@ -303,9 +430,7 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
         minHeight: 112,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>
-        {props.title}
-      </div>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>{props.title}</div>
       <div
         style={{
           fontSize: 28,
@@ -318,85 +443,13 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
         {props.isLoading ? "…" : props.value}
       </div>
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
       ) : null}
     </div>
   );
 }
 
-function SmallButton(props: {
-  children: ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      disabled={props.disabled}
-      style={{
-        border: props.danger
-          ? "1px solid #fecaca"
-          : props.primary
-            ? "1px solid #c7d2fe"
-            : "1px solid #e5e7eb",
-        background: props.disabled
-          ? "#f9fafb"
-          : props.danger
-            ? "#fef2f2"
-            : props.primary
-              ? "#eef2ff"
-              : "#fff",
-        color: props.disabled
-          ? "#9ca3af"
-          : props.danger
-            ? "#991b1b"
-            : props.primary
-              ? "#3730a3"
-              : "#111827",
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
-        fontWeight: 800,
-        cursor: props.disabled ? "not-allowed" : "pointer",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {props.children}
-    </button>
-  );
-}
-
-function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
-  return (
-    <div
-      style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
-      }}
-    >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
-        {props.title}
-      </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
-      {props.actionLabel && props.onAction ? (
-        <div style={{ marginTop: 12 }}>
-          <SmallButton onClick={props.onAction} primary>
-            {props.actionLabel}
-          </SmallButton>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -415,12 +468,13 @@ function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNo
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
 
-function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" | "danger" | "info" }) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -453,52 +507,83 @@ function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" |
   );
 }
 
-function formatMoneyFCFA(amount?: number | null): string {
-  if (amount === null || amount === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "XOF",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${amount} FCFA`;
-  }
+function AppButton(props: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  variant?: ButtonVariant;
+}) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      style={{
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {props.children}
+    </button>
+  );
 }
 
-function truncateText(value?: string | null, max = 120): string {
-  if (!value) return "—";
-  const s = String(value).trim();
-  if (s.length <= max) return s;
-  return `${s.slice(0, max - 1)}…`;
-}
-
-function formatPercent(value?: number | null): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "0 %";
-  return `${Math.round(value * 100)} %`;
+function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div
+      style={{
+        border: "1px dashed #d1d5db",
+        borderRadius: 16,
+        padding: 18,
+        background: "#f9fafb",
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      {props.actionLabel && props.onAction ? (
+        <div style={{ marginTop: 12 }}>
+          <AppButton onClick={props.onAction} variant="primary">
+            {props.actionLabel}
+          </AppButton>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function getStatusBadge(item: ResolutionItem) {
-  if (item.cloturee && item.statut === "ADOPTEE") return <Badge text="Adoptée" kind="success" />;
-  if (item.cloturee && item.statut === "REJETEE") return <Badge text="Rejetée" kind="danger" />;
+  if (item.statut === "ADOPTEE") return <Badge text="Adoptée" kind="success" />;
+  if (item.statut === "REJETEE") return <Badge text="Rejetée" kind="danger" />;
   if (item.cloturee) return <Badge text="Clôturée" kind="neutral" />;
   return <Badge text="En attente" kind="warning" />;
-}
-
-function buildCreatePayload(values: ResolutionFormValues) {
-  return {
-    ag: values.ag,
-    ordre: values.ordre,
-    titre: values.titre.trim(),
-    texte: values.texte.trim(),
-    type_majorite: values.type_majorite,
-    ...(values.budget_vote.trim() ? { budget_vote: Number(values.budget_vote) } : {}),
-  };
-}
-
-function formatMoneySimple(value?: number | null): string {
-  if (value === null || value === undefined) return "0";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
 }
 
 export default function AGResolutions() {
@@ -608,7 +693,7 @@ export default function AGResolutions() {
       total: rows.length,
       adoptees: rows.filter((x) => x.statut === "ADOPTEE").length,
       rejetees: rows.filter((x) => x.statut === "REJETEE").length,
-      attente: rows.filter((x) => !x.cloturee || x.statut === "EN_ATTENTE").length,
+      attente: rows.filter((x) => x.statut === "EN_ATTENTE").length,
     };
   }, [rows]);
 
@@ -640,7 +725,7 @@ export default function AGResolutions() {
   }
 
   function validateForm() {
-    if (!form.ag) return "L’identifiant de l’assemblée (AG) est obligatoire.";
+    if (!form.ag) return "L’identifiant de l’assemblée est obligatoire.";
     if (!form.ordre) return "L’ordre de la résolution est obligatoire.";
     if (!form.titre.trim()) return "Le titre de la résolution est obligatoire.";
     if (!form.texte.trim()) return "Le texte de la résolution est obligatoire.";
@@ -711,6 +796,9 @@ export default function AGResolutions() {
   }
 
   async function handleCloseResolution(item: ResolutionItem) {
+    const ok = window.confirm(`Voulez-vous vraiment clôturer ${item.numero} ?`);
+    if (!ok) return;
+
     setBusyCloseId(item.id);
     setMessage(null);
 
@@ -754,27 +842,35 @@ export default function AGResolutions() {
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {ag ? (
-              <SmallButton onClick={() => navigate(`/ag/assemblees/${ag}`)}>Retour à l’assemblée</SmallButton>
+              <AppButton onClick={() => navigate(`/ag/assemblees/${ag}`)} variant="secondary">
+                Retour à l’assemblée
+              </AppButton>
             ) : (
-              <SmallButton onClick={() => navigate("/ag")}>Retour au module AG</SmallButton>
+              <AppButton onClick={() => navigate("/ag")} variant="secondary">
+                Retour au module AG
+              </AppButton>
             )}
 
-            <SmallButton onClick={suggestNextOrdre} primary>
-              {showCreateForm ? "Nouvelle résolution" : "Ajouter une résolution"}
-            </SmallButton>
+            <AppButton onClick={suggestNextOrdre} variant="primary">
+              Ajouter une résolution
+            </AppButton>
 
             {ag ? (
-              <SmallButton onClick={() => navigate(`/ag/assemblees/${ag}/votes`)}>Voir les votes</SmallButton>
+              <AppButton onClick={() => navigate(`/ag/assemblees/${ag}/votes`)} variant="secondary">
+                Voir les votes
+              </AppButton>
             ) : (
-              <SmallButton onClick={() => navigate("/ag/assemblees")}>Voir les assemblées</SmallButton>
+              <AppButton onClick={() => navigate("/ag/assemblees")} variant="secondary">
+                Voir les assemblées
+              </AppButton>
             )}
           </div>
         }
       />
 
       {message ? (
-        <AlertBox kind={message.kind === "success" ? "success" : message.kind === "error" ? "error" : "info"}>
-          <div style={{ fontSize: 13 }}>{message.text}</div>
+        <AlertBox kind={message.kind}>
+          {message.text}
         </AlertBox>
       ) : null}
 
@@ -791,12 +887,16 @@ export default function AGResolutions() {
             }}
           >
             <div style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>Créer une résolution</div>
-            <SmallButton onClick={() => setShowCreateForm(false)} disabled={saving}>
+            <AppButton onClick={() => setShowCreateForm(false)} disabled={saving} variant="secondary">
               Fermer
-            </SmallButton>
+            </AppButton>
           </div>
 
-          <div style={formGrid}>
+          <div style={formIntroBox}>
+            Renseignez les champs obligatoires pour enregistrer une nouvelle résolution dans l’assemblée concernée.
+          </div>
+
+          <div className="ag-resolutions-form-grid" style={formGrid}>
             <div style={field}>
               <label style={label}>Assemblée (ID) *</label>
               <input
@@ -827,7 +927,7 @@ export default function AGResolutions() {
                 placeholder="Ex. 1"
                 style={input}
               />
-              <div style={hint}>Ordre d’apparition de la résolution dans l’AG.</div>
+              <div style={hint}>Ordre d’apparition de la résolution dans l’assemblée générale.</div>
             </div>
 
             <div style={fieldFull}>
@@ -876,28 +976,47 @@ export default function AGResolutions() {
           </div>
 
           <div style={actions}>
-            <SmallButton onClick={resetForm} disabled={saving}>
+            <AppButton onClick={resetForm} disabled={saving} variant="secondary">
               Réinitialiser
-            </SmallButton>
-            <SmallButton onClick={() => void handleCreateResolution()} primary disabled={saving}>
+            </AppButton>
+            <AppButton onClick={() => void handleCreateResolution()} variant="primary" disabled={saving}>
               {saving ? "Création..." : "Créer la résolution"}
-            </SmallButton>
+            </AppButton>
           </div>
         </div>
       ) : null}
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Impossible de charger la liste des résolutions.">
+          {error}
         </AlertBox>
       ) : null}
 
       <div className="ag-resolutions-stat-grid">
-        <StatCard title="Résolutions" value={stats.total} sub="Nombre total de résolutions visibles." isLoading={isLoading} />
-        <StatCard title="Adoptées" value={stats.adoptees} sub="Résolutions validées dans le cycle AG." isLoading={isLoading} />
-        <StatCard title="Rejetées" value={stats.rejetees} sub="Résolutions refusées après clôture." isLoading={isLoading} />
-        <StatCard title="En attente" value={stats.attente} sub="Résolutions encore non clôturées ou non tranchées." isLoading={isLoading} />
+        <StatCard
+          title="Résolutions"
+          value={stats.total}
+          sub="Nombre total de résolutions visibles."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Adoptées"
+          value={stats.adoptees}
+          sub="Résolutions validées dans le cycle AG."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="Rejetées"
+          value={stats.rejetees}
+          sub="Résolutions refusées après clôture."
+          isLoading={isLoading}
+        />
+        <StatCard
+          title="En attente"
+          value={stats.attente}
+          sub="Résolutions encore non clôturées ou non tranchées."
+          isLoading={isLoading}
+        />
       </div>
 
       <div
@@ -928,9 +1047,9 @@ export default function AGResolutions() {
             <option value="EN_ATTENTE">En attente</option>
           </select>
 
-          <SmallButton onClick={() => void fetchResolutions()} disabled={isLoading}>
+          <AppButton onClick={() => void fetchResolutions()} disabled={isLoading} variant="secondary">
             {isLoading ? "Actualisation..." : "Actualiser"}
-          </SmallButton>
+          </AppButton>
         </div>
 
         <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
@@ -940,7 +1059,7 @@ export default function AGResolutions() {
 
       <div style={tableWrap}>
         {isLoading ? (
-          <div style={{ padding: 16, color: "#6b7280", fontSize: 14 }}>Chargement des résolutions…</div>
+          <div style={{ padding: 16, color: "#6b7280", fontSize: 14 }}>Chargement des résolutions...</div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: 16 }}>
             <EmptyState
@@ -1035,7 +1154,12 @@ export default function AGResolutions() {
                               type="button"
                               onClick={() => void handleComputeResult(item)}
                               disabled={busyResultId === item.id || busyCloseId === item.id}
-                              style={secondaryMiniButton}
+                              style={{
+                                ...secondaryMiniButton,
+                                opacity: busyResultId === item.id || busyCloseId === item.id ? 0.6 : 1,
+                                cursor:
+                                  busyResultId === item.id || busyCloseId === item.id ? "not-allowed" : "pointer",
+                              }}
                             >
                               {busyResultId === item.id ? "Calcul..." : "Résultat"}
                             </button>
@@ -1044,7 +1168,12 @@ export default function AGResolutions() {
                               type="button"
                               onClick={() => void handleCloseResolution(item)}
                               disabled={busyCloseId === item.id || busyResultId === item.id}
-                              style={successMiniButton}
+                              style={{
+                                ...dangerMiniButton,
+                                opacity: busyCloseId === item.id || busyResultId === item.id ? 0.6 : 1,
+                                cursor:
+                                  busyCloseId === item.id || busyResultId === item.id ? "not-allowed" : "pointer",
+                              }}
                             >
                               {busyCloseId === item.id ? "Clôture..." : "Clôturer"}
                             </button>
@@ -1073,15 +1202,15 @@ export default function AGResolutions() {
           }
         }
 
-        @media (max-width: 760px) {
-          .ag-resolutions-stat-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
         @media (max-width: 900px) {
           .ag-resolutions-form-grid {
             grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .ag-resolutions-stat-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -1095,6 +1224,17 @@ const card: CSSProperties = {
   padding: 18,
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+};
+
+const formIntroBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 13,
+  lineHeight: 1.6,
+  marginBottom: 14,
 };
 
 const formGrid: CSSProperties = {
@@ -1232,16 +1372,14 @@ const secondaryMiniButton: CSSProperties = {
   fontSize: 12,
   fontWeight: 700,
   color: "#1d4ed8",
-  cursor: "pointer",
 };
 
-const successMiniButton: CSSProperties = {
+const dangerMiniButton: CSSProperties = {
   padding: "7px 10px",
   borderRadius: 10,
-  border: "1px solid #a7f3d0",
-  background: "#ecfdf5",
+  border: "1px solid #fecaca",
+  background: "#fef2f2",
   fontSize: 12,
   fontWeight: 700,
-  color: "#166534",
-  cursor: "pointer",
+  color: "#991b1b",
 };

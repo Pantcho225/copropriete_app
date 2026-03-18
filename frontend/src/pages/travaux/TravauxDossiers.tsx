@@ -4,6 +4,9 @@ import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "idle" | "loading" | "success" | "error";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type ButtonVariant = "primary" | "secondary" | "danger";
+type FlashKind = "success" | "error" | "info";
 
 type DRFPage<T> = {
   count: number;
@@ -36,7 +39,7 @@ function isDRFPage<T>(x: unknown): x is DRFPage<T> {
     x &&
       typeof x === "object" &&
       Array.isArray((x as DRFPage<T>).results) &&
-      typeof (x as DRFPage<T>).count === "number"
+      typeof (x as DRFPage<T>).count === "number",
   );
 }
 
@@ -115,7 +118,7 @@ function getErrorMessage(e: unknown, fallback: string) {
 
     try {
       const entries = Object.entries(data).filter(
-        ([key]) => key !== "detail" && key !== "message" && key !== "non_field_errors"
+        ([key]) => key !== "detail" && key !== "message" && key !== "non_field_errors",
       );
       if (entries.length) {
         return entries
@@ -160,51 +163,14 @@ function humanizeStatut(value?: unknown) {
     .join(" ");
 }
 
-function getStatutStyle(statut?: unknown): CSSProperties {
+function getStatutKind(statut?: unknown): BadgeKind {
   const s = normalizeStatut(statut);
 
-  if (s === "VALIDE" || s === "TERMINE") {
-    return {
-      ...badgeBase,
-      color: "#166534",
-      background: "#ecfdf5",
-      border: "1px solid #a7f3d0",
-    };
-  }
-
-  if (s === "SOUMIS_AG" || s === "A_VALIDER" || s === "EN_COURS") {
-    return {
-      ...badgeBase,
-      color: "#1d4ed8",
-      background: "#eff6ff",
-      border: "1px solid #bfdbfe",
-    };
-  }
-
-  if (s === "BROUILLON") {
-    return {
-      ...badgeBase,
-      color: "#374151",
-      background: "#f3f4f6",
-      border: "1px solid #e5e7eb",
-    };
-  }
-
-  if (s === "REFUSE" || s === "ANNULE") {
-    return {
-      ...badgeBase,
-      color: "#991b1b",
-      background: "#fef2f2",
-      border: "1px solid #fecaca",
-    };
-  }
-
-  return {
-    ...badgeBase,
-    color: "#92400e",
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-  };
+  if (s === "VALIDE" || s === "TERMINE") return "success";
+  if (s === "SOUMIS_AG" || s === "A_VALIDER" || s === "EN_COURS") return "info";
+  if (s === "BROUILLON") return "neutral";
+  if (s === "REFUSE" || s === "ANNULE") return "danger";
+  return "warning";
 }
 
 function extractFournisseurLabel(raw: TravauxRawItem) {
@@ -230,8 +196,7 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
   const id = toNumberOrNull(raw.id) ?? toNumberOrNull(raw.pk) ?? 0;
 
   const titre =
-    String(raw.titre ?? raw.objet ?? raw.libelle ?? raw.nom ?? `Dossier #${id}`).trim() ||
-    `Dossier #${id}`;
+    String(raw.titre ?? raw.objet ?? raw.libelle ?? raw.nom ?? `Dossier #${id}`).trim() || `Dossier #${id}`;
 
   const description = String(raw.description ?? raw.notes ?? raw.resume ?? "").trim();
 
@@ -250,11 +215,7 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
     null;
 
   const lockedAt = cleanText(raw.locked_at);
-  const isLocked =
-    Boolean(raw.is_locked) ||
-    Boolean(raw.locked) ||
-    Boolean(raw.verrouille) ||
-    Boolean(lockedAt);
+  const isLocked = Boolean(raw.is_locked) || Boolean(raw.locked) || Boolean(raw.verrouille) || Boolean(lockedAt);
 
   return {
     id,
@@ -275,25 +236,13 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
 
 function extractStats(data: TravauxStatsResponse | null) {
   const total =
-    toNumberOrNull(data?.total_dossiers) ??
-    toNumberOrNull(data?.count) ??
-    toNumberOrNull(data?.nb_dossiers) ??
-    0;
+    toNumberOrNull(data?.total_dossiers) ?? toNumberOrNull(data?.count) ?? toNumberOrNull(data?.nb_dossiers) ?? 0;
 
-  const brouillons =
-    toNumberOrNull(data?.brouillons) ??
-    toNumberOrNull(data?.nb_brouillons) ??
-    0;
+  const brouillons = toNumberOrNull(data?.brouillons) ?? toNumberOrNull(data?.nb_brouillons) ?? 0;
 
-  const soumisAg =
-    toNumberOrNull(data?.soumis_ag) ??
-    toNumberOrNull(data?.nb_soumis_ag) ??
-    0;
+  const soumisAg = toNumberOrNull(data?.soumis_ag) ?? toNumberOrNull(data?.nb_soumis_ag) ?? 0;
 
-  const valides =
-    toNumberOrNull(data?.valides) ??
-    toNumberOrNull(data?.nb_valides) ??
-    0;
+  const valides = toNumberOrNull(data?.valides) ?? toNumberOrNull(data?.nb_valides) ?? 0;
 
   const budgetTotal =
     toNumberOrNull(data?.budget_total) ??
@@ -360,9 +309,7 @@ function StatCard(props: { title: string; value: string | number; sub?: string }
         boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>
-        {props.title}
-      </div>
+      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>{props.title}</div>
       <div
         style={{
           fontSize: 28,
@@ -375,19 +322,19 @@ function StatCard(props: { title: string; value: string | number; sub?: string }
         {props.value}
       </div>
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
       ) : null}
     </div>
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
-      : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
+      : props.kind === "success"
+        ? { bg: "#ecfdf5", border: "#a7f3d0", text: "#166534" }
+        : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
 
   return (
     <div
@@ -401,26 +348,48 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
         lineHeight: 1.5,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
 
-function SmallButton(props: {
+function AppButton(props: {
   children: ReactNode;
   to?: string;
   onClick?: () => void;
-  primary?: boolean;
+  variant?: ButtonVariant;
   disabled?: boolean;
 }) {
+  const variant = props.variant ?? "secondary";
+
+  const styles =
+    variant === "primary"
+      ? {
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+        }
+      : variant === "danger"
+        ? {
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }
+        : {
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+            color: "#111827",
+          };
+
   if (props.to) {
     return (
       <Link
         to={props.to}
         style={{
-          border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-          background: props.primary ? "#eef2ff" : "#fff",
-          color: props.primary ? "#3730a3" : "#111827",
+          border: styles.border,
+          background: styles.background,
+          color: styles.color,
           borderRadius: 12,
           padding: "10px 14px",
           fontSize: 13,
@@ -442,9 +411,9 @@ function SmallButton(props: {
       onClick={props.onClick}
       disabled={props.disabled}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        border: styles.border,
+        background: props.disabled ? "#f9fafb" : styles.background,
+        color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -468,23 +437,32 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
-        {props.title}
-      </div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
       <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
 
       {props.actionLabel && props.actionTo ? (
         <div style={{ marginTop: 12 }}>
-          <SmallButton to={props.actionTo} primary>
+          <AppButton to={props.actionTo} variant="primary">
             {props.actionLabel}
-          </SmallButton>
+          </AppButton>
         </div>
       ) : null}
     </div>
   );
 }
 
-function LockPill({ locked }: { locked: boolean }) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
+  const styles =
+    props.kind === "success"
+      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
+      : props.kind === "warning"
+        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
+        : props.kind === "danger"
+          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+          : props.kind === "info"
+            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
+            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+
   return (
     <span
       style={{
@@ -496,14 +474,18 @@ function LockPill({ locked }: { locked: boolean }) {
         fontSize: 12,
         fontWeight: 800,
         whiteSpace: "nowrap",
-        color: locked ? "#166534" : "#92400e",
-        background: locked ? "#ecfdf5" : "#fffbeb",
-        border: locked ? "1px solid #a7f3d0" : "1px solid #fde68a",
+        border: `1px solid ${styles.border}`,
+        background: styles.background,
+        color: styles.color,
       }}
     >
-      {locked ? "Verrouillé" : "Non verrouillé"}
+      {props.text}
     </span>
   );
+}
+
+function LockPill({ locked }: { locked: boolean }) {
+  return <Badge text={locked ? "Verrouillé" : "Non verrouillé"} kind={locked ? "success" : "warning"} />;
 }
 
 function MetaLine(props: { children: ReactNode }) {
@@ -544,9 +526,7 @@ export default function TravauxDossiers() {
       ]);
 
       const listData = listRes?.data;
-      const items = isDRFPage<TravauxRawItem>(listData)
-        ? listData.results
-        : asArray<TravauxRawItem>(listData);
+      const items = isDRFPage<TravauxRawItem>(listData) ? listData.results : asArray<TravauxRawItem>(listData);
 
       setRows(items.map(normalizeDossier));
       setStatsRaw((statsRes?.data ?? null) as TravauxStatsResponse | null);
@@ -618,10 +598,12 @@ export default function TravauxDossiers() {
         subtitle="Pilotez les dossiers de travaux, leur budget de référence, leur état d’avancement, la résolution liée et leur niveau de verrouillage depuis un écran unique."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/")}>Retour au tableau de bord</SmallButton>
-            <SmallButton to="/travaux/dossiers/nouveau" primary>
+            <AppButton onClick={() => navigate("/")} variant="secondary">
+              Retour au tableau de bord
+            </AppButton>
+            <AppButton to="/travaux/dossiers/nouveau" variant="primary">
               Nouveau dossier
-            </SmallButton>
+            </AppButton>
           </div>
         }
       />
@@ -658,17 +640,14 @@ export default function TravauxDossiers() {
           title="Budget affiché"
           value={fmtMoney(uiStats.budgetVisible)}
           sub={
-            uiStats.budgetApi !== null
-              ? `Budget total API : ${fmtMoney(uiStats.budgetApi)}`
-              : "Somme des budgets visibles."
+            uiStats.budgetApi !== null ? `Budget total API : ${fmtMoney(uiStats.budgetApi)}` : "Somme des budgets visibles."
           }
         />
       </div>
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Impossible de charger les dossiers travaux</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Impossible de charger les dossiers travaux.">
+          {error}
         </AlertBox>
       ) : null}
 
@@ -681,11 +660,7 @@ export default function TravauxDossiers() {
             style={input}
           />
 
-          <select
-            value={statutFilter}
-            onChange={(e) => setStatutFilter(e.target.value)}
-            style={selectInput}
-          >
+          <select value={statutFilter} onChange={(e) => setStatutFilter(e.target.value)} style={selectInput}>
             <option value="TOUS">Tous les statuts</option>
             <option value="BROUILLON">Brouillons</option>
             <option value="SOUMIS_AG">Soumis à l’AG</option>
@@ -698,15 +673,13 @@ export default function TravauxDossiers() {
             <option value="ARCHIVE">Archivés</option>
           </select>
 
-          <SmallButton onClick={() => void fetchData()} disabled={isLoading}>
+          <AppButton onClick={() => void fetchData()} disabled={isLoading} variant="secondary">
             {isLoading ? "Actualisation..." : "Actualiser"}
-          </SmallButton>
+          </AppButton>
         </div>
 
         <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading
-            ? "Chargement des dossiers travaux..."
-            : `${filtered.length} dossier(s) affiché(s) sur ${rows.length}`}
+          {isLoading ? "Chargement des dossiers travaux..." : `${filtered.length} dossier(s) affiché(s) sur ${rows.length}`}
         </div>
       </div>
 
@@ -765,7 +738,7 @@ export default function TravauxDossiers() {
                   <td style={tdStrong}>{fmtMoney(item.budget)}</td>
 
                   <td style={td}>
-                    <span style={getStatutStyle(item.statut)}>{humanizeStatut(item.statut)}</span>
+                    <Badge text={humanizeStatut(item.statut)} kind={getStatutKind(item.statut)} />
                   </td>
 
                   <td style={td}>
@@ -788,11 +761,7 @@ export default function TravauxDossiers() {
                           if (item.isLocked) e.preventDefault();
                         }}
                         aria-disabled={item.isLocked}
-                        title={
-                          item.isLocked
-                            ? "Ce dossier est verrouillé et ne peut pas être modifié."
-                            : "Modifier le dossier"
-                        }
+                        title={item.isLocked ? "Ce dossier est verrouillé et ne peut pas être modifié." : "Modifier le dossier"}
                       >
                         Modifier
                       </Link>
@@ -834,9 +803,8 @@ export default function TravauxDossiers() {
       </div>
 
       {state === "success" && rows.length > 0 ? (
-        <AlertBox kind="info">
-          Cet écran centralise le pilotage des dossiers travaux. La lecture détaillée du budget, de la résolution liée
-          et du verrouillage se poursuit dans la fiche de détail de chaque dossier.
+        <AlertBox kind="info" title="Lecture métier du module">
+          Cet écran centralise le pilotage des dossiers travaux. La lecture détaillée du budget, de la résolution liée et du verrouillage se poursuit dans la fiche de détail de chaque dossier.
         </AlertBox>
       ) : null}
 
@@ -862,17 +830,6 @@ export default function TravauxDossiers() {
     </PageShell>
   );
 }
-
-const badgeBase: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "4px 10px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-  whiteSpace: "nowrap",
-};
 
 const toolbar: CSSProperties = {
   display: "flex",
