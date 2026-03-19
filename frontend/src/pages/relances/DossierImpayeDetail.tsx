@@ -74,65 +74,30 @@ const CANAL_OPTIONS = [
 ] as const;
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function PageHeader(props: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 28,
-            fontWeight: 900,
-            color: "#111827",
-            lineHeight: 1.1,
-            letterSpacing: -0.4,
-          }}
-        >
-          {props.title}
-        </div>
-        {props.subtitle ? (
-          <div
-            style={{
-              marginTop: 6,
-              color: "#6b7280",
-              fontSize: 14,
-              lineHeight: 1.5,
-              maxWidth: 920,
-            }}
-          >
-            {props.subtitle}
-          </div>
-        ) : null}
+    <div style={pageHeader}>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={pageEyebrow}>Relances</div>
+        <div style={pageTitle}>{props.title}</div>
+        {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
       </div>
-      {props.right}
+      {props.actions ? <div style={pageHeaderActions}>{props.actions}</div> : null}
     </div>
   );
 }
 
-function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
+function Card(props: { title: string; subtitle?: string; children: ReactNode; right?: ReactNode }) {
   return (
     <div style={card}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 10,
-          flexWrap: "wrap",
-          marginBottom: 14,
-          alignItems: "center",
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+      <div style={cardHeader}>
+        <div style={{ display: "grid", gap: 4 }}>
+          <div style={cardTitle}>{props.title}</div>
+          {props.subtitle ? <div style={cardSubtitle}>{props.subtitle}</div> : null}
+        </div>
         {props.right}
       </div>
       {props.children}
@@ -146,6 +111,7 @@ function SmallButton(props: {
   primary?: boolean;
   disabled?: boolean;
   danger?: boolean;
+  title?: string;
 }) {
   const tone = props.danger
     ? {
@@ -161,7 +127,7 @@ function SmallButton(props: {
         }
       : {
           border: "1px solid #e5e7eb",
-          background: "#fff",
+          background: "#ffffff",
           color: props.disabled ? "#9ca3af" : "#111827",
         };
 
@@ -170,6 +136,7 @@ function SmallButton(props: {
       type="button"
       disabled={props.disabled}
       onClick={props.onClick}
+      title={props.title}
       style={{
         ...tone,
         borderRadius: 12,
@@ -178,6 +145,7 @@ function SmallButton(props: {
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        transition: "all 0.2s ease",
       }}
     >
       {props.children}
@@ -209,7 +177,7 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
         background: styles.background,
         color: styles.color,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         whiteSpace: "nowrap",
       }}
     >
@@ -234,6 +202,8 @@ function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
+        whiteSpace: "pre-wrap",
+        lineHeight: 1.5,
       }}
     >
       {props.children}
@@ -243,17 +213,9 @@ function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
 
 function KeyValueRow(props: { label: string; value: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "220px 1fr",
-        gap: 12,
-        padding: "10px 0",
-        borderBottom: "1px solid #f3f4f6",
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#6b7280" }}>{props.label}</div>
-      <div style={{ fontSize: 14, color: "#111827", lineHeight: 1.55 }}>{props.value}</div>
+    <div style={keyValueRow}>
+      <div style={keyValueLabel}>{props.label}</div>
+      <div style={keyValueValue}>{props.value}</div>
     </div>
   );
 }
@@ -265,11 +227,9 @@ function Field(props: {
 }) {
   return (
     <div style={{ display: "grid", gap: 8 }}>
-      <label style={{ fontSize: 13, fontWeight: 800, color: "#4b5563" }}>{props.label}</label>
+      <label style={fieldLabel}>{props.label}</label>
       {props.children}
-      {props.help ? (
-        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.4 }}>{props.help}</div>
-      ) : null}
+      {props.help ? <div style={fieldHelp}>{props.help}</div> : null}
     </div>
   );
 }
@@ -289,25 +249,20 @@ function Modal(props: {
         aria-modal="true"
       >
         <div style={{ display: "grid", gap: 6, marginBottom: 18 }}>
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 900,
-              color: "#111827",
-              lineHeight: 1.2,
-            }}
-          >
-            {props.title}
-          </div>
-          {props.subtitle ? (
-            <div style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.55 }}>
-              {props.subtitle}
-            </div>
-          ) : null}
+          <div style={modalTitle}>{props.title}</div>
+          {props.subtitle ? <div style={modalSubtitle}>{props.subtitle}</div> : null}
         </div>
-
         {props.children}
       </div>
+    </div>
+  );
+}
+
+function EmptyState(props: { title: string; description?: string }) {
+  return (
+    <div style={emptyState}>
+      <div style={emptyStateTitle}>{props.title}</div>
+      {props.description ? <div style={emptyStateText}>{props.description}</div> : null}
     </div>
   );
 }
@@ -433,11 +388,7 @@ export default function DossierImpayeDetail() {
       setState("success");
     } catch (e: any) {
       setState("error");
-      setError(
-        e?.response?.data?.detail ||
-          e?.message ||
-          APP_TEXT.errors.loadFailed
-      );
+      setError(e?.response?.data?.detail || e?.message || APP_TEXT.errors.loadFailed);
       setDossier(null);
     }
   }
@@ -466,9 +417,7 @@ export default function DossierImpayeDetail() {
       objet: `Relance ${dossier.appel_reference || dossier.reference_appel || ""}`.trim(),
       message: `Bonjour, un solde de ${formatMoneyFCFA(
         dossier.reste_a_payer
-      )} reste dû pour ${
-        dossier.appel_reference || dossier.reference_appel || "cet appel"
-      }.`,
+      )} reste dû pour ${dossier.appel_reference || dossier.reference_appel || "cet appel"}.`,
     });
     setRelanceFormError(null);
     setPendingAction(null);
@@ -611,14 +560,15 @@ export default function DossierImpayeDetail() {
 
   return (
     <PageShell>
-      <SectionTitle
+      <PageHeader
         title={dossier ? `Détail du dossier impayé #${dossier.id}` : "Détail du dossier impayé"}
         subtitle="Consultez le dossier, son historique de relances et l’éventuel avis de régularisation."
-        right={
+        actions={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <SmallButton onClick={() => navigate("/relances/dossiers")}>
               Retour aux dossiers impayés
             </SmallButton>
+
             <SmallButton
               onClick={openRelanceModal}
               primary
@@ -626,6 +576,7 @@ export default function DossierImpayeDetail() {
             >
               {busy === "relance" ? "Envoi..." : "Envoyer une relance"}
             </SmallButton>
+
             <SmallButton
               onClick={openAvisModal}
               disabled={!canGenerateAvis || busy !== null}
@@ -639,23 +590,26 @@ export default function DossierImpayeDetail() {
       {state === "error" && error ? (
         <AlertBox kind="error">
           <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ lineHeight: 1.5 }}>{error}</div>
+          <div>{error}</div>
         </AlertBox>
       ) : null}
 
       {flash ? <AlertBox kind={flash.kind}>{flash.text}</AlertBox> : null}
 
-      <div className="relances-detail-grid">
+      <div className="relances-detail-grid" style={detailGrid}>
         <Card title="Informations du dossier">
           {state === "loading" ? (
-            <div style={{ color: "#6b7280" }}>{APP_TEXT.common.loading}</div>
+            <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
           ) : !dossier ? (
-            <div style={{ color: "#6b7280" }}>{APP_TEXT.common.noData}</div>
+            <EmptyState title="Aucune donnée disponible" description={APP_TEXT.common.noData} />
           ) : (
             <>
               <KeyValueRow label="Lot" value={dossier.lot_numero || "—"} />
               <KeyValueRow label="Copropriétaire" value={dossier.coproprietaire_nom || "—"} />
-              <KeyValueRow label="Appel de fonds" value={dossier.appel_reference || dossier.reference_appel || "—"} />
+              <KeyValueRow
+                label="Appel de fonds"
+                value={dossier.appel_reference || dossier.reference_appel || "—"}
+              />
               <KeyValueRow label="Échéance" value={formatDateShort(dossier.date_echeance)} />
               <KeyValueRow label="Montant initial" value={formatMoneyFCFA(dossier.montant_initial)} />
               <KeyValueRow label="Montant payé" value={formatMoneyFCFA(dossier.montant_paye)} />
@@ -672,9 +626,9 @@ export default function DossierImpayeDetail() {
 
         <Card title="Suivi de régularisation">
           {state === "loading" ? (
-            <div style={{ color: "#6b7280" }}>{APP_TEXT.common.loading}</div>
+            <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
           ) : !dossier ? (
-            <div style={{ color: "#6b7280" }}>{APP_TEXT.common.noData}</div>
+            <EmptyState title="Aucune donnée disponible" description={APP_TEXT.common.noData} />
           ) : (
             <>
               <KeyValueRow
@@ -687,9 +641,18 @@ export default function DossierImpayeDetail() {
                   )
                 }
               />
-              <KeyValueRow label="Date de régularisation" value={formatDateTimeShort(dossier.regularise_at)} />
-              <KeyValueRow label="Dernier paiement" value={formatDateTimeShort(dossier.date_dernier_paiement)} />
-              <KeyValueRow label="Commentaire interne" value={dossier.commentaire_interne || "—"} />
+              <KeyValueRow
+                label="Date de régularisation"
+                value={formatDateTimeShort(dossier.regularise_at)}
+              />
+              <KeyValueRow
+                label="Dernier paiement"
+                value={formatDateTimeShort(dossier.date_dernier_paiement)}
+              />
+              <KeyValueRow
+                label="Commentaire interne"
+                value={dossier.commentaire_interne || "—"}
+              />
               <KeyValueRow
                 label="Avis de régularisation"
                 value={
@@ -705,11 +668,14 @@ export default function DossierImpayeDetail() {
         </Card>
       </div>
 
-      <Card title="Historique des relances">
+      <Card
+        title="Historique des relances"
+        subtitle="Consultez les relances déjà envoyées pour ce dossier impayé."
+      >
         {state === "loading" ? (
-          <div style={{ color: "#6b7280" }}>{APP_TEXT.common.loading}</div>
+          <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
         ) : !dossier?.relances || dossier.relances.length === 0 ? (
-          <div style={{ color: "#6b7280" }}>{APP_TEXT.emptyStates.noRelance}</div>
+          <EmptyState title="Aucune relance enregistrée" description={APP_TEXT.emptyStates.noRelance} />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {dossier.relances.map((r) => (
@@ -740,22 +706,34 @@ export default function DossierImpayeDetail() {
         )}
       </Card>
 
-      <Card title="Avis de régularisation">
+      <Card
+        title="Avis de régularisation"
+        subtitle="Consultez l’avis généré lorsque le dossier a été régularisé."
+      >
         {state === "loading" ? (
-          <div style={{ color: "#6b7280" }}>{APP_TEXT.common.loading}</div>
+          <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
         ) : !dossier?.avis_regularisation ? (
-          <div style={{ color: "#6b7280" }}>{APP_TEXT.emptyStates.noAvis}</div>
+          <EmptyState title="Aucun avis disponible" description={APP_TEXT.emptyStates.noAvis} />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <KeyValueRow label="Statut" value={getAvisBadge(dossier.avis_regularisation.statut)} />
             <KeyValueRow label="Canal" value={getCanalLabel(dossier.avis_regularisation.canal)} />
-            <KeyValueRow label="Montant initial" value={formatMoneyFCFA(dossier.avis_regularisation.montant_initial)} />
-            <KeyValueRow label="Montant réglé" value={formatMoneyFCFA(dossier.avis_regularisation.montant_total_regle)} />
+            <KeyValueRow
+              label="Montant initial"
+              value={formatMoneyFCFA(dossier.avis_regularisation.montant_initial)}
+            />
+            <KeyValueRow
+              label="Montant réglé"
+              value={formatMoneyFCFA(dossier.avis_regularisation.montant_total_regle)}
+            />
             <KeyValueRow
               label="Date de régularisation"
               value={formatDateTimeShort(dossier.avis_regularisation.date_regularisation)}
             />
-            <KeyValueRow label="Généré par" value={dossier.avis_regularisation.genere_par_username || "—"} />
+            <KeyValueRow
+              label="Généré par"
+              value={dossier.avis_regularisation.genere_par_username || "—"}
+            />
             <KeyValueRow label="Message" value={dossier.avis_regularisation.message || "—"} />
           </div>
         )}
@@ -803,14 +781,7 @@ export default function DossierImpayeDetail() {
 
             {relanceFormError ? <AlertBox kind="error">{relanceFormError}</AlertBox> : null}
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={modalActions}>
               <SmallButton onClick={closeRelanceModal} disabled={busy === "relance"}>
                 {APP_TEXT.common.cancel}
               </SmallButton>
@@ -855,14 +826,7 @@ export default function DossierImpayeDetail() {
 
             {avisFormError ? <AlertBox kind="error">{avisFormError}</AlertBox> : null}
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={modalActions}>
               <SmallButton onClick={closeAvisModal} disabled={busy === "avis"}>
                 {APP_TEXT.common.cancel}
               </SmallButton>
@@ -905,7 +869,7 @@ export default function DossierImpayeDetail() {
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            <div style={modalActions}>
               <SmallButton onClick={() => setPendingAction(null)} disabled={busy === "relance"}>
                 Retour
               </SmallButton>
@@ -945,7 +909,7 @@ export default function DossierImpayeDetail() {
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            <div style={modalActions}>
               <SmallButton onClick={() => setPendingAction(null)} disabled={busy === "avis"}>
                 Retour
               </SmallButton>
@@ -974,19 +938,122 @@ export default function DossierImpayeDetail() {
   );
 }
 
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 18,
+};
+
+const pageHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "flex-end",
+};
+
+const pageEyebrow: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "#6b7280",
+};
+
+const pageTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.1,
+  letterSpacing: -0.5,
+};
+
+const pageSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "#6b7280",
+  fontSize: 14,
+  lineHeight: 1.55,
+  maxWidth: 920,
+};
+
+const pageHeaderActions: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const detailGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+};
+
 const card: CSSProperties = {
   border: "1px solid #e5e7eb",
-  borderRadius: 20,
+  borderRadius: 22,
   padding: 18,
-  background: "#fff",
+  background: "#ffffff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+};
+
+const cardHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  flexWrap: "wrap",
+  marginBottom: 14,
+  alignItems: "center",
+};
+
+const cardTitle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#111827",
+};
+
+const cardSubtitle: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.5,
 };
 
 const rowCard: CSSProperties = {
   border: "1px solid #eef2f7",
   borderRadius: 14,
   padding: 14,
-  background: "#fff",
+  background: "#ffffff",
+};
+
+const keyValueRow: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "220px 1fr",
+  gap: 12,
+  padding: "10px 0",
+  borderBottom: "1px solid #f3f4f6",
+};
+
+const keyValueLabel: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#6b7280",
+};
+
+const keyValueValue: CSSProperties = {
+  fontSize: 14,
+  color: "#111827",
+  lineHeight: 1.55,
+};
+
+const fieldLabel: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#4b5563",
+};
+
+const fieldHelp: CSSProperties = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.4,
 };
 
 const modalBackdrop: CSSProperties = {
@@ -1009,6 +1076,19 @@ const modalCard: CSSProperties = {
   boxShadow: "0 24px 60px rgba(15, 23, 42, 0.18)",
   maxHeight: "92vh",
   overflowY: "auto",
+};
+
+const modalTitle: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.2,
+};
+
+const modalSubtitle: CSSProperties = {
+  fontSize: 14,
+  color: "#6b7280",
+  lineHeight: 1.55,
 };
 
 const input: CSSProperties = {
@@ -1041,5 +1121,37 @@ const confirmBox: CSSProperties = {
 const confirmRow: CSSProperties = {
   fontSize: 14,
   color: "#111827",
+  lineHeight: 1.5,
+};
+
+const modalActions: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const emptyState: CSSProperties = {
+  border: "1px dashed #d1d5db",
+  borderRadius: 16,
+  padding: 18,
+  background: "#f9fafb",
+};
+
+const emptyStateTitle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#111827",
+  marginBottom: 6,
+};
+
+const emptyStateText: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.5,
+};
+
+const simpleMutedText: CSSProperties = {
+  color: "#6b7280",
   lineHeight: 1.5,
 };

@@ -22,7 +22,7 @@ type DossierItem = {
 };
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={{ display: "grid", gap: 18 }}>{children}</div>;
 }
 
 function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
@@ -31,30 +31,31 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
       style={{
         display: "flex",
         justifyContent: "space-between",
-        gap: 12,
+        gap: 16,
         flexWrap: "wrap",
         alignItems: "flex-end",
       }}
     >
-      <div>
+      <div style={{ minWidth: 280 }}>
         <div
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 900,
             color: "#111827",
-            lineHeight: 1.1,
-            letterSpacing: -0.4,
+            lineHeight: 1.08,
+            letterSpacing: -0.5,
           }}
         >
           {props.title}
         </div>
+
         {props.subtitle ? (
           <div
             style={{
-              marginTop: 6,
+              marginTop: 8,
               color: "#6b7280",
               fontSize: 14,
-              lineHeight: 1.5,
+              lineHeight: 1.55,
               maxWidth: 920,
             }}
           >
@@ -62,8 +63,25 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
           </div>
         ) : null}
       </div>
+
       {props.right}
     </div>
+  );
+}
+
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 24,
+        background: "#ffffff",
+        boxShadow: "0 18px 45px rgba(15, 23, 42, 0.05)",
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
   );
 }
 
@@ -76,11 +94,11 @@ function SmallButton(props: {
   return (
     <button
       type="button"
-      disabled={props.disabled}
       onClick={props.onClick}
+      disabled={props.disabled}
       style={{
         border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
+        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#ffffff",
         color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
         borderRadius: 12,
         padding: "10px 14px",
@@ -88,6 +106,7 @@ function SmallButton(props: {
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        transition: "all 0.18s ease",
       }}
     >
       {props.children}
@@ -95,7 +114,10 @@ function SmallButton(props: {
   );
 }
 
-function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | "info" | "neutral" }) {
+function Badge(props: {
+  text: string;
+  kind?: "success" | "warning" | "danger" | "info" | "neutral";
+}) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -113,13 +135,13 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "4px 10px",
+        padding: "5px 10px",
         borderRadius: 999,
         border: `1px solid ${styles.border}`,
         background: styles.background,
         color: styles.color,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         whiteSpace: "nowrap",
       }}
     >
@@ -128,7 +150,7 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: "error" | "info"; title: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -137,14 +159,15 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
   return (
     <div
       style={{
-        padding: 14,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 18,
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
       }}
     >
-      {props.children}
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>{props.title}</div>
+      <div style={{ lineHeight: 1.55 }}>{props.children}</div>
     </div>
   );
 }
@@ -154,17 +177,57 @@ function EmptyState(props: { title: string; text: string }) {
     <div
       style={{
         border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
+        borderRadius: 18,
+        padding: 22,
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
+      <div style={{ fontSize: 15, fontWeight: 900, color: "#111827", marginBottom: 8 }}>
         {props.title}
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
-        {props.text}
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>{props.text}</div>
+    </div>
+  );
+}
+
+function KpiCard(props: { label: string; value: string; hint?: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        background: "linear-gradient(180deg, #ffffff 0%, #fafafa 100%)",
+        padding: 16,
+        minHeight: 104,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#6b7280",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {props.label}
       </div>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 24,
+          fontWeight: 900,
+          color: "#111827",
+          lineHeight: 1.15,
+        }}
+      >
+        {props.value}
+      </div>
+      {props.hint ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+          {props.hint}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -173,6 +236,7 @@ function formatMoneyFCFA(amount?: number | string | null): string {
   if (amount == null || amount === "") return "—";
   const value = Number(amount);
   if (!Number.isFinite(value)) return String(amount);
+
   try {
     return new Intl.NumberFormat("fr-FR", {
       style: "currency",
@@ -193,6 +257,21 @@ function formatDateShort(iso?: string | null): string {
 
 function normalizeStatut(value?: string | null): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function getStatutLabel(statut?: string | null): string {
+  switch (normalizeStatut(statut)) {
+    case "REGULARISE":
+      return "Régularisé";
+    case "PAYE":
+      return "Payé";
+    case "PARTIELLEMENT_PAYE":
+      return "Partiellement payé";
+    case "EN_RETARD":
+      return "En retard";
+    default:
+      return "À payer";
+  }
 }
 
 function getStatutBadge(statut?: string | null) {
@@ -228,11 +307,7 @@ export default function DossiersImpayesList() {
       setState("success");
     } catch (e: any) {
       setState("error");
-      setError(
-        e?.response?.data?.detail ||
-          e?.message ||
-          APP_TEXT.errors.loadFailed
-      );
+      setError(e?.response?.data?.detail || e?.message || APP_TEXT.errors.loadFailed);
       setData([]);
     }
   }
@@ -252,6 +327,7 @@ export default function DossiersImpayesList() {
         d.appel_reference ?? "",
         d.reference_appel ?? "",
         d.statut ?? "",
+        d.niveau_relance != null ? `niveau ${d.niveau_relance}` : "",
       ]
         .join(" ")
         .toLowerCase();
@@ -260,13 +336,36 @@ export default function DossiersImpayesList() {
     });
   }, [data, query]);
 
+  const stats = useMemo(() => {
+    const total = filtered.length;
+    const totalReste = filtered.reduce((sum, item) => {
+      const value = Number(item.reste_a_payer ?? 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+
+    const enRetard = filtered.filter((item) => normalizeStatut(item.statut) === "EN_RETARD").length;
+    const regularises = filtered.filter(
+      (item) => item.est_regularise || normalizeStatut(item.statut) === "REGULARISE"
+    ).length;
+    const niveauEleve = filtered.filter((item) => Number(item.niveau_relance ?? 0) >= 2).length;
+
+    return {
+      total,
+      totalReste,
+      enRetard,
+      regularises,
+      niveauEleve,
+    };
+  }, [filtered]);
+
   const isLoading = state === "loading";
+  const hasData = filtered.length > 0;
 
   return (
     <PageShell>
       <SectionTitle
         title="Dossiers impayés"
-        subtitle="Consultez les dossiers en retard ou non soldés, leur statut, le niveau de relance et le reste à payer."
+        subtitle="Consultez les dossiers non soldés, identifiez le niveau de relance, suivez le reste à payer et ouvrez rapidement chaque dossier pour poursuivre le traitement."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <SmallButton onClick={() => navigate("/relances")}>
@@ -283,118 +382,196 @@ export default function DossiersImpayesList() {
       />
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ lineHeight: 1.5 }}>{error}</div>
+        <AlertBox kind="error" title="Chargement impossible">
+          {error}
         </AlertBox>
       ) : null}
 
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
         }}
       >
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rechercher : lot, copropriétaire, appel ou statut..."
-          style={searchInput}
+        <KpiCard
+          label="Dossiers affichés"
+          value={String(stats.total)}
+          hint="Nombre de dossiers visibles selon la recherche en cours."
         />
-
-        <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? APP_TEXT.common.loading : `${filtered.length} dossier(s) affiché(s)`}
-        </div>
+        <KpiCard
+          label="Reste à payer"
+          value={formatMoneyFCFA(stats.totalReste)}
+          hint="Montant cumulé restant sur les dossiers actuellement affichés."
+        />
+        <KpiCard
+          label="En retard"
+          value={String(stats.enRetard)}
+          hint="Dossiers identifiés en retard de paiement."
+        />
+        <KpiCard
+          label="Niveau de relance élevé"
+          value={String(stats.niveauEleve)}
+          hint="Dossiers ayant atteint un niveau de relance 2 ou plus."
+        />
       </div>
 
-      <div style={tableWrap}>
+      <Panel style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ minWidth: 280, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: "#374151",
+                marginBottom: 8,
+              }}
+            >
+              Recherche
+            </div>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher par lot, copropriétaire, appel, statut ou niveau de relance..."
+              style={searchInput}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 6,
+              minWidth: 180,
+            }}
+          >
+            <div style={{ color: "#111827", fontSize: 13, fontWeight: 800 }}>
+              {isLoading ? APP_TEXT.common.loading : `${filtered.length} dossier(s) affiché(s)`}
+            </div>
+            <div style={{ color: "#6b7280", fontSize: 12 }}>
+              {stats.regularises > 0
+                ? `${stats.regularises} dossier(s) régularisé(s) dans cette vue`
+                : "Aucun dossier régularisé dans cette vue"}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel style={{ overflow: "hidden" }}>
         {isLoading ? (
-          <div style={{ padding: 16, color: "#6b7280" }}>
+          <div style={{ padding: 18, color: "#6b7280", fontSize: 14 }}>
             Chargement des dossiers impayés…
           </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 16 }}>
+        ) : !hasData ? (
+          <div style={{ padding: 18 }}>
             <EmptyState
               title={APP_TEXT.emptyStates.noDossierImpaye}
-              text="Aucun dossier ne remonte pour le moment ou aucun résultat ne correspond à votre recherche."
+              text="Aucun dossier ne remonte pour le moment ou aucun résultat ne correspond à votre recherche actuelle."
             />
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th style={th}>Lot</th>
-                <th style={th}>Copropriétaire</th>
-                <th style={th}>Appel</th>
-                <th style={th}>Échéance</th>
-                <th style={th}>Montant initial</th>
-                <th style={th}>Payé</th>
-                <th style={th}>Reste à payer</th>
-                <th style={th}>Statut</th>
-                <th style={th}>Relances</th>
-                <th style={th}>Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map((d) => (
-                <tr key={d.id}>
-                  <td style={tdStrong}>{d.lot_numero || "—"}</td>
-                  <td style={td}>{d.coproprietaire_nom || "—"}</td>
-                  <td style={td}>{d.appel_reference || d.reference_appel || "—"}</td>
-                  <td style={td}>{formatDateShort(d.date_echeance)}</td>
-                  <td style={td}>{formatMoneyFCFA(d.montant_initial)}</td>
-                  <td style={td}>{formatMoneyFCFA(d.montant_paye)}</td>
-                  <td style={tdStrong}>{formatMoneyFCFA(d.reste_a_payer)}</td>
-                  <td style={td}>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {getStatutBadge(d.statut)}
-                      {d.est_regularise ? <Badge text="Régularisé" kind="success" /> : null}
-                    </div>
-                  </td>
-                  <td style={td}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <Badge text={`Niveau ${d.niveau_relance || 0}`} kind="warning" />
-                      <span style={{ fontSize: 12, color: "#6b7280" }}>
-                        {d.relances_count || 0} relance(s)
-                      </span>
-                    </div>
-                  </td>
-                  <td style={td}>
-                    <SmallButton onClick={() => navigate(`/relances/dossiers/${d.id}`)} primary>
-                      Ouvrir
-                    </SmallButton>
-                  </td>
+          <div style={tableWrap}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th style={th}>Lot</th>
+                  <th style={th}>Copropriétaire</th>
+                  <th style={th}>Appel</th>
+                  <th style={th}>Échéance</th>
+                  <th style={th}>Montant initial</th>
+                  <th style={th}>Montant payé</th>
+                  <th style={th}>Reste à payer</th>
+                  <th style={th}>Statut</th>
+                  <th style={th}>Relances</th>
+                  <th style={th}>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {filtered.map((d) => {
+                  const niveau = Number(d.niveau_relance ?? 0);
+                  const count = Number(d.relances_count ?? 0);
+
+                  return (
+                    <tr key={d.id} style={{ background: "#ffffff" }}>
+                      <td style={tdStrong}>{d.lot_numero || "—"}</td>
+                      <td style={td}>{d.coproprietaire_nom || "—"}</td>
+                      <td style={td}>{d.appel_reference || d.reference_appel || "—"}</td>
+                      <td style={td}>{formatDateShort(d.date_echeance)}</td>
+                      <td style={td}>{formatMoneyFCFA(d.montant_initial)}</td>
+                      <td style={td}>{formatMoneyFCFA(d.montant_paye)}</td>
+                      <td style={tdStrong}>{formatMoneyFCFA(d.reste_a_payer)}</td>
+
+                      <td style={td}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {getStatutBadge(d.statut)}
+                          {d.est_regularise && normalizeStatut(d.statut) !== "REGULARISE" ? (
+                            <Badge text="Régularisé" kind="success" />
+                          ) : null}
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                          {getStatutLabel(d.statut)}
+                        </div>
+                      </td>
+
+                      <td style={td}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <Badge
+                            text={`Niveau ${niveau}`}
+                            kind={niveau >= 2 ? "danger" : niveau === 1 ? "warning" : "neutral"}
+                          />
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>
+                            {count} relance(s)
+                          </span>
+                        </div>
+                      </td>
+
+                      <td style={td}>
+                        <SmallButton onClick={() => navigate(`/relances/dossiers/${d.id}`)} primary>
+                          Ouvrir
+                        </SmallButton>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </Panel>
+
+      <AlertBox kind="info" title="Lecture métier">
+        Cette vue aide à identifier les dossiers encore non soldés, à repérer les dossiers les plus sensibles selon leur niveau de relance et à accéder rapidement au détail pour envoyer une relance ou générer un avis de régularisation.
+      </AlertBox>
     </PageShell>
   );
 }
 
 const searchInput: CSSProperties = {
-  minWidth: 320,
-  padding: "11px 12px",
-  borderRadius: 12,
+  width: "100%",
+  minWidth: 260,
+  padding: "12px 14px",
+  borderRadius: 14,
   border: "1px solid #e5e7eb",
   background: "#fff",
   color: "#111827",
   fontSize: 14,
   outline: "none",
+  boxSizing: "border-box",
 };
 
 const tableWrap: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
   overflowX: "auto",
   background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
 };
 
 const th: CSSProperties = {

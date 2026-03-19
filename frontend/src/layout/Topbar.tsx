@@ -3,17 +3,19 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { getPageSubtitle, getPageTitle } from "../config/productNavigation";
 
-function isValidCoproId(v: string) {
-  const s = (v ?? "").trim();
-  if (!s) return false;
-  const n = Number(s);
-  return Number.isFinite(n) && n > 0 && Number.isInteger(n);
+function isValidCoproId(value: string) {
+  const normalized = (value ?? "").trim();
+  if (!normalized) return false;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed);
 }
 
 function SmallButton(props: {
@@ -49,16 +51,10 @@ function SmallButton(props: {
       disabled={props.disabled}
       title={props.title}
       style={{
+        ...buttonBase,
         ...tone,
-        padding: "10px 12px",
-        borderRadius: 12,
         cursor: props.disabled ? "not-allowed" : "pointer",
-        fontWeight: 800,
-        fontSize: 13,
-        opacity: props.disabled ? 0.65 : 1,
-        lineHeight: 1.2,
-        whiteSpace: "nowrap",
-        transition: "all 0.2s ease",
+        opacity: props.disabled ? 0.6 : 1,
       }}
     >
       {props.children}
@@ -68,37 +64,9 @@ function SmallButton(props: {
 
 function ContextBadge(props: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        padding: "10px 12px",
-        borderRadius: 14,
-        background: "#f8fafc",
-        border: "1px solid #e5e7eb",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          color: "#64748b",
-          fontWeight: 800,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-          marginBottom: 3,
-        }}
-      >
-        {props.label}
-      </div>
-      <div
-        style={{
-          fontSize: 13,
-          color: "#111827",
-          fontWeight: 900,
-          lineHeight: 1.2,
-        }}
-      >
-        {props.value}
-      </div>
+    <div style={contextBadge}>
+      <div style={contextBadgeLabel}>{props.label}</div>
+      <div style={contextBadgeValue}>{props.value}</div>
     </div>
   );
 }
@@ -116,7 +84,14 @@ export default function Topbar() {
   const [coproError, setCoproError] = useState<string | null>(null);
 
   const pageTitle = useMemo(() => getPageTitle(location.pathname), [location.pathname]);
-  const pageSubtitle = useMemo(() => getPageSubtitle(location.pathname), [location.pathname]);
+  const pageSubtitle = useMemo(
+    () => getPageSubtitle(location.pathname),
+    [location.pathname]
+  );
+
+  const activeCoproLabel = coproprieteId
+    ? `#${coproprieteId}`
+    : "Aucune copropriété active";
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -124,6 +99,20 @@ export default function Topbar() {
       setCoproError(null);
     }
   }, [coproprieteId, isModalOpen]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent | globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsModalOpen(false);
+        setCoproError(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isModalOpen]);
 
   const openChangeCoproModal = () => {
     setCoproInput(coproprieteId ?? "");
@@ -137,24 +126,26 @@ export default function Topbar() {
   };
 
   const submitChangeCopro = () => {
-    const s = coproInput.trim();
+    const normalized = coproInput.trim();
 
-    if (!s) {
-      setCoproError("L’identifiant de la copropriété est obligatoire.");
+    if (!normalized) {
+      setCoproError("L’identifiant de la copropriété est requis.");
       return;
     }
 
-    if (!isValidCoproId(s)) {
-      setCoproError("Veuillez saisir un entier strictement positif, par exemple 7 ou 11.");
+    if (!isValidCoproId(normalized)) {
+      setCoproError(
+        "Veuillez saisir un identifiant numérique valide, par exemple 7 ou 11."
+      );
       return;
     }
 
-    if (s === String(coproprieteId ?? "")) {
+    if (normalized === String(coproprieteId ?? "")) {
       setCoproError("Cette copropriété est déjà active.");
       return;
     }
 
-    setCopropriete(s);
+    setCopropriete(normalized);
     setIsModalOpen(false);
     setCoproError(null);
 
@@ -168,83 +159,20 @@ export default function Topbar() {
 
   return (
     <>
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 20,
-          background: "rgba(255, 255, 255, 0.86)",
-          backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(229, 231, 235, 0.9)",
-        }}
-      >
-        <div
-          style={{
-            minHeight: 82,
-            padding: "16px 20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-          }}
-        >
-          <div
-            style={{
-              minWidth: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: 5,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 900,
-                letterSpacing: 0.9,
-                textTransform: "uppercase",
-                color: "#6b7280",
-              }}
-            >
-              Plateforme de gestion
-            </div>
+      <header style={headerStyle}>
+        <div style={headerInner}>
+          <div style={headingBlock}>
+            <div style={eyebrowStyle}>Plateforme de gestion de copropriété</div>
 
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 900,
-                color: "#111827",
-                lineHeight: 1.1,
-                letterSpacing: -0.4,
-              }}
-            >
-              {pageTitle}
-            </div>
+            <div style={titleStyle}>{pageTitle}</div>
 
-            <div
-              style={{
-                fontSize: 13,
-                color: "#6b7280",
-                lineHeight: 1.45,
-                maxWidth: 780,
-              }}
-            >
-              {pageSubtitle}
-            </div>
+            <div style={subtitleStyle}>{pageSubtitle}</div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "flex-end",
-            }}
-          >
+          <div style={actionsBlock}>
             <ContextBadge
               label="Copropriété active"
-              value={coproprieteId ? `#${coproprieteId}` : "Aucune copropriété sélectionnée"}
+              value={activeCoproLabel}
             />
 
             <SmallButton
@@ -255,58 +183,42 @@ export default function Topbar() {
             </SmallButton>
 
             <SmallButton onClick={onLogout} title="Se déconnecter">
-              Se déconnecter
+              Déconnexion
             </SmallButton>
           </div>
         </div>
       </header>
 
       {isModalOpen ? (
-        <div style={modalBackdrop} onClick={closeChangeCoproModal}>
+        <div
+          style={modalBackdrop}
+          onClick={closeChangeCoproModal}
+          aria-hidden="true"
+        >
           <div
             style={modalCard}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="change-copro-title"
+            aria-describedby="change-copro-description"
           >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div
-                id="change-copro-title"
-                style={{
-                  fontSize: 22,
-                  fontWeight: 900,
-                  color: "#111827",
-                  lineHeight: 1.2,
-                }}
-              >
+            <div style={modalHeader}>
+              <div id="change-copro-title" style={modalTitle}>
                 Changer de copropriété
               </div>
 
-              <div
-                style={{
-                  fontSize: 14,
-                  color: "#6b7280",
-                  lineHeight: 1.55,
-                }}
-              >
-                Saisissez l’identifiant de la copropriété à charger.
+              <div id="change-copro-description" style={modalDescription}>
+                Saisissez l’identifiant de la copropriété à charger dans votre
+                session de travail.
                 <br />
-                Copropriété active actuelle :{" "}
-                <strong style={{ color: "#111827" }}>
-                  {coproprieteId ? `#${coproprieteId}` : "Aucune copropriété sélectionnée"}
-                </strong>
+                Copropriété actuellement active :{" "}
+                <strong style={{ color: "#111827" }}>{activeCoproLabel}</strong>
               </div>
             </div>
 
             <div style={{ marginTop: 18 }}>
-              <label htmlFor="copro-id" style={label}>
+              <label htmlFor="copro-id" style={labelStyle}>
                 Identifiant de la copropriété
               </label>
 
@@ -321,12 +233,13 @@ export default function Topbar() {
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") submitChangeCopro();
-                  if (e.key === "Escape") closeChangeCoproModal();
                 }}
                 placeholder="Ex. : 11"
                 autoFocus
+                aria-invalid={Boolean(coproError)}
+                aria-describedby="copro-id-help"
                 style={{
-                  ...input,
+                  ...inputStyle,
                   borderColor: coproError ? "#fecaca" : "#d1d5db",
                   background: coproError ? "#fffafa" : "#ffffff",
                 }}
@@ -334,49 +247,20 @@ export default function Topbar() {
             </div>
 
             {coproError ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  background: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  color: "#991b1b",
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                }}
-              >
+              <div id="copro-id-help" style={errorBox}>
                 {coproError}
               </div>
             ) : (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  background: "#f8fafc",
-                  border: "1px solid #e5e7eb",
-                  color: "#64748b",
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                }}
-              >
-                Utilisez un identifiant numérique valide correspondant à une copropriété existante.
+              <div id="copro-id-help" style={helpBox}>
+                Utilisez un identifiant numérique valide correspondant à une
+                copropriété existante.
               </div>
             )}
 
-            <div
-              style={{
-                marginTop: 20,
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={modalActions}>
               <SmallButton onClick={closeChangeCoproModal}>Annuler</SmallButton>
               <SmallButton onClick={submitChangeCopro} primary>
-                Valider
+                Valider le changement
               </SmallButton>
             </div>
           </div>
@@ -385,6 +269,98 @@ export default function Topbar() {
     </>
   );
 }
+
+const headerStyle: CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 20,
+  background: "rgba(255, 255, 255, 0.88)",
+  backdropFilter: "blur(14px)",
+  borderBottom: "1px solid rgba(229, 231, 235, 0.92)",
+};
+
+const headerInner: CSSProperties = {
+  minHeight: 84,
+  padding: "16px 20px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+};
+
+const headingBlock: CSSProperties = {
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  flex: "1 1 480px",
+};
+
+const eyebrowStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "#6b7280",
+};
+
+const titleStyle: CSSProperties = {
+  fontSize: 24,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.1,
+  letterSpacing: -0.4,
+};
+
+const subtitleStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.5,
+  maxWidth: 780,
+};
+
+const actionsBlock: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "flex-end",
+};
+
+const contextBadge: CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e5e7eb",
+  whiteSpace: "nowrap",
+};
+
+const contextBadgeLabel: CSSProperties = {
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+  marginBottom: 3,
+};
+
+const contextBadgeValue: CSSProperties = {
+  fontSize: 13,
+  color: "#111827",
+  fontWeight: 900,
+  lineHeight: 1.2,
+};
+
+const buttonBase: CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  fontWeight: 800,
+  fontSize: 13,
+  lineHeight: 1.2,
+  whiteSpace: "nowrap",
+  transition: "all 0.2s ease",
+};
 
 const modalBackdrop: CSSProperties = {
   position: "fixed",
@@ -398,7 +374,7 @@ const modalBackdrop: CSSProperties = {
 };
 
 const modalCard: CSSProperties = {
-  width: "min(500px, 96vw)",
+  width: "min(520px, 96vw)",
   background: "#ffffff",
   borderRadius: 24,
   padding: 22,
@@ -406,7 +382,26 @@ const modalCard: CSSProperties = {
   boxShadow: "0 24px 60px rgba(15, 23, 42, 0.18)",
 };
 
-const label: CSSProperties = {
+const modalHeader: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+};
+
+const modalTitle: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.2,
+};
+
+const modalDescription: CSSProperties = {
+  fontSize: 14,
+  color: "#6b7280",
+  lineHeight: 1.6,
+};
+
+const labelStyle: CSSProperties = {
   display: "block",
   marginBottom: 8,
   fontSize: 13,
@@ -414,7 +409,7 @@ const label: CSSProperties = {
   color: "#4b5563",
 };
 
-const input: CSSProperties = {
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "12px 13px",
   borderRadius: 12,
@@ -424,4 +419,34 @@ const input: CSSProperties = {
   fontSize: 14,
   outline: "none",
   boxSizing: "border-box",
+};
+
+const helpBox: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: "#f8fafc",
+  border: "1px solid #e5e7eb",
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const errorBox: CSSProperties = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#991b1b",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const modalActions: CSSProperties = {
+  marginTop: 20,
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  flexWrap: "wrap",
 };

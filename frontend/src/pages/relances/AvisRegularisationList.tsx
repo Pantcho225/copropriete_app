@@ -32,7 +32,7 @@ const CANAL_LABELS: Record<string, string> = {
 };
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={{ display: "grid", gap: 18 }}>{children}</div>;
 }
 
 function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
@@ -41,30 +41,31 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
       style={{
         display: "flex",
         justifyContent: "space-between",
-        gap: 12,
+        gap: 16,
         flexWrap: "wrap",
         alignItems: "flex-end",
       }}
     >
-      <div>
+      <div style={{ minWidth: 280 }}>
         <div
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 900,
             color: "#111827",
-            lineHeight: 1.1,
-            letterSpacing: -0.4,
+            lineHeight: 1.08,
+            letterSpacing: -0.5,
           }}
         >
           {props.title}
         </div>
+
         {props.subtitle ? (
           <div
             style={{
-              marginTop: 6,
+              marginTop: 8,
               color: "#6b7280",
               fontSize: 14,
-              lineHeight: 1.5,
+              lineHeight: 1.55,
               maxWidth: 920,
             }}
           >
@@ -72,8 +73,25 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
           </div>
         ) : null}
       </div>
+
       {props.right}
     </div>
+  );
+}
+
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 24,
+        background: "#ffffff",
+        boxShadow: "0 18px 45px rgba(15, 23, 42, 0.05)",
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
   );
 }
 
@@ -98,6 +116,7 @@ function SmallButton(props: {
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        transition: "all 0.18s ease",
       }}
     >
       {props.children}
@@ -105,7 +124,10 @@ function SmallButton(props: {
   );
 }
 
-function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | "info" | "neutral" }) {
+function Badge(props: {
+  text: string;
+  kind?: "success" | "warning" | "danger" | "info" | "neutral";
+}) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -123,13 +145,13 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "4px 10px",
+        padding: "5px 10px",
         borderRadius: 999,
         border: `1px solid ${styles.border}`,
         background: styles.background,
         color: styles.color,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         whiteSpace: "nowrap",
       }}
     >
@@ -138,7 +160,7 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: "error" | "info"; title: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -147,14 +169,15 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
   return (
     <div
       style={{
-        padding: 14,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 18,
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
       }}
     >
-      {props.children}
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>{props.title}</div>
+      <div style={{ lineHeight: 1.55 }}>{props.children}</div>
     </div>
   );
 }
@@ -164,15 +187,57 @@ function EmptyState(props: { title: string; text: string }) {
     <div
       style={{
         border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
+        borderRadius: 18,
+        padding: 22,
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
+      <div style={{ fontSize: 15, fontWeight: 900, color: "#111827", marginBottom: 8 }}>
         {props.title}
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>{props.text}</div>
+    </div>
+  );
+}
+
+function KpiCard(props: { label: string; value: string; hint?: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        background: "linear-gradient(180deg, #ffffff 0%, #fafafa 100%)",
+        padding: 16,
+        minHeight: 104,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#6b7280",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {props.label}
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 24,
+          fontWeight: 900,
+          color: "#111827",
+          lineHeight: 1.15,
+        }}
+      >
+        {props.value}
+      </div>
+      {props.hint ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+          {props.hint}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -191,6 +256,7 @@ function formatMoneyFCFA(amount?: number | string | null): string {
   if (amount == null || amount === "") return "—";
   const value = Number(amount);
   if (!Number.isFinite(value)) return String(amount);
+
   try {
     return new Intl.NumberFormat("fr-FR", {
       style: "currency",
@@ -211,6 +277,25 @@ function getCanalLabel(canal?: string | null): string {
   return CANAL_LABELS[key] || canal || "—";
 }
 
+function getCanalBadge(canal?: string | null) {
+  const key = String(canal ?? "").trim().toUpperCase();
+
+  switch (key) {
+    case "EMAIL":
+      return <Badge text="Email" kind="info" />;
+    case "SMS":
+      return <Badge text="SMS" kind="warning" />;
+    case "WHATSAPP":
+      return <Badge text="WhatsApp" kind="success" />;
+    case "COURRIER":
+      return <Badge text="Courrier" kind="neutral" />;
+    case "INTERNE":
+      return <Badge text="Interne" kind="neutral" />;
+    default:
+      return <Badge text={getCanalLabel(canal)} kind="neutral" />;
+  }
+}
+
 function getAvisBadge(statut?: string | null) {
   switch (normalizeStatut(statut)) {
     case "ECHEC":
@@ -219,6 +304,8 @@ function getAvisBadge(statut?: string | null) {
       return <Badge text="Envoyé" kind="info" />;
     case "GENERE":
       return <Badge text="Généré" kind="success" />;
+    case "ANNULE":
+      return <Badge text="Annulé" kind="danger" />;
     default:
       return <Badge text={statut || "—"} kind="neutral" />;
   }
@@ -242,11 +329,7 @@ export default function AvisRegularisationList() {
       setState("success");
     } catch (e: any) {
       setState("error");
-      setError(
-        e?.response?.data?.detail ||
-          e?.message ||
-          APP_TEXT.errors.loadFailed
-      );
+      setError(e?.response?.data?.detail || e?.message || APP_TEXT.errors.loadFailed);
       setData([]);
     }
   }
@@ -267,6 +350,7 @@ export default function AvisRegularisationList() {
         a.canal ?? "",
         a.statut ?? "",
         a.message ?? "",
+        a.genere_par_username ?? "",
       ]
         .join(" ")
         .toLowerCase();
@@ -275,13 +359,35 @@ export default function AvisRegularisationList() {
     });
   }, [data, query]);
 
+  const stats = useMemo(() => {
+    const total = filtered.length;
+    const totalRegle = filtered.reduce((sum, item) => {
+      const value = Number(item.montant_total_regle ?? 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    const envoyes = filtered.filter((item) => normalizeStatut(item.statut) === "ENVOYE").length;
+    const generes = filtered.filter((item) => normalizeStatut(item.statut) === "GENERE").length;
+    const echecs = filtered.filter(
+      (item) => normalizeStatut(item.statut) === "ECHEC" || Boolean(item.motif_echec)
+    ).length;
+
+    return {
+      total,
+      totalRegle,
+      envoyes,
+      generes,
+      echecs,
+    };
+  }, [filtered]);
+
   const isLoading = state === "loading";
+  const hasData = filtered.length > 0;
 
   return (
     <PageShell>
       <SectionTitle
         title="Avis de régularisation"
-        subtitle="Consultez les avis générés après régularisation d’un dossier, leur statut, leur canal et le dossier associé."
+        subtitle="Consultez les avis générés après régularisation d’un dossier, contrôlez leur statut, leur canal d’émission et retrouvez rapidement le dossier concerné."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <SmallButton onClick={() => navigate("/relances")}>
@@ -298,114 +404,195 @@ export default function AvisRegularisationList() {
       />
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ lineHeight: 1.5 }}>{error}</div>
+        <AlertBox kind="error" title="Chargement impossible">
+          {error}
         </AlertBox>
       ) : null}
 
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
         }}
       >
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rechercher : copropriétaire, lot, appel, message, statut..."
-          style={searchInput}
+        <KpiCard
+          label="Avis affichés"
+          value={String(stats.total)}
+          hint="Nombre d’avis visibles selon la recherche en cours."
         />
-
-        <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? APP_TEXT.common.loading : `${filtered.length} avis affiché(s)`}
-        </div>
+        <KpiCard
+          label="Montant régularisé"
+          value={formatMoneyFCFA(stats.totalRegle)}
+          hint="Montant cumulé réglé sur les avis affichés."
+        />
+        <KpiCard
+          label="Envoyés"
+          value={String(stats.envoyes)}
+          hint="Avis déjà envoyés et tracés dans la vue courante."
+        />
+        <KpiCard
+          label="Échecs"
+          value={String(stats.echecs)}
+          hint="Avis en échec ou comportant un motif d’échec enregistré."
+        />
       </div>
 
-      <div style={tableWrap}>
+      <Panel style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ minWidth: 280, flex: 1 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: "#374151",
+                marginBottom: 8,
+              }}
+            >
+              Recherche
+            </div>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher par copropriétaire, lot, appel, canal, statut, message ou émetteur..."
+              style={searchInput}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 6,
+              minWidth: 180,
+            }}
+          >
+            <div style={{ color: "#111827", fontSize: 13, fontWeight: 800 }}>
+              {isLoading ? APP_TEXT.common.loading : `${filtered.length} avis affiché(s)`}
+            </div>
+            <div style={{ color: "#6b7280", fontSize: 12 }}>
+              {stats.generes > 0
+                ? `${stats.generes} avis généré(s) dans cette vue`
+                : "Aucun avis généré dans cette vue"}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel style={{ overflow: "hidden" }}>
         {isLoading ? (
-          <div style={{ padding: 16, color: "#6b7280" }}>
+          <div style={{ padding: 18, color: "#6b7280", fontSize: 14 }}>
             Chargement des avis de régularisation…
           </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 16 }}>
+        ) : !hasData ? (
+          <div style={{ padding: 18 }}>
             <EmptyState
               title={APP_TEXT.emptyStates.noAvis}
-              text="Aucun avis ne remonte pour le moment ou aucun résultat ne correspond à votre recherche."
+              text="Aucun avis ne remonte pour le moment ou aucun résultat ne correspond à votre recherche actuelle."
             />
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th style={th}>Lot</th>
-                <th style={th}>Copropriétaire</th>
-                <th style={th}>Appel de fonds</th>
-                <th style={th}>Montant initial</th>
-                <th style={th}>Montant réglé</th>
-                <th style={th}>Date de régularisation</th>
-                <th style={th}>Canal</th>
-                <th style={th}>Statut</th>
-                <th style={th}>Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map((a) => (
-                <tr key={a.id}>
-                  <td style={tdStrong}>{a.lot_numero || "—"}</td>
-                  <td style={td}>{a.coproprietaire_nom || "—"}</td>
-                  <td style={td}>{a.appel_reference || "—"}</td>
-                  <td style={td}>{formatMoneyFCFA(a.montant_initial)}</td>
-                  <td style={tdStrong}>{formatMoneyFCFA(a.montant_total_regle)}</td>
-                  <td style={td}>{formatDateTimeShort(a.date_regularisation)}</td>
-                  <td style={td}>{getCanalLabel(a.canal)}</td>
-                  <td style={td}>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {getAvisBadge(a.statut)}
-                      {a.envoye_at ? <Badge text="Envoi tracé" kind="info" /> : null}
-                      {a.motif_echec ? <Badge text="Motif d’échec" kind="danger" /> : null}
-                    </div>
-                  </td>
-                  <td style={td}>
-                    {a.dossier ? (
-                      <SmallButton onClick={() => navigate(`/relances/dossiers/${a.dossier}`)} primary>
-                        Ouvrir le dossier
-                      </SmallButton>
-                    ) : (
-                      <span style={{ color: "#9ca3af", fontSize: 13 }}>—</span>
-                    )}
-                  </td>
+          <div style={tableWrap}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th style={th}>Lot</th>
+                  <th style={th}>Copropriétaire</th>
+                  <th style={th}>Appel de fonds</th>
+                  <th style={th}>Montant initial</th>
+                  <th style={th}>Montant réglé</th>
+                  <th style={th}>Date de régularisation</th>
+                  <th style={th}>Canal</th>
+                  <th style={th}>État</th>
+                  <th style={th}>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {filtered.map((a) => (
+                  <tr key={a.id} style={{ background: "#ffffff" }}>
+                    <td style={tdStrong}>{a.lot_numero || "—"}</td>
+                    <td style={td}>{a.coproprietaire_nom || "—"}</td>
+                    <td style={td}>{a.appel_reference || "—"}</td>
+                    <td style={td}>{formatMoneyFCFA(a.montant_initial)}</td>
+                    <td style={tdStrong}>{formatMoneyFCFA(a.montant_total_regle)}</td>
+                    <td style={td}>{formatDateTimeShort(a.date_regularisation)}</td>
+
+                    <td style={td}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {getCanalBadge(a.canal)}
+                      </div>
+                    </td>
+
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {getAvisBadge(a.statut)}
+                        {a.envoye_at ? <Badge text="Envoi tracé" kind="info" /> : null}
+                        {a.motif_echec ? <Badge text="Motif d’échec" kind="danger" /> : null}
+                      </div>
+
+                      {(a.genere_par_username || a.motif_echec) ? (
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+                          {a.genere_par_username ? `Généré par ${a.genere_par_username}` : null}
+                          {a.genere_par_username && a.motif_echec ? " • " : null}
+                          {a.motif_echec ? `Motif : ${a.motif_echec}` : null}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    <td style={td}>
+                      {a.dossier ? (
+                        <SmallButton onClick={() => navigate(`/relances/dossiers/${a.dossier}`)} primary>
+                          Ouvrir le dossier
+                        </SmallButton>
+                      ) : a.document_pdf ? (
+                        <SmallButton onClick={() => window.open(a.document_pdf as string, "_blank")} primary>
+                          Ouvrir le PDF
+                        </SmallButton>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: 13 }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </Panel>
+
+      <AlertBox kind="info" title="Lecture métier">
+        Cette vue permet de suivre les avis émis après régularisation d’un impayé, de vérifier le montant effectivement réglé, de contrôler l’état d’envoi et de retrouver rapidement le dossier ou le document concerné.
+      </AlertBox>
     </PageShell>
   );
 }
 
 const searchInput: CSSProperties = {
-  minWidth: 320,
-  padding: "11px 12px",
-  borderRadius: 12,
+  width: "100%",
+  minWidth: 260,
+  padding: "12px 14px",
+  borderRadius: 14,
   border: "1px solid #e5e7eb",
   background: "#fff",
   color: "#111827",
   fontSize: 14,
   outline: "none",
+  boxSizing: "border-box",
 };
 
 const tableWrap: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
   overflowX: "auto",
   background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
 };
 
 const th: CSSProperties = {
