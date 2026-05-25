@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
@@ -49,25 +56,33 @@ function asArray<T = unknown>(v: unknown): T[] {
 
 function toNumberOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
+
   const n = Number(v);
+
   return Number.isFinite(n) ? n : null;
 }
 
 function cleanText(v: unknown): string | null {
   if (v === null || v === undefined) return null;
+
   const s = String(v).trim();
+
   return s ? s : null;
 }
 
 function fmtInt(v?: number | null) {
   const n = Number(v ?? 0);
+
   if (Number.isNaN(n)) return "—";
+
   return new Intl.NumberFormat("fr-FR").format(n);
 }
 
 function fmtMoney(value?: number | null) {
   if (value === null || value === undefined) return "—";
+
   const n = Number(value);
+
   if (Number.isNaN(n)) return "—";
 
   try {
@@ -83,15 +98,21 @@ function fmtMoney(value?: number | null) {
 
 function fmtDate(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return String(value);
+
   return d.toLocaleDateString("fr-FR");
 }
 
 function truncateText(value?: string | null, max = 72) {
   if (!value) return "—";
+
   const s = String(value).trim();
+
   if (s.length <= max) return s;
+
   return `${s.slice(0, max - 1)}…`;
 }
 
@@ -109,9 +130,11 @@ function getErrorMessage(e: unknown, fallback: string) {
   };
 
   const data = err?.response?.data;
+
   if (data && typeof data === "object") {
     if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
     if (typeof data.message === "string" && data.message.trim()) return data.message;
+
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
     }
@@ -120,17 +143,19 @@ function getErrorMessage(e: unknown, fallback: string) {
       const entries = Object.entries(data).filter(
         ([key]) => key !== "detail" && key !== "message" && key !== "non_field_errors",
       );
+
       if (entries.length) {
         return entries
-          .map(([k, v]) => {
-            if (Array.isArray(v)) return `${k}: ${v.join(" / ")}`;
-            if (typeof v === "string") return `${k}: ${v}`;
-            return `${k}: ${JSON.stringify(v)}`;
+          .map(([key, value]) => {
+            if (Array.isArray(value)) return `${key}: ${value.join(" / ")}`;
+            if (typeof value === "string") return `${key}: ${value}`;
+
+            return `${key}: ${JSON.stringify(value)}`;
           })
           .join("\n");
       }
     } catch {
-      //
+      return err?.message || fallback;
     }
   }
 
@@ -167,10 +192,12 @@ function getStatutKind(statut?: unknown): BadgeKind {
   const s = normalizeStatut(statut);
 
   if (s === "VALIDE" || s === "TERMINE") return "success";
-  if (s === "SOUMIS_AG" || s === "A_VALIDER" || s === "EN_COURS") return "info";
-  if (s === "BROUILLON") return "neutral";
+  if (s === "EN_COURS") return "info";
+  if (s === "SOUMIS_AG" || s === "A_VALIDER") return "warning";
   if (s === "REFUSE" || s === "ANNULE") return "danger";
-  return "warning";
+  if (s === "BROUILLON" || s === "ARCHIVE") return "neutral";
+
+  return "neutral";
 }
 
 function extractFournisseurLabel(raw: TravauxRawItem) {
@@ -179,15 +206,18 @@ function extractFournisseurLabel(raw: TravauxRawItem) {
   if (fournisseur && typeof fournisseur === "object") {
     const obj = fournisseur as Record<string, unknown>;
     const nom = obj.nom ?? obj.raison_sociale ?? obj.libelle ?? obj.name;
+
     if (typeof nom === "string" && nom.trim()) return nom.trim();
-    if (typeof obj.id === "number") return `Fournisseur #${obj.id}`;
+    if (typeof obj.id === "number") return `Prestataire #${obj.id}`;
   }
 
   const direct = raw.fournisseur_nom ?? raw.fournisseur_label ?? raw.nom_fournisseur;
+
   if (typeof direct === "string" && direct.trim()) return direct.trim();
 
   const fid = toNumberOrNull(raw.fournisseur_id ?? raw.fournisseur);
-  if (fid !== null) return `Fournisseur #${fid}`;
+
+  if (fid !== null) return `Prestataire #${fid}`;
 
   return "—";
 }
@@ -196,7 +226,8 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
   const id = toNumberOrNull(raw.id) ?? toNumberOrNull(raw.pk) ?? 0;
 
   const titre =
-    String(raw.titre ?? raw.objet ?? raw.libelle ?? raw.nom ?? `Dossier #${id}`).trim() || `Dossier #${id}`;
+    String(raw.titre ?? raw.objet ?? raw.libelle ?? raw.nom ?? `Dossier #${id}`).trim() ||
+    `Dossier #${id}`;
 
   const description = String(raw.description ?? raw.notes ?? raw.resume ?? "").trim();
 
@@ -215,7 +246,12 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
     null;
 
   const lockedAt = cleanText(raw.locked_at);
-  const isLocked = Boolean(raw.is_locked) || Boolean(raw.locked) || Boolean(raw.verrouille) || Boolean(lockedAt);
+
+  const isLocked =
+    Boolean(raw.is_locked) ||
+    Boolean(raw.locked) ||
+    Boolean(raw.verrouille) ||
+    Boolean(lockedAt);
 
   return {
     id,
@@ -236,11 +272,16 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
 
 function extractStats(data: TravauxStatsResponse | null) {
   const total =
-    toNumberOrNull(data?.total_dossiers) ?? toNumberOrNull(data?.count) ?? toNumberOrNull(data?.nb_dossiers) ?? 0;
+    toNumberOrNull(data?.total_dossiers) ??
+    toNumberOrNull(data?.count) ??
+    toNumberOrNull(data?.nb_dossiers) ??
+    0;
 
-  const brouillons = toNumberOrNull(data?.brouillons) ?? toNumberOrNull(data?.nb_brouillons) ?? 0;
+  const brouillons =
+    toNumberOrNull(data?.brouillons) ?? toNumberOrNull(data?.nb_brouillons) ?? 0;
 
-  const soumisAg = toNumberOrNull(data?.soumis_ag) ?? toNumberOrNull(data?.nb_soumis_ag) ?? 0;
+  const soumisAg =
+    toNumberOrNull(data?.soumis_ag) ?? toNumberOrNull(data?.nb_soumis_ag) ?? 0;
 
   const valides = toNumberOrNull(data?.valides) ?? toNumberOrNull(data?.nb_valides) ?? 0;
 
@@ -259,70 +300,146 @@ function extractStats(data: TravauxStatsResponse | null) {
   };
 }
 
-function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+function getTone(kind: BadgeKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      bg: "#dcfce7",
+      border: "#86efac",
+      strongBorder: "#22c55e",
+      text: "#166534",
+      strongText: "#14532d",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      bg: "#dbeafe",
+      border: "#93c5fd",
+      strongBorder: "#3b82f6",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      bg: "#fef3c7",
+      border: "#fcd34d",
+      strongBorder: "#f59e0b",
+      text: "#92400e",
+      strongText: "#78350f",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      bg: "#fee2e2",
+      border: "#fca5a5",
+      strongBorder: "#ef4444",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+    };
+  }
+
+  return {
+    softBg: "#f8fafc",
+    bg: "#f1f5f9",
+    border: "#e2e8f0",
+    strongBorder: "#cbd5e1",
+    text: "#475569",
+    strongText: "#0f172a",
+  };
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.5,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
-        </div>
-        {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 920 }}>
-            {props.subtitle}
-          </div>
-        ) : null}
-      </div>
+function PageShellWrapper({ children }: { children: ReactNode }) {
+  return <div style={pageShell}>{children}</div>;
+}
 
-      {props.right ? <div>{props.right}</div> : null}
-    </div>
+function HeroHeader(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  aside?: ReactNode;
+}) {
+  return (
+    <section style={heroCard}>
+      <div style={heroGlow} />
+
+      <div style={heroGrid}>
+        <div style={heroMainBlock}>
+          <div style={pageEyebrow}>Travaux · Dossiers</div>
+          <div style={pageTitle}>{props.title}</div>
+          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+
+          {props.right ? <div style={{ ...heroActions, marginTop: 18 }}>{props.right}</div> : null}
+        </div>
+
+        {props.aside ? <div style={heroAsidePanel}>{props.aside}</div> : null}
+      </div>
+    </section>
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string }) {
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 22,
+        background: "#ffffff",
+        boxShadow: "0 16px 40px rgba(15, 23, 42, 0.05)",
+        minWidth: 0,
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
+  );
+}
+
+function StatCard(props: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  kind?: BadgeKind;
+}) {
+  const tone = getTone(props.kind ?? "neutral");
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: `1px solid ${tone.border}`,
         borderRadius: 20,
         padding: 16,
-        background: "#fff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+        background: tone.softBg,
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+        minHeight: 104,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>{props.title}</div>
+      <div style={statTitle}>{props.title}</div>
+
       <div
         style={{
-          fontSize: 28,
+          fontSize: 26,
           fontWeight: 900,
-          color: "#111827",
-          letterSpacing: -0.4,
+          color: tone.strongText,
+          letterSpacing: -0.35,
           lineHeight: 1.1,
+          overflowWrap: "anywhere",
         }}
       >
         {props.value}
       </div>
+
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: tone.text, lineHeight: 1.45 }}>
+          {props.sub}
+        </div>
       ) : null}
     </div>
   );
@@ -345,7 +462,7 @@ function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode 
         border: `1px solid ${tone.border}`,
         color: tone.text,
         whiteSpace: "pre-wrap",
-        lineHeight: 1.5,
+        lineHeight: 1.55,
       }}
     >
       {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
@@ -366,9 +483,9 @@ function AppButton(props: {
   const styles =
     variant === "primary"
       ? {
-          border: "1px solid #c7d2fe",
-          background: "#eef2ff",
-          color: "#3730a3",
+          border: "1px solid #93c5fd",
+          background: "#dbeafe",
+          color: "#1e3a8a",
         }
       : variant === "danger"
         ? {
@@ -377,9 +494,9 @@ function AppButton(props: {
             color: "#991b1b",
           }
         : {
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            color: "#111827",
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#0f172a",
           };
 
   if (props.to) {
@@ -392,7 +509,7 @@ function AppButton(props: {
           color: styles.color,
           borderRadius: 12,
           padding: "10px 14px",
-          fontSize: 13,
+          fontSize: 12.5,
           fontWeight: 800,
           textDecoration: "none",
           display: "inline-flex",
@@ -416,7 +533,7 @@ function AppButton(props: {
         color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
         padding: "10px 14px",
-        fontSize: 13,
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
@@ -427,18 +544,16 @@ function AppButton(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; actionTo?: string }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
-    <div
-      style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
-      }}
-    >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+    <div style={emptyState}>
+      <div style={emptyStateTitle}>{props.title}</div>
+      <div style={emptyStateText}>{props.text}</div>
 
       {props.actionLabel && props.actionTo ? (
         <div style={{ marginTop: 12 }}>
@@ -452,16 +567,7 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
 }
 
 function Badge(props: { text: string; kind?: BadgeKind }) {
-  const styles =
-    props.kind === "success"
-      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
-      : props.kind === "warning"
-        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
-        : props.kind === "danger"
-          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
-          : props.kind === "info"
-            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
-            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+  const tone = getTone(props.kind ?? "neutral");
 
   return (
     <span
@@ -469,14 +575,15 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
+        minHeight: 28,
         padding: "4px 10px",
         borderRadius: 999,
-        fontSize: 12,
+        fontSize: 11.5,
         fontWeight: 800,
         whiteSpace: "nowrap",
-        border: `1px solid ${styles.border}`,
-        background: styles.background,
-        color: styles.color,
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        color: tone.text,
       }}
     >
       {props.text}
@@ -485,20 +592,25 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
 }
 
 function LockPill({ locked }: { locked: boolean }) {
-  return <Badge text={locked ? "Verrouillé" : "Non verrouillé"} kind={locked ? "success" : "warning"} />;
+  return (
+    <Badge
+      text={locked ? "Verrouillé" : "Non verrouillé"}
+      kind={locked ? "success" : "warning"}
+    />
+  );
 }
 
 function MetaLine(props: { children: ReactNode }) {
+  return <div style={metaLine}>{props.children}</div>;
+}
+
+function InfoStrip() {
   return (
-    <div
-      style={{
-        marginTop: 4,
-        fontSize: 12,
-        color: "#6b7280",
-        lineHeight: 1.45,
-      }}
-    >
-      {props.children}
+    <div style={infoStrip}>
+      <div style={infoStripText}>
+        Cette vue centralise le pilotage des dossiers de travaux : statut, budget, résolution liée,
+        niveau de validation et verrouillage opérationnel.
+      </div>
     </div>
   );
 }
@@ -515,7 +627,7 @@ export default function TravauxDossiers() {
   const [query, setQuery] = useState("");
   const [statutFilter, setStatutFilter] = useState<string>("TOUS");
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     setState("loading");
     setError(null);
 
@@ -526,7 +638,9 @@ export default function TravauxDossiers() {
       ]);
 
       const listData = listRes?.data;
-      const items = isDRFPage<TravauxRawItem>(listData) ? listData.results : asArray<TravauxRawItem>(listData);
+      const items = isDRFPage<TravauxRawItem>(listData)
+        ? listData.results
+        : asArray<TravauxRawItem>(listData);
 
       setRows(items.map(normalizeDossier));
       setStatsRaw((statsRes?.data ?? null) as TravauxStatsResponse | null);
@@ -537,17 +651,32 @@ export default function TravauxDossiers() {
       setRows([]);
       setStatsRaw(null);
     }
-  }
+  }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchData();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchData]);
+
+  const handleRefresh = useCallback(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
+
+  const goToFournisseurs = useCallback(() => {
+    navigate("/travaux/fournisseurs");
+  }, [navigate]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return rows.filter((item) => {
-      const matchStatut = statutFilter === "TOUS" ? true : normalizeStatut(item.statut) === statutFilter;
+      const matchStatut =
+        statutFilter === "TOUS" ? true : normalizeStatut(item.statut) === statutFilter;
 
       const haystack = [
         item.titre,
@@ -557,6 +686,7 @@ export default function TravauxDossiers() {
         String(item.id),
         item.resolutionId ? `resolution ${item.resolutionId}` : "",
         item.isLocked ? "verrouillé" : "non verrouillé",
+        "prestataire",
       ]
         .join(" ")
         .toLowerCase();
@@ -571,9 +701,14 @@ export default function TravauxDossiers() {
     const apiStats = extractStats(statsRaw);
 
     const totalVisible = filtered.length;
-    const brouillonsVisible = filtered.filter((x) => normalizeStatut(x.statut) === "BROUILLON").length;
-    const soumisAgVisible = filtered.filter((x) => normalizeStatut(x.statut) === "SOUMIS_AG").length;
+    const brouillonsVisible = filtered.filter(
+      (x) => normalizeStatut(x.statut) === "BROUILLON",
+    ).length;
+    const soumisAgVisible = filtered.filter(
+      (x) => normalizeStatut(x.statut) === "SOUMIS_AG",
+    ).length;
     const validesVisible = filtered.filter((x) => normalizeStatut(x.statut) === "VALIDE").length;
+    const verrouillesVisible = filtered.filter((x) => x.isLocked).length;
     const budgetVisible = filtered.reduce((sum, x) => sum + (x.budget ?? 0), 0);
 
     return {
@@ -582,6 +717,7 @@ export default function TravauxDossiers() {
       brouillonsVisible,
       soumisAgVisible,
       validesVisible,
+      verrouillesVisible,
       budgetVisible,
       budgetApi: apiStats.budgetTotal,
     };
@@ -591,220 +727,284 @@ export default function TravauxDossiers() {
   const hasRows = rows.length > 0;
   const hasFilters = query.trim().length > 0 || statutFilter !== "TOUS";
 
+  const resultLabel = isLoading
+    ? "Chargement des dossiers de travaux..."
+    : hasFilters
+      ? `${filtered.length} dossier${filtered.length > 1 ? "s" : ""} affiché${
+          filtered.length > 1 ? "s" : ""
+        }`
+      : `${rows.length} dossier${rows.length > 1 ? "s" : ""}`;
+
+  const heroBadges = [
+    { text: `${fmtInt(uiStats.totalVisible)} visible(s)`, kind: "neutral" as BadgeKind },
+    { text: `${fmtInt(uiStats.validesVisible)} validé(s)`, kind: "success" as BadgeKind },
+    { text: `${fmtInt(uiStats.verrouillesVisible)} verrouillé(s)`, kind: "info" as BadgeKind },
+  ];
+
   return (
-    <PageShell>
-      <SectionTitle
-        title="Dossiers travaux"
-        subtitle="Pilotez les dossiers de travaux, leur budget de référence, leur état d’avancement, la résolution liée et leur niveau de verrouillage depuis un écran unique."
+    <PageShellWrapper>
+      <HeroHeader
+        title="Dossiers de travaux"
+        subtitle="Pilotez les dossiers, suivez leur budget, leur résolution liée et leur niveau de verrouillage depuis une vue centrale plus lisible et plus premium."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <AppButton onClick={() => navigate("/")} variant="secondary">
-              Retour au tableau de bord
+            <AppButton onClick={goToFournisseurs} variant="secondary">
+              Prestataires
             </AppButton>
+
             <AppButton to="/travaux/dossiers/nouveau" variant="primary">
-              Nouveau dossier
+              Nouveau dossier de travaux
             </AppButton>
+          </div>
+        }
+        aside={
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={heroAsideTitle}>Cockpit travaux</div>
+
+            <div style={heroAsideText}>
+              Utilisez cette vue pour suivre l’avancement des dossiers, distinguer les arbitrages en
+              attente, identifier les validations acquises et repérer les dossiers verrouillés.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {heroBadges.map((item) => (
+                <Badge key={item.text} text={item.text} kind={item.kind} />
+              ))}
+            </div>
           </div>
         }
       />
 
-      <div
-        className="travaux-stats-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-          gap: 14,
-        }}
-      >
+      <InfoStrip />
+
+      <div className="travaux-stats-grid" style={statsGrid}>
         <StatCard
           title="Dossiers affichés"
           value={uiStats.totalVisible}
-          sub={`Total remonté par l’API : ${fmtInt(uiStats.totalApi)}`}
+          sub={`Total disponible : ${fmtInt(uiStats.totalApi)}`}
+          kind="neutral"
         />
         <StatCard
           title="Brouillons"
           value={uiStats.brouillonsVisible}
-          sub="Dossiers encore en préparation."
+          sub="Encore en préparation."
+          kind="neutral"
         />
         <StatCard
           title="Soumis à l’AG"
           value={uiStats.soumisAgVisible}
-          sub="Dossiers en attente de décision."
+          sub="En attente de décision."
+          kind="warning"
         />
         <StatCard
           title="Validés"
           value={uiStats.validesVisible}
-          sub="Dossiers déjà validés."
+          sub="Décision approuvée."
+          kind="success"
         />
         <StatCard
           title="Budget affiché"
           value={fmtMoney(uiStats.budgetVisible)}
           sub={
-            uiStats.budgetApi !== null ? `Budget total API : ${fmtMoney(uiStats.budgetApi)}` : "Somme des budgets visibles."
+            uiStats.budgetApi !== null
+              ? `Budget global : ${fmtMoney(uiStats.budgetApi)}`
+              : "Somme des budgets visibles."
           }
+          kind="info"
         />
       </div>
 
       {state === "error" && error ? (
-        <AlertBox kind="error" title="Impossible de charger les dossiers travaux.">
+        <AlertBox kind="error" title="Impossible de charger les dossiers travaux">
           {error}
         </AlertBox>
       ) : null}
 
-      <div style={toolbar}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", flex: 1 }}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher par dossier, fournisseur, résolution ou verrouillage..."
-            style={input}
-          />
+      <Panel style={{ padding: 14 }}>
+        <div style={toolbar}>
+          <div style={toolbarControls}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher par dossier, prestataire, résolution ou verrouillage"
+              style={input}
+            />
 
-          <select value={statutFilter} onChange={(e) => setStatutFilter(e.target.value)} style={selectInput}>
-            <option value="TOUS">Tous les statuts</option>
-            <option value="BROUILLON">Brouillons</option>
-            <option value="SOUMIS_AG">Soumis à l’AG</option>
-            <option value="A_VALIDER">À valider</option>
-            <option value="VALIDE">Validés</option>
-            <option value="EN_COURS">En cours</option>
-            <option value="TERMINE">Terminés</option>
-            <option value="REFUSE">Refusés</option>
-            <option value="ANNULE">Annulés</option>
-            <option value="ARCHIVE">Archivés</option>
-          </select>
+            <select
+              value={statutFilter}
+              onChange={(e) => setStatutFilter(e.target.value)}
+              style={selectInput}
+            >
+              <option value="TOUS">Tous les statuts</option>
+              <option value="BROUILLON">Brouillons</option>
+              <option value="SOUMIS_AG">Soumis à l’AG</option>
+              <option value="A_VALIDER">À valider</option>
+              <option value="VALIDE">Validés</option>
+              <option value="EN_COURS">En cours</option>
+              <option value="TERMINE">Terminés</option>
+              <option value="REFUSE">Refusés</option>
+              <option value="ANNULE">Annulés</option>
+              <option value="ARCHIVE">Archivés</option>
+            </select>
 
-          <AppButton onClick={() => void fetchData()} disabled={isLoading} variant="secondary">
-            {isLoading ? "Actualisation..." : "Actualiser"}
-          </AppButton>
+            <AppButton onClick={handleRefresh} disabled={isLoading} variant="secondary">
+              {isLoading ? "Actualisation..." : "Actualiser"}
+            </AppButton>
+          </div>
+
+          <div style={resultsInfo}>{resultLabel}</div>
         </div>
+      </Panel>
 
-        <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? "Chargement des dossiers travaux..." : `${filtered.length} dossier(s) affiché(s) sur ${rows.length}`}
-        </div>
-      </div>
-
-      <div style={tableWrap}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "left" }}>
-              <th style={th}>Dossier</th>
-              <th style={th}>Fournisseur</th>
-              <th style={th}>Budget</th>
-              <th style={th}>Statut</th>
-              <th style={th}>Verrouillage</th>
-              <th style={th}>Résolution</th>
-              <th style={th}>Créé le</th>
-              <th style={th}>Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td style={td} colSpan={8}>
-                  <span style={{ color: "#6b7280" }}>Chargement des dossiers travaux...</span>
-                </td>
+      <Panel style={{ overflow: "hidden" }}>
+        <div style={tableWrap}>
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ textAlign: "left" }}>
+                <th style={{ ...th, width: "31%" }}>Dossier</th>
+                <th style={{ ...th, width: "16%" }}>Prestataire</th>
+                <th style={{ ...th, width: "12%" }}>Budget</th>
+                <th style={{ ...th, width: "12%" }}>Statut</th>
+                <th style={{ ...th, width: "12%" }}>Verrouillage</th>
+                <th style={{ ...th, width: "8%" }}>Résolution</th>
+                <th style={{ ...th, width: "9%" }}>Créé le</th>
+                <th style={{ ...th, width: "12%" }}>Actions</th>
               </tr>
-            ) : null}
+            </thead>
 
-            {!isLoading &&
-              filtered.map((item) => (
-                <tr key={item.id}>
-                  <td style={td}>
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div style={{ fontWeight: 800, color: "#111827" }}>{truncateText(item.titre, 44)}</div>
-                      <MetaLine>
-                        ID dossier : <span style={{ fontWeight: 800, color: "#374151" }}>#{item.id}</span>
-                      </MetaLine>
-
-                      {item.description ? (
-                        <MetaLine>{truncateText(item.description, 72)}</MetaLine>
-                      ) : (
-                        <MetaLine>
-                          <span style={{ color: "#9ca3af" }}>Aucune description renseignée.</span>
-                        </MetaLine>
-                      )}
-                    </div>
-                  </td>
-
-                  <td style={td}>
-                    {item.fournisseurLabel && item.fournisseurLabel !== "—" ? (
-                      truncateText(item.fournisseurLabel, 32)
-                    ) : (
-                      <span style={{ color: "#9ca3af" }}>Non renseigné</span>
-                    )}
-                  </td>
-
-                  <td style={tdStrong}>{fmtMoney(item.budget)}</td>
-
-                  <td style={td}>
-                    <Badge text={humanizeStatut(item.statut)} kind={getStatutKind(item.statut)} />
-                  </td>
-
-                  <td style={td}>
-                    <LockPill locked={item.isLocked} />
-                  </td>
-
-                  <td style={td}>{item.resolutionId ? `#${item.resolutionId}` : "—"}</td>
-                  <td style={td}>{fmtDate(item.createdAt)}</td>
-
-                  <td style={td}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <Link to={`/travaux/dossiers/${item.id}`} style={miniLink}>
-                        Ouvrir
-                      </Link>
-
-                      <Link
-                        to={`/travaux/dossiers/${item.id}/modifier`}
-                        style={item.isLocked ? disabledMiniLink : primaryMiniLink}
-                        onClick={(e) => {
-                          if (item.isLocked) e.preventDefault();
-                        }}
-                        aria-disabled={item.isLocked}
-                        title={item.isLocked ? "Ce dossier est verrouillé et ne peut pas être modifié." : "Modifier le dossier"}
-                      >
-                        Modifier
-                      </Link>
-                    </div>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td style={td} colSpan={8}>
+                    <span style={{ color: "#6b7280" }}>
+                      Chargement des dossiers de travaux...
+                    </span>
                   </td>
                 </tr>
-              ))}
+              ) : null}
 
-            {!isLoading && filtered.length === 0 ? (
-              <tr>
-                <td style={td} colSpan={8}>
-                  {!hasRows ? (
-                    <EmptyState
-                      title="Aucun dossier travaux enregistré"
-                      text="Le module Travaux ne contient encore aucun dossier. Vous pouvez créer un premier dossier pour démarrer le suivi opérationnel."
-                      actionLabel="Nouveau dossier"
-                      actionTo="/travaux/dossiers/nouveau"
-                    />
-                  ) : hasFilters ? (
-                    <EmptyState
-                      title="Aucun résultat"
-                      text="Aucun dossier ne correspond à la recherche ou aux filtres sélectionnés. Ajustez vos critères pour afficher d’autres dossiers."
-                      actionLabel="Nouveau dossier"
-                      actionTo="/travaux/dossiers/nouveau"
-                    />
-                  ) : (
-                    <EmptyState
-                      title="Aucun dossier à afficher"
-                      text="Aucune donnée dossier n’est disponible pour le moment."
-                      actionLabel="Nouveau dossier"
-                      actionTo="/travaux/dossiers/nouveau"
-                    />
-                  )}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+              {!isLoading &&
+                filtered.map((item) => (
+                  <tr key={item.id} style={tableRowStyle}>
+                    <td style={td}>
+                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                        <div style={dossierTitle}>{truncateText(item.titre, 52)}</div>
+
+                        <MetaLine>
+                          ID dossier :{" "}
+                          <span style={{ fontWeight: 800, color: "#374151" }}>#{item.id}</span>
+                        </MetaLine>
+
+                        {item.description ? (
+                          <MetaLine>{truncateText(item.description, 78)}</MetaLine>
+                        ) : (
+                          <MetaLine>
+                            <span style={{ color: "#9ca3af" }}>
+                              Aucune description renseignée.
+                            </span>
+                          </MetaLine>
+                        )}
+                      </div>
+                    </td>
+
+                    <td style={td}>
+                      {item.fournisseurLabel && item.fournisseurLabel !== "—" ? (
+                        <span style={{ color: "#374151" }}>
+                          {truncateText(item.fournisseurLabel, 30)}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#9ca3af" }}>Non renseigné</span>
+                      )}
+                    </td>
+
+                    <td style={tdStrong}>{fmtMoney(item.budget)}</td>
+
+                    <td style={td}>
+                      <Badge
+                        text={humanizeStatut(item.statut)}
+                        kind={getStatutKind(item.statut)}
+                      />
+                    </td>
+
+                    <td style={td}>
+                      <LockPill locked={item.isLocked} />
+                    </td>
+
+                    <td style={td}>
+                      {item.resolutionId ? (
+                        <span style={{ fontWeight: 700, color: "#374151" }}>
+                          #{item.resolutionId}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#9ca3af" }}>—</span>
+                      )}
+                    </td>
+
+                    <td style={td}>{fmtDate(item.createdAt)}</td>
+
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <Link to={`/travaux/dossiers/${item.id}`} style={miniLink}>
+                          Ouvrir
+                        </Link>
+
+                        <Link
+                          to={`/travaux/dossiers/${item.id}/modifier`}
+                          style={item.isLocked ? disabledMiniLink : primaryMiniLink}
+                          onClick={(e) => {
+                            if (item.isLocked) e.preventDefault();
+                          }}
+                          aria-disabled={item.isLocked}
+                          title={
+                            item.isLocked
+                              ? "Ce dossier est verrouillé et ne peut pas être modifié."
+                              : "Modifier le dossier"
+                          }
+                        >
+                          Modifier
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+              {!isLoading && filtered.length === 0 ? (
+                <tr>
+                  <td style={td} colSpan={8}>
+                    {!hasRows ? (
+                      <EmptyState
+                        title="Aucun dossier de travaux enregistré"
+                        text="Le module Travaux ne contient encore aucun dossier. Créez un premier dossier pour démarrer le suivi opérationnel."
+                        actionLabel="Nouveau dossier de travaux"
+                        actionTo="/travaux/dossiers/nouveau"
+                      />
+                    ) : hasFilters ? (
+                      <EmptyState
+                        title="Aucun résultat"
+                        text="Aucun dossier ne correspond à la recherche ou aux filtres sélectionnés. Ajustez vos critères pour poursuivre."
+                        actionLabel="Nouveau dossier de travaux"
+                        actionTo="/travaux/dossiers/nouveau"
+                      />
+                    ) : (
+                      <EmptyState
+                        title="Aucun dossier à afficher"
+                        text="Aucune donnée dossier n’est disponible pour le moment."
+                        actionLabel="Nouveau dossier de travaux"
+                        actionTo="/travaux/dossiers/nouveau"
+                      />
+                    )}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
 
       {state === "success" && rows.length > 0 ? (
-        <AlertBox kind="info" title="Lecture métier du module">
-          Cet écran centralise le pilotage des dossiers travaux. La lecture détaillée du budget, de la résolution liée et du verrouillage se poursuit dans la fiche de détail de chaque dossier.
+        <AlertBox kind="info" title="Lecture métier">
+          Cette liste centralise le pilotage des dossiers. La lecture détaillée du budget, de la
+          résolution et du verrouillage se poursuit dans chaque fiche dossier.
         </AlertBox>
       ) : null}
 
@@ -815,21 +1015,154 @@ export default function TravauxDossiers() {
           }
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 980px) {
           .travaux-stats-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
         }
 
-        @media (max-width: 680px) {
+        @media (max-width: 760px) {
           .travaux-stats-grid {
             grid-template-columns: 1fr !important;
           }
         }
       `}</style>
-    </PageShell>
+    </PageShellWrapper>
   );
 }
+
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 18,
+  width: "100%",
+  minWidth: 0,
+};
+
+const heroCard: CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.88) 100%)",
+  borderRadius: 28,
+  padding: "28px 30px",
+  color: "#ffffff",
+  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
+  position: "relative",
+  overflow: "hidden",
+  minWidth: 0,
+};
+
+const heroGlow: CSSProperties = {
+  position: "absolute",
+  inset: "auto -120px -140px auto",
+  width: 280,
+  height: 280,
+  borderRadius: "50%",
+  background:
+    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)",
+  gap: 18,
+  alignItems: "stretch",
+  minWidth: 0,
+};
+
+const heroMainBlock: CSSProperties = {
+  minWidth: 0,
+  position: "relative",
+  zIndex: 1,
+};
+
+const heroActions: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const heroAsidePanel: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  alignContent: "start",
+  minWidth: 0,
+};
+
+const heroAsideTitle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideText: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.84)",
+};
+
+const pageEyebrow: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.72)",
+  marginBottom: 6,
+};
+
+const pageTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  letterSpacing: -0.5,
+  color: "#ffffff",
+  lineHeight: 1.08,
+};
+
+const pageSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "rgba(255,255,255,0.84)",
+  fontSize: 13.5,
+  lineHeight: 1.6,
+  maxWidth: 860,
+};
+
+const statTitle: CSSProperties = {
+  fontSize: 12,
+  color: "#475569",
+  fontWeight: 800,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.35,
+};
+
+const statsGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 12,
+  minWidth: 0,
+};
+
+const infoStrip: CSSProperties = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  borderRadius: 18,
+  padding: "14px 16px",
+};
+
+const infoStripText: CSSProperties = {
+  fontSize: 13,
+  color: "#1d4ed8",
+  lineHeight: 1.6,
+  fontWeight: 600,
+};
 
 const toolbar: CSSProperties = {
   display: "flex",
@@ -837,12 +1170,29 @@ const toolbar: CSSProperties = {
   gap: 12,
   flexWrap: "wrap",
   alignItems: "center",
+  minWidth: 0,
+};
+
+const toolbarControls: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+  flex: 1,
+  minWidth: 0,
+};
+
+const resultsInfo: CSSProperties = {
+  color: "#6b7280",
+  fontSize: 12.5,
+  fontWeight: 700,
+  whiteSpace: "nowrap",
 };
 
 const input: CSSProperties = {
-  width: 360,
+  width: 340,
   maxWidth: "100%",
-  padding: "11px 12px",
+  padding: "10px 12px",
   borderRadius: 12,
   border: "1px solid #e5e7eb",
   background: "#fff",
@@ -852,40 +1202,46 @@ const input: CSSProperties = {
 };
 
 const selectInput: CSSProperties = {
-  padding: "11px 12px",
+  padding: "10px 12px",
   borderRadius: 12,
   border: "1px solid #e5e7eb",
   background: "#fff",
   color: "#111827",
   fontWeight: 700,
+  fontSize: 13,
 };
 
 const tableWrap: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
   overflowX: "auto",
   background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  width: "100%",
+  minWidth: 0,
+};
+
+const tableStyle: CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: 1180,
 };
 
 const th: CSSProperties = {
-  padding: "14px 12px",
+  padding: "12px 12px",
   borderBottom: "1px solid #e5e7eb",
   whiteSpace: "nowrap",
-  fontSize: 12,
+  fontSize: 11.5,
   color: "#6b7280",
-  background: "#f9fafb",
+  background: "#f8fafc",
   fontWeight: 800,
   textTransform: "uppercase",
-  letterSpacing: 0.3,
+  letterSpacing: 0.28,
 };
 
 const td: CSSProperties = {
-  padding: "14px 12px",
-  borderBottom: "1px solid #f3f4f6",
+  padding: "12px 12px",
+  borderBottom: "1px solid #f1f5f9",
   verticalAlign: "middle",
   color: "#111827",
-  fontSize: 14,
+  fontSize: 13.5,
 };
 
 const tdStrong: CSSProperties = {
@@ -894,10 +1250,24 @@ const tdStrong: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const dossierTitle: CSSProperties = {
+  fontWeight: 800,
+  color: "#111827",
+  fontSize: 14,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const tableRowStyle: CSSProperties = {
+  transition: "background 0.18s ease",
+};
+
 const miniLink: CSSProperties = {
-  padding: "7px 10px",
+  padding: "6px 10px",
   borderRadius: 10,
-  border: "1px solid #e5e7eb",
+  border: "1px solid #cbd5e1",
   background: "#fff",
   fontSize: 12,
   fontWeight: 700,
@@ -905,13 +1275,15 @@ const miniLink: CSSProperties = {
   textDecoration: "none",
   display: "inline-flex",
   alignItems: "center",
+  minHeight: 30,
+  whiteSpace: "nowrap",
 };
 
 const primaryMiniLink: CSSProperties = {
   ...miniLink,
-  border: "1px solid #c7d2fe",
-  background: "#eef2ff",
-  color: "#3730a3",
+  border: "1px solid #93c5fd",
+  background: "#eff6ff",
+  color: "#1e3a8a",
 };
 
 const disabledMiniLink: CSSProperties = {
@@ -920,4 +1292,31 @@ const disabledMiniLink: CSSProperties = {
   background: "#f9fafb",
   color: "#9ca3af",
   cursor: "not-allowed",
+};
+
+const metaLine: CSSProperties = {
+  marginTop: 3,
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.45,
+};
+
+const emptyState: CSSProperties = {
+  border: "1px dashed #d1d5db",
+  borderRadius: 16,
+  padding: 18,
+  background: "#f8fafc",
+};
+
+const emptyStateTitle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#111827",
+  marginBottom: 6,
+};
+
+const emptyStateText: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.55,
 };

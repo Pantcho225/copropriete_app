@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
 import { activerContrat, cloturerContrat, getContrats, getEmployes } from "../../api/rh";
 import type { ContratEmploye, ContratStatut, Employe } from "../../api/types";
@@ -18,6 +25,7 @@ type ConfirmAction = {
 
 function fmtMoney(x?: number | null) {
   if (x === undefined || x === null) return "—";
+
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "XOF",
@@ -27,8 +35,11 @@ function fmtMoney(x?: number | null) {
 
 function fmtDate(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return value;
+
   return d.toLocaleDateString("fr-FR");
 }
 
@@ -39,6 +50,7 @@ function getErrorMessage(e: unknown, fallback: string) {
   };
 
   const detail = err?.response?.data?.detail;
+
   if (typeof detail === "string" && detail.trim()) return detail;
 
   if (err?.response?.data) {
@@ -54,6 +66,7 @@ function getErrorMessage(e: unknown, fallback: string) {
 
 function humanizeRole(role?: string | null) {
   const value = String(role ?? "").trim();
+
   if (!value) return PRODUCT_WORDING.common.notProvided;
 
   const normalized = value.toUpperCase();
@@ -82,6 +95,7 @@ function humanizeRole(role?: string | null) {
 
 function humanizeContractType(type?: string | null) {
   const value = String(type ?? "").trim().toUpperCase();
+
   if (!value) return PRODUCT_WORDING.common.notProvided;
 
   const MAP: Record<string, string> = {
@@ -146,6 +160,7 @@ function getStatutStyle(statut: ContratStatut): CSSProperties {
 function getCycleBadge(item: ContratEmploye): { label: string; style: CSSProperties } {
   const statut = String(item.statut).toUpperCase();
   const today = new Date();
+
   today.setHours(0, 0, 0, 0);
 
   const debut = item.date_debut ? new Date(item.date_debut) : null;
@@ -203,10 +218,13 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
 
 function isFutureDate(dateStr?: string | null) {
   if (!dateStr) return false;
+
   const d = new Date(dateStr);
+
   if (Number.isNaN(d.getTime())) return false;
 
   const today = new Date();
+
   today.setHours(0, 0, 0, 0);
   d.setHours(0, 0, 0, 0);
 
@@ -215,21 +233,25 @@ function isFutureDate(dateStr?: string | null) {
 
 function isContractActiveNow(item: ContratEmploye) {
   const statut = String(item.statut).toUpperCase();
+
   if (statut !== "ACTIF") return false;
 
   const today = new Date();
+
   today.setHours(0, 0, 0, 0);
 
   const debut = item.date_debut ? new Date(item.date_debut) : null;
   const fin = item.date_fin ? new Date(item.date_fin) : null;
 
   if (!debut || Number.isNaN(debut.getTime())) return false;
+
   debut.setHours(0, 0, 0, 0);
 
   if (debut > today) return false;
 
   if (fin && !Number.isNaN(fin.getTime())) {
     fin.setHours(0, 0, 0, 0);
+
     if (fin < today) return false;
   }
 
@@ -237,63 +259,29 @@ function isContractActiveNow(item: ContratEmploye) {
 }
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
 function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.5,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
-        </div>
+    <div style={sectionTitleWrapper}>
+      <div style={{ minWidth: 0 }}>
+        <div style={sectionTitle}>{props.title}</div>
 
-        {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 860 }}>
-            {props.subtitle}
-          </div>
-        ) : null}
+        {props.subtitle ? <div style={sectionSubtitle}>{props.subtitle}</div> : null}
       </div>
 
-      {props.right ? <div>{props.right}</div> : null}
+      {props.right ? <div style={{ minWidth: 0 }}>{props.right}</div> : null}
     </div>
   );
 }
 
 function StatCard(props: { title: string; value: string | number; sub?: string }) {
   return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 16,
-        background: "#fff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-      }}
-    >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>{props.title}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, color: "#111827", letterSpacing: -0.4, lineHeight: 1.1 }}>
-        {props.value}
-      </div>
-      {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
-      ) : null}
+    <div style={statCard}>
+      <div style={statTitle}>{props.title}</div>
+      <div style={statValue}>{props.value}</div>
+      {props.sub ? <div style={statSub}>{props.sub}</div> : null}
     </div>
   );
 }
@@ -316,6 +304,7 @@ function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNo
         color: tone.text,
         whiteSpace: "pre-wrap",
         lineHeight: 1.5,
+        minWidth: 0,
       }}
     >
       {props.children}
@@ -475,57 +464,83 @@ export default function RHContrats() {
     action: null,
   });
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     setState("loading");
     setError(null);
 
     try {
       const [contratsData, employesData] = await Promise.all([getContrats(), getEmployes()]);
+
       setRows(Array.isArray(contratsData.results) ? contratsData.results : []);
       setEmployes(Array.isArray(employesData.results) ? employesData.results : []);
       setState("success");
-    } catch (e) {
+    } catch (e: unknown) {
       setState("error");
       setError(getErrorMessage(e, PRODUCT_WORDING.rh.contracts.loadError));
       setRows([]);
       setEmployes([]);
     }
-  }
+  }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchData();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchData]);
+
+  const handleRefresh = useCallback(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
 
   const employesMap = useMemo(() => {
     const map = new Map<number, Employe>();
-    for (const emp of employes) map.set(emp.id, emp);
+
+    for (const emp of employes) {
+      map.set(emp.id, emp);
+    }
+
     return map;
   }, [employes]);
 
-  function getEmployeLabel(employe: ContratEmploye["employe"]) {
-    if (typeof employe === "number") {
-      const emp = employesMap.get(employe);
-      if (emp) return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
-      return `Employé #${employe}`;
-    }
+  const getEmployeLabel = useCallback(
+    (employe: ContratEmploye["employe"]) => {
+      if (typeof employe === "number") {
+        const emp = employesMap.get(employe);
 
-    if (!employe) return PRODUCT_WORDING.common.notProvided;
+        if (emp) return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
 
-    const emp = employe as Employe;
-    return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
-  }
+        return `Employé #${employe}`;
+      }
 
-  function getRoleLabel(employe: ContratEmploye["employe"]) {
-    if (typeof employe === "number") {
-      const emp = employesMap.get(employe);
-      return humanizeRole(emp?.role);
-    }
+      if (!employe) return PRODUCT_WORDING.common.notProvided;
 
-    if (!employe) return PRODUCT_WORDING.common.notProvided;
-    return humanizeRole((employe as Employe).role);
-  }
+      const emp = employe as Employe;
 
-  function openConfirmFor(item: ContratEmploye) {
+      return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
+    },
+    [employesMap],
+  );
+
+  const getRoleLabel = useCallback(
+    (employe: ContratEmploye["employe"]) => {
+      if (typeof employe === "number") {
+        const emp = employesMap.get(employe);
+
+        return humanizeRole(emp?.role);
+      }
+
+      if (!employe) return PRODUCT_WORDING.common.notProvided;
+
+      return humanizeRole((employe as Employe).role);
+    },
+    [employesMap],
+  );
+
+  const openConfirmFor = useCallback((item: ContratEmploye) => {
     const current = String(item.statut).toUpperCase();
     const isActif = current === "ACTIF";
 
@@ -537,23 +552,25 @@ export default function RHContrats() {
 
     setError(null);
     setSuccess(null);
+
     setConfirmAction({
       open: true,
       contrat: item,
       action: isActif ? "cloturer" : "activer",
     });
-  }
+  }, []);
 
-  function closeConfirmModal() {
+  const closeConfirmModal = useCallback(() => {
     if (busyId !== null) return;
+
     setConfirmAction({
       open: false,
       contrat: null,
       action: null,
     });
-  }
+  }, [busyId]);
 
-  async function handleConfirmAction() {
+  const handleConfirmAction = useCallback(async () => {
     const item = confirmAction.contrat;
     const action = confirmAction.action;
 
@@ -564,13 +581,14 @@ export default function RHContrats() {
     setSuccess(null);
 
     try {
-      const updated = action === "cloturer" ? await cloturerContrat(item.id) : await activerContrat(item.id);
+      const updated =
+        action === "cloturer" ? await cloturerContrat(item.id) : await activerContrat(item.id);
 
       setRows((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
       setSuccess(
         action === "cloturer"
           ? PRODUCT_WORDING.rh.contracts.closeSuccess
-          : PRODUCT_WORDING.rh.contracts.reactivateSuccess
+          : PRODUCT_WORDING.rh.contracts.reactivateSuccess,
       );
 
       setConfirmAction({
@@ -578,12 +596,12 @@ export default function RHContrats() {
         contrat: null,
         action: null,
       });
-    } catch (e) {
+    } catch (e: unknown) {
       setError(getErrorMessage(e, "Cette action n’a pas pu être finalisée."));
     } finally {
       setBusyId(null);
     }
-  }
+  }, [confirmAction.action, confirmAction.contrat]);
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -609,7 +627,7 @@ export default function RHContrats() {
         idLabel.includes(q)
       );
     });
-  }, [rows, statutFilter, searchTerm, employesMap]);
+  }, [rows, statutFilter, searchTerm, getEmployeLabel, getRoleLabel]);
 
   const stats = useMemo(() => {
     const contratsActifsReels = rows.filter(isContractActiveNow);
@@ -636,7 +654,7 @@ export default function RHContrats() {
         title={PRODUCT_WORDING.rh.contracts.listTitle}
         subtitle="Suivez les contrats, leurs périodes d’activité et leur statut pour les employés de la copropriété."
         right={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
             <SmallButton to="/rh/employes">Voir les employés</SmallButton>
             <SmallButton to="/rh/contrats/nouveau" primary>
               {PRODUCT_WORDING.rh.contracts.createTitle}
@@ -645,15 +663,12 @@ export default function RHContrats() {
         }
       />
 
-      <div
-        className="rh-stats-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-          gap: 14,
-        }}
-      >
-        <StatCard title="Contrats visibles" value={stats.total} sub="Résultats affichés après filtres et recherche." />
+      <div className="rh-stats-grid" style={statsGrid}>
+        <StatCard
+          title="Contrats visibles"
+          value={stats.total}
+          sub="Résultats affichés après filtres et recherche."
+        />
         <StatCard title="En cours" value={stats.actifs} sub="Contrats visibles actuellement en cours." />
         <StatCard title="Terminés" value={stats.termines} sub="Contrats visibles clôturés ou arrivés à terme." />
         <StatCard title="Brouillons" value={stats.brouillons} sub="Contrats visibles encore en préparation." />
@@ -673,16 +688,8 @@ export default function RHContrats() {
         </AlertBox>
       )}
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={toolbar}>
+        <div style={toolbarControls}>
           <select
             value={statutFilter}
             onChange={(e) => setStatutFilter(e.target.value as "TOUS" | ContratStatut)}
@@ -702,7 +709,7 @@ export default function RHContrats() {
             style={searchInput}
           />
 
-          <SmallButton onClick={() => void fetchData()} disabled={isLoading}>
+          <SmallButton onClick={handleRefresh} disabled={isLoading}>
             {isLoading ? "Actualisation..." : "Actualiser"}
           </SmallButton>
         </div>
@@ -713,7 +720,7 @@ export default function RHContrats() {
       </div>
 
       <div style={tableWrap}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table style={tableStyle}>
           <thead>
             <tr style={{ textAlign: "left" }}>
               <th style={th}>ID</th>
@@ -748,20 +755,27 @@ export default function RHContrats() {
                 return (
                   <tr key={item.id}>
                     <td style={tdMono}>#{item.id}</td>
+
                     <td style={td}>
-                      <div style={{ fontWeight: 800, color: "#111827" }}>{getEmployeLabel(item.employe)}</div>
+                      <div style={{ fontWeight: 800, color: "#111827" }}>
+                        {getEmployeLabel(item.employe)}
+                      </div>
                     </td>
+
                     <td style={td}>{getRoleLabel(item.employe)}</td>
                     <td style={td}>{humanizeContractType(item.type_contrat)}</td>
                     <td style={td}>{fmtDate(item.date_debut)}</td>
                     <td style={td}>{fmtDate(item.date_fin)}</td>
                     <td style={tdStrong}>{fmtMoney(item.salaire_mensuel)}</td>
+
                     <td style={td}>
                       <span style={getStatutStyle(item.statut)}>{getStatutLabel(item.statut)}</span>
                     </td>
+
                     <td style={td}>
                       <span style={cycleBadge.style}>{cycleBadge.label}</span>
                     </td>
+
                     <td style={td}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <Link to={`/rh/contrats/${item.id}/modifier`} style={primaryMiniLink}>
@@ -887,6 +901,93 @@ export default function RHContrats() {
   );
 }
 
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 16,
+  minWidth: 0,
+};
+
+const sectionTitleWrapper: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+  alignItems: "flex-end",
+  minWidth: 0,
+};
+
+const sectionTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  letterSpacing: -0.5,
+  color: "#111827",
+  lineHeight: 1.1,
+};
+
+const sectionSubtitle: CSSProperties = {
+  marginTop: 8,
+  color: "#6b7280",
+  fontSize: 14,
+  lineHeight: 1.5,
+  maxWidth: 860,
+};
+
+const statsGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 14,
+  minWidth: 0,
+};
+
+const statCard: CSSProperties = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 20,
+  padding: 16,
+  background: "#fff",
+  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
+};
+
+const statTitle: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  fontWeight: 700,
+  marginBottom: 8,
+};
+
+const statValue: CSSProperties = {
+  fontSize: 28,
+  fontWeight: 900,
+  color: "#111827",
+  letterSpacing: -0.4,
+  lineHeight: 1.1,
+  overflowWrap: "anywhere",
+};
+
+const statSub: CSSProperties = {
+  marginTop: 8,
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.45,
+};
+
+const toolbar: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const toolbarControls: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
 const badgeBase: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -935,6 +1036,13 @@ const tableWrap: CSSProperties = {
   overflowX: "auto",
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
+};
+
+const tableStyle: CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: 1180,
 };
 
 const th: CSSProperties = {

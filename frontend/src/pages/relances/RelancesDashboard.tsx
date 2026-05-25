@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { relancesAPI } from "../../api/relances";
 import { APP_TEXT } from "../../constants/appText";
@@ -39,21 +46,183 @@ type RelanceItem = {
   niveau?: number | null;
 };
 
+type AccentKind = "neutral" | "success" | "warning" | "danger" | "info";
+type BadgeKind = "success" | "warning" | "danger" | "info" | "neutral";
+
+const EMPTY_DOSSIERS: DossierItem[] = [];
+const EMPTY_RELANCES: RelanceItem[] = [];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function extractArray<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+
+  if (isRecord(payload)) {
+    if (Array.isArray(payload.results)) return payload.results as T[];
+    if (Array.isArray(payload.data)) return payload.data as T[];
+    if (Array.isArray(payload.items)) return payload.items as T[];
+  }
+
+  return [];
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: {
+      data?: {
+        detail?: string;
+        non_field_errors?: string[];
+        [key: string]: unknown;
+      };
+    };
+    message?: string;
+  };
+
+  const data = err?.response?.data;
+
+  if (data && typeof data === "object") {
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+
+    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+      return data.non_field_errors.join("\n");
+    }
+
+    try {
+      const entries = Object.entries(data);
+
+      if (entries.length > 0) {
+        return entries
+          .map(([key, value]) => {
+            const rendered = Array.isArray(value)
+              ? value.join(" / ")
+              : typeof value === "string"
+                ? value
+                : JSON.stringify(value);
+
+            return `${key}: ${rendered}`;
+          })
+          .join("\n");
+      }
+    } catch {
+      return err?.message || fallback;
+    }
+  }
+
+  return err?.message || fallback;
+}
+
+function formatMoneyFCFA(amount?: number | null): string {
+  if (amount == null) return "—";
+
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "XOF",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${amount} FCFA`;
+  }
+}
+
+function formatDateShort(iso?: string | null): string {
+  if (!iso) return "—";
+
+  const d = new Date(iso);
+
+  if (Number.isNaN(d.getTime())) return iso;
+
+  return d.toLocaleDateString("fr-FR");
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function normalizeStatut(value?: string | null): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function getTone(kind: AccentKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      border: "#86efac",
+      text: "#166534",
+      strongText: "#14532d",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      border: "#fcd34d",
+      text: "#92400e",
+      strongText: "#78350f",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      border: "#fca5a5",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      border: "#93c5fd",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+    };
+  }
+
+  return {
+    softBg: "#f8fafc",
+    border: "#e5e7eb",
+    text: "#4b5563",
+    strongText: "#111827",
+  };
+}
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
 
-function PageHeader(props: { title: string; subtitle?: string; actions?: ReactNode }) {
+function HeroHeader(props: {
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
-    <div style={pageHeader}>
-      <div style={{ display: "grid", gap: 6 }}>
-        <div style={pageEyebrow}>Relances</div>
-        <div style={pageTitle}>{props.title}</div>
-        {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
-      </div>
+    <section style={heroCard}>
+      <div style={heroGlow} />
 
-      {props.actions ? <div style={pageHeaderActions}>{props.actions}</div> : null}
-    </div>
+      <div style={heroGrid}>
+        <div style={heroTextBlock}>
+          <div style={pageEyebrow}>Relances · Vue d’ensemble</div>
+          <div style={pageTitle}>{props.title}</div>
+          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+          {props.actions ? <div style={{ ...heroActions, marginTop: 18 }}>{props.actions}</div> : null}
+        </div>
+
+        {props.aside ? <div style={heroAsidePanel}>{props.aside}</div> : null}
+      </div>
+    </section>
   );
 }
 
@@ -64,9 +233,9 @@ function Card(props: {
   right?: ReactNode;
 }) {
   return (
-    <div style={card}>
+    <section style={card}>
       <div style={cardHeader}>
-        <div style={{ display: "grid", gap: 4 }}>
+        <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
           <div style={cardTitle}>{props.title}</div>
           {props.subtitle ? <div style={cardSubtitle}>{props.subtitle}</div> : null}
         </div>
@@ -75,7 +244,7 @@ function Card(props: {
       </div>
 
       {props.children}
-    </div>
+    </section>
   );
 }
 
@@ -84,12 +253,25 @@ function StatCard(props: {
   value: string | number;
   sub?: string;
   isLoading?: boolean;
+  accent?: AccentKind;
 }) {
+  const tone = getTone(props.accent ?? "neutral");
+
   return (
-    <div style={statCard}>
-      <div style={statLabel}>{props.title}</div>
-      <div style={statValue}>{props.isLoading ? "…" : props.value}</div>
-      {props.sub ? <div style={statSub}>{props.sub}</div> : null}
+    <div
+      style={{
+        ...statCard,
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+      }}
+    >
+      <div style={{ ...statTitle, color: tone.text }}>{props.title}</div>
+
+      <div style={{ ...statValue, color: tone.strongText }}>
+        {props.isLoading ? "…" : props.value}
+      </div>
+
+      {props.sub ? <div style={{ ...statSub, color: tone.text }}>{props.sub}</div> : null}
     </div>
   );
 }
@@ -108,9 +290,9 @@ function SmallButton(props: {
       onClick={props.onClick}
       title={props.title}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#ffffff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        border: props.primary ? "1px solid #93c5fd" : "1px solid #cbd5e1",
+        background: props.disabled ? "#f9fafb" : props.primary ? "#dbeafe" : "#ffffff",
+        color: props.disabled ? "#9ca3af" : props.primary ? "#1e3a8a" : "#111827",
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -118,6 +300,7 @@ function SmallButton(props: {
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
         transition: "all 0.2s ease",
+        boxShadow: props.primary ? "0 10px 24px rgba(37,99,235,0.10)" : "none",
       }}
     >
       {props.children}
@@ -125,10 +308,7 @@ function SmallButton(props: {
   );
 }
 
-function Badge(props: {
-  text: string;
-  kind?: "success" | "warning" | "danger" | "info" | "neutral";
-}) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -198,35 +378,6 @@ function EmptyState(props: {
   );
 }
 
-function formatMoneyFCFA(amount?: number | null): string {
-  if (amount == null) return "—";
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "XOF",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${amount} FCFA`;
-  }
-}
-
-function formatDateShort(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("fr-FR");
-}
-
-function toNumber(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function normalizeStatut(value?: string | null): string {
-  return String(value ?? "").trim().toUpperCase();
-}
-
 function getStatutBadge(statut?: string | null, estRegularise?: boolean | null) {
   const normalized = normalizeStatut(statut);
 
@@ -246,7 +397,7 @@ function getStatutBadge(statut?: string | null, estRegularise?: boolean | null) 
     return <Badge text="Payé" kind="success" />;
   }
 
-  return <Badge text="À payer" kind="info" />;
+  return <Badge text="À traiter" kind="info" />;
 }
 
 export default function RelancesDashboard() {
@@ -254,11 +405,11 @@ export default function RelancesDashboard() {
 
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [dossiers, setDossiers] = useState<DossierItem[]>([]);
+  const [dossiers, setDossiers] = useState<DossierItem[]>(EMPTY_DOSSIERS);
   const [statsData, setStatsData] = useState<DashboardStatsResponse | null>(null);
-  const [relances, setRelances] = useState<RelanceItem[]>([]);
+  const [relances, setRelances] = useState<RelanceItem[]>(EMPTY_RELANCES);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setState("loading");
     setError(null);
 
@@ -269,36 +420,67 @@ export default function RelancesDashboard() {
         relancesAPI.getRelances(),
       ]);
 
-      setStatsData((statsResponse ?? {}) as DashboardStatsResponse);
-      setDossiers(Array.isArray(dossiersResponse) ? (dossiersResponse as DossierItem[]) : []);
-      setRelances(Array.isArray(relancesResponse) ? (relancesResponse as RelanceItem[]) : []);
+      setStatsData(isRecord(statsResponse) ? (statsResponse as DashboardStatsResponse) : {});
+      setDossiers(extractArray<DossierItem>(dossiersResponse));
+      setRelances(extractArray<RelanceItem>(relancesResponse));
       setState("success");
-    } catch (e: any) {
+    } catch (e) {
       setState("error");
-      setError(e?.response?.data?.detail || e?.message || APP_TEXT.feedback.error.load);
+      setError(getErrorMessage(e, APP_TEXT.feedback.error.load));
       setStatsData(null);
-      setDossiers([]);
-      setRelances([]);
+      setDossiers(EMPTY_DOSSIERS);
+      setRelances(EMPTY_RELANCES);
     }
-  }
+  }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadData]);
+
+  const goToDossiers = useCallback(() => {
+    navigate("/relances/dossiers");
+  }, [navigate]);
+
+  const goToHistorique = useCallback(() => {
+    navigate("/relances/historique");
+  }, [navigate]);
+
+  const goToAvis = useCallback(() => {
+    navigate("/relances/avis");
+  }, [navigate]);
+
+  const openDossier = useCallback(
+    (id: number) => {
+      navigate(`/relances/dossiers/${id}`);
+    },
+    [navigate],
+  );
+
+  const handleRefresh = useCallback(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   const stats = useMemo<Stats>(() => {
     const dossiersImpayes = dossiers.filter((d) => toNumber(d.reste_a_payer) > 0).length;
 
     const dossiersRegularisesFromList = dossiers.filter((d) => {
       const statut = normalizeStatut(d.statut);
+
       return Boolean(d.est_regularise) || statut === "REGULARISE" || toNumber(d.reste_a_payer) <= 0;
     }).length;
 
     const dossiersRegularises =
-      toNumber(statsData?.regularises) > 0 ? toNumber(statsData?.regularises) : dossiersRegularisesFromList;
+      toNumber(statsData?.regularises) > 0
+        ? toNumber(statsData?.regularises)
+        : dossiersRegularisesFromList;
 
     const relancesEnvoyees = relances.filter((r) => normalizeStatut(r.statut) === "ENVOYE").length;
-
     const relancesNiveauEleve = relances.filter((r) => toNumber(r.niveau) >= 2).length;
 
     return {
@@ -315,7 +497,9 @@ export default function RelancesDashboard() {
       .filter((d) => toNumber(d.reste_a_payer) > 0)
       .sort((a, b) => {
         const levelDiff = toNumber(b.niveau_relance) - toNumber(a.niveau_relance);
+
         if (levelDiff !== 0) return levelDiff;
+
         return toNumber(b.reste_a_payer) - toNumber(a.reste_a_payer);
       })
       .slice(0, 5);
@@ -325,30 +509,42 @@ export default function RelancesDashboard() {
 
   return (
     <PageShell>
-      <PageHeader
+      <HeroHeader
         title="Vue d’ensemble des relances"
         subtitle="Suivez les dossiers impayés, les relances réellement envoyées, les montants restant à recouvrer et les régularisations depuis une vue de pilotage unifiée."
         actions={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/relances/dossiers")} primary title="Voir les dossiers">
+            <SmallButton onClick={goToDossiers} primary title="Voir les dossiers">
               Voir les dossiers
             </SmallButton>
 
-            <SmallButton onClick={() => navigate("/relances/historique")} title="Voir l’historique">
+            <SmallButton onClick={goToHistorique} title="Voir l’historique">
               Voir l’historique
             </SmallButton>
 
-            <SmallButton onClick={() => navigate("/relances/avis")} title="Voir les avis">
+            <SmallButton onClick={goToAvis} title="Voir les avis">
               Voir les avis
             </SmallButton>
 
-            <SmallButton
-              onClick={() => void loadData()}
-              disabled={isLoading}
-              title={APP_TEXT.actions.refresh}
-            >
+            <SmallButton onClick={handleRefresh} disabled={isLoading} title={APP_TEXT.actions.refresh}>
               {isLoading ? APP_TEXT.feedback.loading.default : APP_TEXT.actions.refresh}
             </SmallButton>
+          </div>
+        }
+        aside={
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={heroAsideTitle}>Cockpit recouvrement</div>
+
+            <div style={heroAsideText}>
+              Cette vue permet d’identifier rapidement les dossiers sensibles, le volume réel des
+              impayés, les relances déjà envoyées et les régularisations enregistrées.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Badge text={`${stats.dossiersImpayes} impayé(s)`} kind="danger" />
+              <Badge text={`${stats.relancesEnvoyees} relance(s) envoyée(s)`} kind="info" />
+              <Badge text={`${stats.dossiersRegularises} régularisé(s)`} kind="success" />
+            </div>
           </div>
         }
       />
@@ -366,24 +562,31 @@ export default function RelancesDashboard() {
           value={stats.dossiersImpayes}
           sub="Nombre de dossiers présentant encore un reste à payer."
           isLoading={isLoading}
+          accent="danger"
         />
+
         <StatCard
           title="Relances envoyées"
           value={stats.relancesEnvoyees}
           sub="Relances dont le statut officiel est envoyé."
           isLoading={isLoading}
+          accent="info"
         />
+
         <StatCard
           title="Montant impayé"
           value={formatMoneyFCFA(stats.montantTotalImpayes)}
-          sub="Montant cumulé restant à recouvrer sur les dossiers impayés."
+          sub="Montant cumulé restant à recouvrer."
           isLoading={isLoading}
+          accent="warning"
         />
+
         <StatCard
           title="Dossiers régularisés"
           value={stats.dossiersRegularises}
           sub="Dossiers soldés ou marqués comme régularisés."
           isLoading={isLoading}
+          accent="success"
         />
       </div>
 
@@ -391,7 +594,7 @@ export default function RelancesDashboard() {
         title="Dossiers prioritaires"
         subtitle="Les dossiers les plus sensibles sont classés selon le niveau de relance puis le montant restant à payer."
         right={
-          <SmallButton onClick={() => navigate("/relances/dossiers")} title="Voir les dossiers">
+          <SmallButton onClick={goToDossiers} title="Voir les dossiers">
             Voir les dossiers
           </SmallButton>
         }
@@ -401,24 +604,24 @@ export default function RelancesDashboard() {
         ) : priorityDossiers.length === 0 ? (
           <EmptyState
             title="Aucun dossier impayé disponible pour le moment."
-            description="Cette vue d’ensemble renforce la lisibilité du module Relances, avec une lecture rapide des impayés, des relances envoyées, des régularisations et des dossiers à traiter."
+            description="Cette vue d’ensemble permet une lecture rapide des impayés, des relances envoyées, des régularisations et des dossiers à traiter."
             action={
-              <SmallButton onClick={() => navigate("/relances/dossiers")} primary>
+              <SmallButton onClick={goToDossiers} primary>
                 Voir les dossiers
               </SmallButton>
             }
           />
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
             {priorityDossiers.map((d) => (
-              <div key={d.id} style={rowCard}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 900, color: "#111827" }}>
+              <div key={d.id} className="relances-row-card" style={rowCard}>
+                <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                  <div style={rowTitle}>
                     {d.lot_numero || d.lot || "Lot non renseigné"} —{" "}
                     {d.coproprietaire_nom || "Copropriétaire non renseigné"}
                   </div>
 
-                  <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.45 }}>
+                  <div style={rowMeta}>
                     Appel : {d.appel_reference || d.reference_appel || "—"} • Échéance :{" "}
                     {formatDateShort(d.date_echeance)}
                   </div>
@@ -435,7 +638,7 @@ export default function RelancesDashboard() {
 
                 <div>
                   <SmallButton
-                    onClick={() => navigate(`/relances/dossiers/${d.id}`)}
+                    onClick={() => openDossier(d.id)}
                     primary
                     title="Ouvrir le dossier"
                   >
@@ -467,6 +670,16 @@ export default function RelancesDashboard() {
           .relances-dashboard-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
+
+          .relances-dashboard-hero {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 920px) {
+          .relances-row-card {
+            grid-template-columns: 1fr !important;
+          }
         }
 
         @media (max-width: 700px) {
@@ -482,14 +695,79 @@ export default function RelancesDashboard() {
 const pageShell: CSSProperties = {
   display: "grid",
   gap: 18,
+  width: "100%",
+  minWidth: 0,
 };
 
-const pageHeader: CSSProperties = {
+const heroCard: CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.88) 100%)",
+  borderRadius: 28,
+  padding: "28px 30px",
+  color: "#ffffff",
+  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
+  position: "relative",
+  overflow: "hidden",
+  minWidth: 0,
+};
+
+const heroGlow: CSSProperties = {
+  position: "absolute",
+  inset: "auto -120px -140px auto",
+  width: 280,
+  height: 280,
+  borderRadius: "50%",
+  background:
+    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)",
+  gap: 18,
+  alignItems: "stretch",
+  minWidth: 0,
+};
+
+const heroTextBlock: CSSProperties = {
+  minWidth: 0,
+  position: "relative",
+  zIndex: 1,
+};
+
+const heroActions: CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
+  gap: 8,
   flexWrap: "wrap",
-  alignItems: "flex-end",
+  alignItems: "center",
+};
+
+const heroAsidePanel: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  alignContent: "start",
+  minWidth: 0,
+};
+
+const heroAsideTitle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideText: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.84)",
 };
 
 const pageEyebrow: CSSProperties = {
@@ -497,30 +775,24 @@ const pageEyebrow: CSSProperties = {
   fontWeight: 900,
   letterSpacing: 0.9,
   textTransform: "uppercase",
-  color: "#6b7280",
+  color: "rgba(255,255,255,0.72)",
+  marginBottom: 6,
 };
 
 const pageTitle: CSSProperties = {
   fontSize: 30,
   fontWeight: 900,
-  color: "#111827",
-  lineHeight: 1.1,
+  color: "#ffffff",
+  lineHeight: 1.08,
   letterSpacing: -0.5,
 };
 
 const pageSubtitle: CSSProperties = {
   marginTop: 6,
-  color: "#6b7280",
-  fontSize: 14,
-  lineHeight: 1.55,
-  maxWidth: 920,
-};
-
-const pageHeaderActions: CSSProperties = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  alignItems: "center",
+  color: "rgba(255,255,255,0.84)",
+  fontSize: 13.5,
+  lineHeight: 1.6,
+  maxWidth: 860,
 };
 
 const card: CSSProperties = {
@@ -529,6 +801,7 @@ const card: CSSProperties = {
   padding: 18,
   background: "#ffffff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
 };
 
 const cardHeader: CSSProperties = {
@@ -538,6 +811,7 @@ const cardHeader: CSSProperties = {
   flexWrap: "wrap",
   marginBottom: 14,
   alignItems: "center",
+  minWidth: 0,
 };
 
 const cardTitle: CSSProperties = {
@@ -553,31 +827,30 @@ const cardSubtitle: CSSProperties = {
 };
 
 const statCard: CSSProperties = {
-  border: "1px solid #e5e7eb",
   borderRadius: 20,
   padding: 16,
-  background: "#ffffff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
 };
 
-const statLabel: CSSProperties = {
-  fontSize: 13,
-  color: "#6b7280",
-  fontWeight: 700,
-  marginBottom: 10,
+const statTitle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.3,
 };
 
 const statValue: CSSProperties = {
   fontSize: 28,
   fontWeight: 900,
-  color: "#111827",
-  lineHeight: 1.1,
+  lineHeight: 1.08,
+  overflowWrap: "anywhere",
 };
 
 const statSub: CSSProperties = {
   marginTop: 8,
   fontSize: 12,
-  color: "#6b7280",
   lineHeight: 1.45,
 };
 
@@ -585,6 +858,7 @@ const statsGrid: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
+  minWidth: 0,
 };
 
 const rowCard: CSSProperties = {
@@ -592,11 +866,26 @@ const rowCard: CSSProperties = {
   borderRadius: 14,
   padding: 14,
   background: "#ffffff",
-  display: "flex",
-  justifyContent: "space-between",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: 12,
   alignItems: "center",
-  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const rowTitle: CSSProperties = {
+  fontWeight: 900,
+  color: "#111827",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const rowMeta: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.45,
 };
 
 const emptyState: CSSProperties = {

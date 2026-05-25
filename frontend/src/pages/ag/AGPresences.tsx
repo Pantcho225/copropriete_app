@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
 
 type PresenceItem = {
   id: number;
@@ -53,6 +61,7 @@ function isPaginatedResponse<T = unknown>(value: unknown): value is DRFPage<T> {
 
 function toNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
+
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -60,10 +69,12 @@ function toNumberOrNull(value: unknown): number | null {
 function toBoolean(value: unknown): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
+
   if (typeof value === "string") {
     const s = value.trim().toLowerCase();
     return ["true", "1", "oui", "yes", "ok"].includes(s);
   }
+
   return false;
 }
 
@@ -71,19 +82,28 @@ function pickString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
+
   return "";
 }
 
 function formatNumber(value?: number | null): string {
   if (value === null || value === undefined) return "0";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
+
+  return new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function extractBlockingReasons(data: unknown): string[] {
   if (!isRecord(data)) return [];
+
   const value = data.blocking_reasons;
+
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+
+  return value.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -112,7 +132,10 @@ function getErrorMessage(error: unknown, fallback: string) {
 
   if (data?.errors && typeof data.errors === "object") {
     const firstEntry = Object.values(data.errors)[0];
-    if (Array.isArray(firstEntry) && typeof firstEntry[0] === "string") return firstEntry[0];
+
+    if (Array.isArray(firstEntry) && typeof firstEntry[0] === "string") {
+      return firstEntry[0];
+    }
   }
 
   if (isRecord(data)) {
@@ -127,7 +150,6 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function normalizePresenceItem(raw: unknown): PresenceItem {
   const row = isRecord(raw) ? raw : {};
-
   const tantiemes = toNumberOrNull(row.tantiemes) ?? 0;
 
   return {
@@ -187,45 +209,37 @@ function buildPresenceDetailUrl(presenceId: string | number): string {
 }
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 20,
+        width: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function PageHeader(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "space-between",
-        gap: 12,
+        gap: 16,
         flexWrap: "wrap",
+        minWidth: 0,
       }}
     >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.6,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
-        </div>
-        {props.subtitle ? (
-          <div
-            style={{
-              fontSize: 14,
-              color: "#6b7280",
-              marginTop: 6,
-              lineHeight: 1.5,
-              maxWidth: 920,
-            }}
-          >
-            {props.subtitle}
-          </div>
-        ) : null}
+      <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+        <span style={pageEyebrowStyle}>Pilotage du module AG</span>
+        <h1 style={pageTitleStyle}>{props.title}</h1>
+        {props.subtitle ? <p style={pageSubtitleStyle}>{props.subtitle}</p> : null}
       </div>
 
       {props.right ? <div>{props.right}</div> : null}
@@ -233,62 +247,134 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
+function HeroSection(props: {
+  title: string;
+  text: string;
+  primaryLabel: string;
+  primaryAction: () => void;
+  secondaryLabel: string;
+  secondaryAction: () => void;
+  rightPanel?: ReactNode;
+}) {
   return (
-    <div
+    <section style={heroSectionStyle}>
+      <div style={heroMainStyle}>
+        <div style={heroPillStyle}>ASSEMBLÉES GÉNÉRALES · PRÉSENCES</div>
+        <div style={heroTitleStyle}>{props.title}</div>
+        <div style={heroTextStyle}>{props.text}</div>
+
+        <div style={heroActionsStyle}>
+          <button type="button" onClick={props.primaryAction} style={heroPrimaryButtonStyle}>
+            {props.primaryLabel}
+          </button>
+          <button type="button" onClick={props.secondaryAction} style={heroSecondaryButtonStyle}>
+            {props.secondaryLabel}
+          </button>
+        </div>
+      </div>
+
+      {props.rightPanel ? <div style={heroAsideStyle}>{props.rightPanel}</div> : null}
+    </section>
+  );
+}
+
+function SectionCard(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  children: ReactNode;
+  minHeight?: number;
+}) {
+  return (
+    <section
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 18,
+        border: "1px solid #e2e8f0",
+        borderRadius: 24,
+        padding: 20,
         background: "#ffffff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+        boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+        minHeight: props.minHeight,
+        minWidth: 0,
       }}
     >
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          gap: 10,
+          gap: 12,
           flexWrap: "wrap",
-          alignItems: "center",
-          marginBottom: 14,
+          alignItems: "flex-start",
+          marginBottom: 16,
+          minWidth: 0,
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>{props.title}</div>
-        {props.right ? props.right : null}
+        <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 900, color: "#111827" }}>
+            {props.title}
+          </div>
+          {props.subtitle ? <div style={cardSubtitleStyle}>{props.subtitle}</div> : null}
+        </div>
+
+        {props.right ? <div>{props.right}</div> : null}
       </div>
+
       {props.children}
-    </div>
+    </section>
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string; isLoading?: boolean }) {
+function SummaryCard(props: {
+  label: string;
+  value: string | number;
+  helper: string;
+  isLoading?: boolean;
+  tone?: "neutral" | "success" | "warning" | "info";
+}) {
+  const tone =
+    props.tone === "success"
+      ? { bg: "#ecfdf5", border: "#bbf7d0", label: "#166534", value: "#065f46" }
+      : props.tone === "warning"
+        ? { bg: "#fffbeb", border: "#fde68a", label: "#b45309", value: "#92400e" }
+        : props.tone === "info"
+          ? { bg: "#eff6ff", border: "#bfdbfe", label: "#2563eb", value: "#1d4ed8" }
+          : { bg: "#f8fafc", border: "#e2e8f0", label: "#475569", value: "#0f172a" };
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 18,
-        background: "#ffffff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-        minHeight: 112,
+        border: `1px solid ${tone.border}`,
+        borderRadius: 18,
+        padding: 16,
+        background: tone.bg,
+        display: "grid",
+        gap: 10,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>{props.title}</div>
+      <div
+        style={{
+          fontSize: 12,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          fontWeight: 800,
+          color: tone.label,
+        }}
+      >
+        {props.label}
+      </div>
+
       <div
         style={{
           fontSize: 28,
           fontWeight: 900,
-          letterSpacing: -0.5,
-          color: "#111827",
-          lineHeight: 1.1,
+          lineHeight: 1,
+          color: tone.value,
         }}
       >
         {props.isLoading ? "…" : props.value}
       </div>
-      {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
-      ) : null}
+
+      <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55 }}>{props.helper}</div>
     </div>
   );
 }
@@ -338,7 +424,7 @@ function SmallButton(props: {
   );
 }
 
-function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -354,15 +440,21 @@ function AlertBox(props: { kind: FlashKind; children: ReactNode }) {
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
-        lineHeight: 1.5,
+        lineHeight: 1.55,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 6 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <div
       style={{
@@ -372,8 +464,11 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
+        {props.title}
+      </div>
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.55 }}>{props.text}</div>
+
       {props.actionLabel && props.onAction ? (
         <div style={{ marginTop: 12 }}>
           <SmallButton onClick={props.onAction} primary>
@@ -385,7 +480,7 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
   );
 }
 
-function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" | "danger" | "info" }) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -433,7 +528,7 @@ export default function AGPresences() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  async function fetchPresences() {
+  const fetchPresences = useCallback(async () => {
     if (!agId) {
       setState("error");
       setError("Identifiant d’assemblée introuvable.");
@@ -446,7 +541,9 @@ export default function AGPresences() {
     try {
       const res = await api.get<unknown>(buildAgPresencesListUrl(agId));
 
-      const normalized = extractPresenceRows(res.data).sort((a, b) => a.lot_reference.localeCompare(b.lot_reference, "fr"));
+      const normalized = extractPresenceRows(res.data).sort((a, b) =>
+        a.lot_reference.localeCompare(b.lot_reference, "fr"),
+      );
 
       setRows(normalized);
       setState("success");
@@ -455,14 +552,21 @@ export default function AGPresences() {
       setState("error");
       setError(getErrorMessage(e, "Impossible de charger les présences."));
     }
-  }
+  }, [agId]);
 
   useEffect(() => {
-    void fetchPresences();
-  }, [agId]);
+    const timer = window.setTimeout(() => {
+      void fetchPresences();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchPresences]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+
     if (!q) return rows;
 
     return rows.filter((item) => {
@@ -512,9 +616,11 @@ export default function AGPresences() {
   function validateForm() {
     if (!agId) return "Identifiant d’assemblée introuvable.";
     if (!form.lot) return "Le lot est obligatoire.";
+
     if (form.present_ou_represente && !form.representant_nom.trim()) {
       return "Le nom du représentant ou du présent est obligatoire.";
     }
+
     return null;
   }
 
@@ -544,6 +650,7 @@ export default function AGPresences() {
 
   async function handleSubmit() {
     const validationError = validateForm();
+
     if (validationError) {
       setMessage({ kind: "error", text: validationError });
       return;
@@ -617,35 +724,53 @@ export default function AGPresences() {
 
   return (
     <PageShell>
-      <SectionTitle
-        title="Présences AG"
-        subtitle="Gérez les présences et représentations des lots pour cette assemblée générale, avec suivi des tantièmes effectivement retenus pour l’AG."
+      <PageHeader
+        title="Présences de l’assemblée"
+        subtitle="Gérez les présences et représentations des copropriétaires avec suivi du poids réel de vote retenu pour le quorum et les décisions."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>Retour au détail AG</SmallButton>
-            <SmallButton onClick={() => void handleInitPresences()} primary disabled={busyAction !== null || !agId}>
-              {busyAction === "init" ? "Initialisation..." : "Initialiser les présences"}
+            <SmallButton onClick={() => navigate(`/ag/assemblees/${agId}`)}>
+              Retour au détail AG
             </SmallButton>
           </div>
         }
       />
 
+      <HeroSection
+        title="Pilotage des présences AG"
+        text="Cette vue permet de préparer la base réelle de participation de l’assemblée, indispensable au calcul du quorum, à la pondération des votes et à la cohérence finale du procès-verbal."
+        primaryLabel={busyAction === "init" ? "Initialisation..." : "Initialiser les présences"}
+        primaryAction={() => void handleInitPresences()}
+        secondaryLabel="Voir les votes"
+        secondaryAction={() => navigate(`/ag/assemblees/${agId}/votes`)}
+        rightPanel={
+          <div style={heroAsidePanelStyle}>
+            <div style={heroAsideTitleStyle}>Lecture métier</div>
+            <div style={heroAsideTextStyle}>
+              Les tantièmes sont calculés automatiquement par le backend. Les lots à 0 tantième
+              restent visibles dans l’assemblée mais n’impactent pas le calcul pondéré des
+              décisions.
+            </div>
+
+            <div style={heroBadgeStackStyle}>
+              <Badge text={`${stats.totalLots} lots`} kind="neutral" />
+              <Badge text={`${stats.presents} présents`} kind="success" />
+              <Badge text={`${stats.zeroTantieme} à 0 tantième`} kind="warning" />
+            </div>
+          </div>
+        }
+      />
+
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement impossible</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Chargement impossible">
+          {error}
         </AlertBox>
       ) : null}
 
-      {message ? (
-        <AlertBox kind={message.kind}>
-          <div style={{ fontSize: 13 }}>{message.text}</div>
-        </AlertBox>
-      ) : null}
+      {message ? <AlertBox kind={message.kind}>{message.text}</AlertBox> : null}
 
       {blockingReasons.length > 0 ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 8 }}>Blocages métier détectés</div>
+        <AlertBox kind="error" title="Blocages métier détectés">
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
             {blockingReasons.map((reason, index) => (
               <li key={`${reason}-${index}`}>{reason}</li>
@@ -654,52 +779,58 @@ export default function AGPresences() {
         </AlertBox>
       ) : null}
 
-      <div className="ag-presences-stat-grid">
-        <StatCard
-          title="Lots suivis"
+      <div className="ag-presences-kpi-grid">
+        <SummaryCard
+          label="Lots concernés"
           value={stats.totalLots}
-          sub="Nombre total de lots présents dans la liste."
+          helper="Lots actuellement intégrés dans cette assemblée générale."
           isLoading={state === "loading"}
+          tone="neutral"
         />
-        <StatCard
-          title="Présents / représentés"
+        <SummaryCard
+          label="Présence effective"
           value={stats.presents}
-          sub="Lots marqués comme présents ou représentés."
+          helper="Lots marqués comme présents ou représentés."
           isLoading={state === "loading"}
+          tone="success"
         />
-        <StatCard
-          title="Absents"
+        <SummaryCard
+          label="Lots absents"
           value={stats.absents}
-          sub="Lots non présents dans l’assemblée."
+          helper="Lots encore non présents dans l’assemblée."
           isLoading={state === "loading"}
+          tone="warning"
         />
-        <StatCard
-          title="Tantièmes présents"
+        <SummaryCard
+          label="Poids de vote présent"
           value={formatNumber(stats.tantiemesPresents)}
-          sub="Somme des tantièmes AG présents ou représentés."
+          helper="Base réelle de vote actuellement retenue."
           isLoading={state === "loading"}
+          tone="info"
         />
       </div>
 
-      <div className="ag-presences-stat-grid ag-presences-stat-grid-secondary">
-        <StatCard
-          title="Lots à 0 tantième"
+      <div className="ag-presences-kpi-grid ag-presences-kpi-grid-secondary">
+        <SummaryCard
+          label="Lots à 0 tantième"
           value={stats.zeroTantieme}
-          sub="Ils restent visibles mais ne pèsent pas dans le calcul pondéré."
+          helper="Ils restent visibles mais ne pèsent pas dans le calcul pondéré."
           isLoading={state === "loading"}
+          tone="warning"
         />
       </div>
 
       <div className="ag-presences-main-grid">
-        <Card
-          title={editingId ? "Modifier une présence" : "Nouvelle présence"}
-          right={editingId ? <Badge text="Mode édition" kind="info" /> : <Badge text="Saisie" kind="neutral" />}
+        <SectionCard
+          title={editingId ? "Modifier une présence" : "Enregistrer une présence"}
+          subtitle="Renseignez le lot, le statut de présence et les informations utiles de représentation."
+          right={editingId ? <Badge text="Mode édition" kind="info" /> : <Badge text="Saisie AG" kind="info" />}
+          minHeight={560}
         >
           <div style={{ display: "grid", gap: 14 }}>
-            <div style={field}>
-              <label style={label}>Lot</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Lot</label>
               <input
-                type="number"
                 value={form.lot ?? ""}
                 onChange={(e) =>
                   setForm((prev) => ({
@@ -707,14 +838,15 @@ export default function AGPresences() {
                     lot: toNumberOrNull(e.target.value),
                   }))
                 }
-                placeholder="Identifiant du lot"
-                style={input}
+                placeholder="Ex : 3 (ID du lot)"
+                style={inputStyle}
               />
+              <div style={helperTextStyle}>Saisissez l’identifiant du lot (et non son libellé).</div>
             </div>
 
-            <div style={field}>
-              <label style={label}>Statut de présence</label>
-              <label style={checkboxRow}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Statut de présence</label>
+              <label style={checkboxRowStyle}>
                 <input
                   type="checkbox"
                   checked={form.present_ou_represente}
@@ -729,8 +861,8 @@ export default function AGPresences() {
               </label>
             </div>
 
-            <div style={field}>
-              <label style={label}>Nom du représentant / présent</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Nom du représentant / présent</label>
               <input
                 value={form.representant_nom}
                 onChange={(e) =>
@@ -740,12 +872,12 @@ export default function AGPresences() {
                   }))
                 }
                 placeholder="Nom de la personne présente ou représentante"
-                style={input}
+                style={inputStyle}
               />
             </div>
 
-            <div style={field}>
-              <label style={label}>Commentaire</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Commentaire</label>
               <textarea
                 value={form.commentaire}
                 onChange={(e) =>
@@ -755,12 +887,13 @@ export default function AGPresences() {
                   }))
                 }
                 placeholder="Commentaire libre"
-                style={textarea}
+                style={textareaStyle}
               />
             </div>
 
-            <div style={infoBox}>
-              Le poids de présence en tantièmes est calculé par le backend. Il n’est pas saisi manuellement dans ce formulaire.
+            <div style={infoBoxStyle}>
+              Le poids de présence en tantièmes est calculé par le backend. Il n’est pas saisi
+              manuellement dans ce formulaire.
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -783,15 +916,20 @@ export default function AGPresences() {
               </SmallButton>
             </div>
           </div>
-        </Card>
+        </SectionCard>
 
-        <Card title="Liste des présences" right={<Badge text={`${filtered.length} ligne(s)`} kind="info" />}>
+        <SectionCard
+          title="Présences des copropriétaires"
+          subtitle="Lecture opérationnelle des présences, absences, représentants et tantièmes retenus."
+          right={<Badge text={`${filtered.length} ligne(s)`} kind="info" />}
+          minHeight={560}
+        >
           <div style={{ display: "grid", gap: 12 }}>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Rechercher : lot, représentant, commentaire..."
-              style={input}
+              style={inputStyle}
             />
 
             {state === "loading" ? (
@@ -810,22 +948,12 @@ export default function AGPresences() {
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {filtered.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto",
-                      gap: 12,
-                      alignItems: "start",
-                      padding: 14,
-                      border: "1px solid #eef2f7",
-                      borderRadius: 14,
-                      background: "#fff",
-                    }}
-                  >
+                  <div key={item.id} style={presenceCardStyle}>
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{item.lot_reference}</div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+                          Lot {item.lot_reference}
+                        </div>
 
                         {item.lot_type_lot ? <Badge text={item.lot_type_lot} kind="neutral" /> : null}
 
@@ -853,13 +981,14 @@ export default function AGPresences() {
                         ) : null}
                       </div>
 
-                      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.55 }}>
                         <strong>Commentaire :</strong> {item.commentaire || "—"}
                       </div>
 
                       {item.is_zero_tantieme ? (
-                        <div style={warningBox}>
-                          Ce lot a 0 tantième. Il reste visible dans l’AG mais ne sera pas pris en compte dans le calcul pondéré.
+                        <div style={warningBoxStyle}>
+                          Ce lot a 0 tantième. Il reste visible dans l’AG mais ne sera pas pris en
+                          compte dans le calcul pondéré.
                         </div>
                       ) : null}
                     </div>
@@ -877,33 +1006,34 @@ export default function AGPresences() {
               </div>
             )}
           </div>
-        </Card>
+        </SectionCard>
       </div>
 
+      <AlertBox kind="info" title="Lecture produit">
+        Cette page constitue la base du quorum et du vote. Toute incohérence ici impacte
+        directement les décisions en assemblée.
+      </AlertBox>
+
       <style>{`
-        .ag-presences-stat-grid {
+        .ag-presences-kpi-grid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 14px;
         }
 
-        .ag-presences-stat-grid-secondary {
+        .ag-presences-kpi-grid-secondary {
           grid-template-columns: repeat(1, minmax(0, 1fr));
         }
 
         .ag-presences-main-grid {
           display: grid;
           grid-template-columns: 0.95fr 1.05fr;
-          gap: 14px;
+          gap: 16px;
         }
 
-        @media (max-width: 1200px) {
-          .ag-presences-stat-grid {
+        @media (max-width: 1280px) {
+          .ag-presences-kpi-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .ag-presences-stat-grid-secondary {
-            grid-template-columns: 1fr;
           }
 
           .ag-presences-main-grid {
@@ -912,8 +1042,9 @@ export default function AGPresences() {
         }
 
         @media (max-width: 760px) {
-          .ag-presences-stat-grid {
-            grid-template-columns: 1fr;
+          .ag-presences-kpi-grid,
+          .ag-presences-kpi-grid-secondary {
+            grid-template-columns: 1fr !important;
           }
         }
       `}</style>
@@ -921,18 +1052,173 @@ export default function AGPresences() {
   );
 }
 
-const field: CSSProperties = {
+const pageEyebrowStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: 0.8,
+  textTransform: "uppercase",
+  color: "#2563eb",
+};
+
+const pageTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 32,
+  fontWeight: 900,
+  letterSpacing: -0.9,
+  color: "#0f172a",
+  lineHeight: 1.05,
+};
+
+const pageSubtitleStyle: CSSProperties = {
+  margin: 0,
+  maxWidth: 980,
+  fontSize: 14,
+  color: "#64748b",
+  lineHeight: 1.7,
+};
+
+const cardSubtitleStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#64748b",
+  lineHeight: 1.55,
+};
+
+const heroSectionStyle: CSSProperties = {
+  borderRadius: 24,
+  padding: 22,
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.12fr) minmax(320px, 0.88fr)",
+  gap: 18,
+  alignItems: "stretch",
+  background: "linear-gradient(135deg, #0f172a 0%, #1e293b 48%, #2563eb 100%)",
+  boxShadow: "0 18px 38px rgba(37, 99, 235, 0.16)",
+  color: "#ffffff",
+  minWidth: 0,
+};
+
+const heroMainStyle: CSSProperties = {
+  display: "grid",
+  gap: 16,
+  alignContent: "start",
+  minWidth: 0,
+};
+
+const heroPillStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  width: "fit-content",
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: 0.8,
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.84)",
+};
+
+const heroTitleStyle: CSSProperties = {
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 1.12,
+  letterSpacing: -0.6,
+  color: "#ffffff",
+};
+
+const heroTextStyle: CSSProperties = {
+  fontSize: 13,
+  lineHeight: 1.7,
+  color: "rgba(255,255,255,0.88)",
+  maxWidth: 760,
+};
+
+const heroActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "flex-start",
+};
+
+const heroAsideStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "stretch",
+  minWidth: 0,
+};
+
+const heroAsidePanelStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 18,
+  padding: 16,
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  display: "grid",
+  gap: 12,
+  alignContent: "start",
+};
+
+const heroAsideTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideTextStyle: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.82)",
+};
+
+const heroBadgeStackStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const heroPrimaryButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "#ffffff",
+  color: "#0f172a",
+  borderRadius: 12,
+  padding: "10px 14px",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const heroSecondaryButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  borderRadius: 12,
+  padding: "10px 14px",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const fieldStyle: CSSProperties = {
   display: "grid",
   gap: 8,
 };
 
-const label: CSSProperties = {
+const labelStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   color: "#374151",
 };
 
-const input: CSSProperties = {
+const helperTextStyle: CSSProperties = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.5,
+};
+
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "12px 12px",
   borderRadius: 12,
@@ -943,13 +1229,13 @@ const input: CSSProperties = {
   boxSizing: "border-box",
 };
 
-const textarea: CSSProperties = {
-  ...input,
+const textareaStyle: CSSProperties = {
+  ...inputStyle,
   minHeight: 110,
   resize: "vertical",
 };
 
-const checkboxRow: CSSProperties = {
+const checkboxRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
@@ -957,7 +1243,7 @@ const checkboxRow: CSSProperties = {
   color: "#111827",
 };
 
-const infoBox: CSSProperties = {
+const infoBoxStyle: CSSProperties = {
   padding: 14,
   borderRadius: 14,
   background: "#f8fafc",
@@ -967,7 +1253,7 @@ const infoBox: CSSProperties = {
   lineHeight: 1.6,
 };
 
-const warningBox: CSSProperties = {
+const warningBoxStyle: CSSProperties = {
   padding: 12,
   borderRadius: 12,
   background: "#fffbeb",
@@ -975,4 +1261,16 @@ const warningBox: CSSProperties = {
   color: "#92400e",
   fontSize: 12,
   lineHeight: 1.55,
+};
+
+const presenceCardStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 12,
+  alignItems: "start",
+  padding: 14,
+  border: "1px solid #eef2f7",
+  borderRadius: 14,
+  background: "#fff",
+  minWidth: 0,
 };

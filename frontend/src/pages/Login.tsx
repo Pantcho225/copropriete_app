@@ -10,19 +10,39 @@ type LoginResponse = {
   refresh: string;
 };
 
-function errorMessage(err: any): string {
-  const status = err?.response?.status;
-  const detail = err?.response?.data?.detail || err?.response?.data?.message;
+type ApiError = {
+  response?: {
+    status?: number;
+    data?: {
+      detail?: string;
+      message?: string;
+    };
+  };
+  message?: string;
+};
+
+function errorMessage(err: unknown): string {
+  const error = err as ApiError;
+
+  const status = error?.response?.status;
+  const detail = error?.response?.data?.detail || error?.response?.data?.message;
 
   if (status === 401) return detail || "Identifiants invalides.";
+
   if (status === 400) {
     return detail || "Requête invalide. Vérifiez les informations saisies.";
   }
+
   if (status === 404) {
     return "Le service de connexion est introuvable. Vérifiez la configuration de l’API.";
   }
+
   if (status) return detail || `Une erreur serveur est survenue (${status}).`;
-  return "Impossible de joindre le backend. Vérifiez le serveur, le réseau ou la configuration CORS.";
+
+  return (
+    error?.message ||
+    "Impossible de joindre le backend. Vérifiez le serveur, le réseau ou la configuration CORS."
+  );
 }
 
 export default function Login() {
@@ -37,7 +57,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState(
-    "Ce backend exige l’en-tête X-Copropriete-Id dès l’authentification."
+    "Ce backend exige l’en-tête X-Copropriete-Id dès l’authentification.",
   );
 
   const isFormValid = useMemo(() => {
@@ -50,6 +70,7 @@ export default function Login() {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     if (loading) return;
 
     const cid = coproId.trim();
@@ -83,7 +104,7 @@ export default function Login() {
           headers: {
             "X-Copropriete-Id": cid,
           },
-        }
+        },
       );
 
       setAuth({
@@ -93,7 +114,7 @@ export default function Login() {
 
       setInfo("Connexion réussie. Redirection en cours...");
       navigate("/", { replace: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setInfo("");
       setError(errorMessage(err));
     } finally {
@@ -116,8 +137,9 @@ export default function Login() {
             </h1>
 
             <p style={heroText}>
-              Centralisez la comptabilité, les relances, les travaux, les assemblées générales et
-              les opérations de gestion dans une interface claire, structurée et sécurisée.
+              Centralisez la comptabilité, les relances, les travaux, les assemblées
+              générales et les opérations de gestion dans une interface claire,
+              structurée et sécurisée.
             </p>
           </div>
 
@@ -125,7 +147,7 @@ export default function Login() {
             <div style={heroFeatureList}>
               <div style={heroFeatureItem}>Comptabilité et rapprochement bancaire</div>
               <div style={heroFeatureItem}>Relances et avis de régularisation</div>
-              <div style={heroFeatureItem}>Travaux, fournisseurs et suivi budgétaire</div>
+              <div style={heroFeatureItem}>Travaux, prestataires et suivi budgétaire</div>
               <div style={heroFeatureItem}>Assemblées générales et procès-verbaux</div>
             </div>
           </div>
@@ -136,10 +158,12 @@ export default function Login() {
                 <div style={heroStatLabel}>Modules</div>
                 <div style={heroStatValue}>8+</div>
               </div>
+
               <div style={heroStatCard}>
                 <div style={heroStatLabel}>Pilotage</div>
                 <div style={heroStatValue}>Centralisé</div>
               </div>
+
               <div style={heroStatCard}>
                 <div style={heroStatLabel}>Accès</div>
                 <div style={heroStatValue}>Sécurisé</div>
@@ -152,12 +176,14 @@ export default function Login() {
           <div style={card} className="login-card-responsive">
             <div style={{ display: "grid", gap: 10 }}>
               <div style={eyebrow}>Authentification</div>
+
               <h2 style={title} className="login-title-responsive">
                 Connexion
               </h2>
+
               <p style={subtitle}>
-                Connectez-vous à votre espace de gestion en renseignant vos identifiants et
-                l’identifiant de la copropriété active.
+                Connectez-vous à votre espace de gestion en renseignant vos
+                identifiants et l’identifiant de la copropriété active.
               </p>
             </div>
 
@@ -169,6 +195,7 @@ export default function Login() {
                 <label htmlFor="username" style={label}>
                   Nom d’utilisateur
                 </label>
+
                 <input
                   id="username"
                   style={input}
@@ -184,6 +211,7 @@ export default function Login() {
                 <label htmlFor="password" style={label}>
                   Mot de passe
                 </label>
+
                 <input
                   id="password"
                   type="password"
@@ -200,15 +228,17 @@ export default function Login() {
                 <label htmlFor="coproprieteId" style={label}>
                   Identifiant de copropriété
                 </label>
+
                 <input
                   id="coproprieteId"
                   style={input}
-                  placeholder="Exemple : 7"
+                  placeholder="Exemple : 11"
                   value={coproId}
                   onChange={(e) => setCoproId(e.target.value)}
                   inputMode="numeric"
                   disabled={loading}
                 />
+
                 <div style={helperText}>
                   Cet identifiant est requis pour transmettre l’en-tête{" "}
                   <strong>X-Copropriete-Id</strong> dès la connexion.

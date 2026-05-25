@@ -5,6 +5,8 @@ import api from "../../api/axios";
 type LoadState = "idle" | "loading" | "success" | "error";
 type AGStatus = "BROUILLON" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE";
 type ResolutionStatus = "EN_ATTENTE" | "ADOPTEE" | "REJETEE";
+type BadgeKind = "neutral" | "success" | "warning" | "info" | "danger";
+type AccentKind = "neutral" | "success" | "warning" | "danger" | "info";
 
 type AGItem = {
   id: number;
@@ -69,7 +71,11 @@ function toBooleanOrNull(value: unknown): boolean | null {
       return true;
     }
 
-    if (["false", "0", "non", "no", "non_genere", "non généré", "non genere", "indisponible"].includes(s)) {
+    if (
+      ["false", "0", "non", "no", "non_genere", "non généré", "non genere", "indisponible"].includes(
+        s,
+      )
+    ) {
       return false;
     }
   }
@@ -97,8 +103,8 @@ function normalizeAGStatus(value: unknown): AGStatus {
 function normalizeResolutionStatus(value: unknown): ResolutionStatus {
   const s = String(value ?? "").trim().toUpperCase();
 
-  if (["ADOPTEE", "VALIDEE", "VALIDE", "APPROUVEE"].includes(s)) return "ADOPTEE";
-  if (["REJETEE", "REJETE", "REFUSEE", "REFUSE"].includes(s)) return "REJETEE";
+  if (["ADOPTEE", "VALIDEE", "VALIDE", "APPROUVEE", "APPROUVÉE"].includes(s)) return "ADOPTEE";
+  if (["REJETEE", "REJETE", "REFUSEE", "REFUSE", "REFUSÉE"].includes(s)) return "REJETEE";
   return "EN_ATTENTE";
 }
 
@@ -109,7 +115,10 @@ function normalizeAGItem(raw: unknown, index: number): AGItem {
     toBooleanOrNull(row.pv_genere) ??
     toBooleanOrNull(row.pv_archive) ??
     toBooleanOrNull(row.pv_disponible) ??
+    (hasTruthyValue(row.pv_pdf) ? true : null) ??
+    (hasTruthyValue(row.pv_pdf_url) ? true : null) ??
     (hasTruthyValue(row.pv_signed_pdf) ? true : null) ??
+    (hasTruthyValue(row.pv_signed_pdf_url) ? true : null) ??
     false;
 
   return {
@@ -150,115 +159,107 @@ function getErrorMessage(error: unknown, fallback: string) {
   return err?.response?.data?.detail || err?.response?.data?.message || err?.message || fallback;
 }
 
+function formatCount(value: number, singular: string, plural?: string) {
+  return `${value} ${value > 1 ? plural ?? `${singular}s` : singular}`;
+}
+
+function getTone(kind: AccentKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      border: "#86efac",
+      text: "#166534",
+      strongText: "#14532d",
+      accentBg: "#dcfce7",
+      accentText: "#166534",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      border: "#fcd34d",
+      text: "#92400e",
+      strongText: "#78350f",
+      accentBg: "#fef3c7",
+      accentText: "#92400e",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      border: "#fca5a5",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+      accentBg: "#fee2e2",
+      accentText: "#991b1b",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      border: "#93c5fd",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+      accentBg: "#dbeafe",
+      accentText: "#1d4ed8",
+    };
+  }
+
+  return {
+    softBg: "#f8fafc",
+    border: "#e2e8f0",
+    text: "#475569",
+    strongText: "#0f172a",
+    accentBg: "#f1f5f9",
+    accentText: "#475569",
+  };
+}
+
+function getStatusBadge(statut: AGStatus) {
+  if (statut === "OUVERTE") return <Badge text="Ouverte" kind="info" />;
+  if (statut === "CLOTUREE") return <Badge text="Clôturée" kind="success" />;
+  if (statut === "ARCHIVEE") return <Badge text="Archivée" kind="neutral" />;
+  return <Badge text="Brouillon" kind="warning" />;
+}
+
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function HeroHeader(props: {
+  title: string;
+  subtitle?: string;
+  leftActions?: ReactNode;
+  rightContent?: ReactNode;
+}) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.6,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
+    <section style={heroCard}>
+      <div style={heroGlow} />
+      <div style={heroGlowSecondary} />
+
+      <div style={heroLayout}>
+        <div style={heroMain}>
+          <div style={pageEyebrow}>Assemblées générales · Pilotage</div>
+          <div style={pageTitle}>{props.title}</div>
+          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+          {props.leftActions ? <div style={heroActionsLeft}>{props.leftActions}</div> : null}
         </div>
 
-        {props.subtitle ? (
-          <div
-            style={{
-              fontSize: 14,
-              color: "#6b7280",
-              marginTop: 6,
-              lineHeight: 1.5,
-              maxWidth: 920,
-            }}
-          >
-            {props.subtitle}
-          </div>
-        ) : null}
+        {props.rightContent ? <div style={heroSide}>{props.rightContent}</div> : null}
       </div>
-
-      {props.right ? <div>{props.right}</div> : null}
-    </div>
+    </section>
   );
 }
 
-function Card(props: { title: string; children: ReactNode; right?: ReactNode; minHeight?: number }) {
+function HeroMiniCard(props: { label: string; value: string; hint?: string }) {
   return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 18,
-        background: "#ffffff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-        minHeight: props.minHeight,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          flexWrap: "wrap",
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>{props.title}</div>
-        {props.right ? props.right : null}
-      </div>
-      {props.children}
-    </div>
-  );
-}
-
-function StatCard(props: { title: string; value: string | number; sub?: string; isLoading?: boolean }) {
-  return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 18,
-        background: "#ffffff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-        minHeight: 112,
-      }}
-    >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>
-        {props.title}
-      </div>
-      <div
-        style={{
-          fontSize: 28,
-          fontWeight: 900,
-          letterSpacing: -0.5,
-          color: "#111827",
-          lineHeight: 1.1,
-        }}
-      >
-        {props.isLoading ? "…" : props.value}
-      </div>
-      {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
-      ) : null}
+    <div style={heroMiniCard}>
+      <div style={heroMiniLabel}>{props.label}</div>
+      <div style={heroMiniValue}>{props.value}</div>
+      {props.hint ? <div style={heroMiniHint}>{props.hint}</div> : null}
     </div>
   );
 }
@@ -266,24 +267,38 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
 function SmallButton(props: {
   children: ReactNode;
   onClick?: () => void;
-  disabled?: boolean;
   primary?: boolean;
+  disabled?: boolean;
 }) {
+  const tone = props.primary
+    ? {
+        border: "1px solid #93c5fd",
+        background: "#dbeafe",
+        color: "#1e3a8a",
+      }
+    : {
+        border: "1px solid rgba(255,255,255,0.20)",
+        background: "rgba(255,255,255,0.10)",
+        color: "#ffffff",
+      };
+
   return (
     <button
       type="button"
       onClick={props.onClick}
       disabled={props.disabled}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        ...tone,
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        transition: "all 0.18s ease",
+        opacity: props.disabled ? 0.65 : 1,
+        boxShadow: props.primary ? "0 10px 24px rgba(37,99,235,0.16)" : "none",
+        backdropFilter: props.primary ? undefined : "blur(8px)",
       }}
     >
       {props.children}
@@ -291,65 +306,232 @@ function SmallButton(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 24,
+        background: "#ffffff",
+        boxShadow: "0 18px 45px rgba(15, 23, 42, 0.05)",
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
+  );
+}
+
+function KpiCard(props: { label: string; value: string; hint?: string; accent?: AccentKind }) {
+  const tone = getTone(props.accent ?? "neutral");
+
   return (
     <div
       style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
+        border: `1px solid ${tone.border}`,
+        borderRadius: 20,
+        background: tone.softBg,
+        padding: 16,
+        minHeight: 116,
+        boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
-        {props.title}
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: tone.text,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {props.label}
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
-      {props.actionLabel && props.onAction ? (
-        <div style={{ marginTop: 12 }}>
-          <SmallButton onClick={props.onAction} primary>
-            {props.actionLabel}
-          </SmallButton>
+
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 26,
+          fontWeight: 900,
+          color: tone.strongText,
+          lineHeight: 1.12,
+          letterSpacing: -0.3,
+        }}
+      >
+        {props.value}
+      </div>
+
+      {props.hint ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: tone.text, lineHeight: 1.5 }}>
+          {props.hint}
         </div>
       ) : null}
     </div>
   );
 }
 
-function QuickActionCard(props: {
+function SummaryCard(props: {
+  title: string;
+  value: string;
+  hint?: string;
+  accent?: AccentKind;
+}) {
+  const tone = getTone(props.accent ?? "neutral");
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        background: "#ffffff",
+        borderRadius: 20,
+        padding: 16,
+        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.04)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          color: tone.text,
+          marginBottom: 10,
+        }}
+      >
+        {props.title}
+      </div>
+
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 900,
+          color: tone.strongText,
+          lineHeight: 1.35,
+        }}
+      >
+        {props.value}
+      </div>
+
+      {props.hint ? (
+        <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280", lineHeight: 1.55 }}>
+          {props.hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionTile(props: {
   title: string;
   text: string;
   actionLabel: string;
   onAction: () => void;
   disabled?: boolean;
-  badge?: ReactNode;
+  accent?: AccentKind;
 }) {
+  const tone = getTone(props.accent ?? "neutral");
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 18,
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        borderRadius: 20,
         padding: 16,
-        background: "#ffffff",
         display: "grid",
-        gap: 10,
+        gap: 12,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{props.title}</div>
-        {props.badge ?? null}
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 12,
+          display: "grid",
+          placeItems: "center",
+          background: "#ffffff",
+          border: `1px solid ${tone.border}`,
+          color: tone.accentText,
+          fontWeight: 900,
+          fontSize: 16,
+        }}
+      >
+        →
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
-      <div>
-        <SmallButton onClick={props.onAction} primary disabled={props.disabled}>
-          {props.actionLabel}
-        </SmallButton>
+
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 900, color: tone.strongText }}>{props.title}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#64748b" }}>{props.text}</div>
+      </div>
+
+      <button
+        type="button"
+        onClick={props.onAction}
+        disabled={props.disabled}
+        style={{
+          minHeight: 40,
+          borderRadius: 12,
+          padding: "10px 14px",
+          border: `1px solid ${props.disabled ? "#e5e7eb" : tone.border}`,
+          background: props.disabled ? "#f3f4f6" : "#ffffff",
+          color: props.disabled ? "#9ca3af" : tone.accentText,
+          fontSize: 13,
+          fontWeight: 800,
+          cursor: props.disabled ? "not-allowed" : "pointer",
+          justifySelf: "start",
+          boxShadow: props.disabled ? "none" : "0 1px 2px rgba(15, 23, 42, 0.04)",
+        }}
+      >
+        {props.actionLabel}
+      </button>
+    </div>
+  );
+}
+
+function ProcessStep(props: {
+  step: number;
+  title: string;
+  text: string;
+  accent?: AccentKind;
+}) {
+  const tone = getTone(props.accent ?? "neutral");
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        borderRadius: 18,
+        padding: 16,
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 999,
+          display: "grid",
+          placeItems: "center",
+          background: tone.accentBg,
+          color: tone.accentText,
+          fontSize: 13,
+          fontWeight: 900,
+        }}
+      >
+        {props.step}
+      </div>
+
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>{props.title}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#64748b" }}>{props.text}</div>
       </div>
     </div>
   );
 }
 
-function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" | "info" }) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
   const styles =
     props.kind === "success"
       ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
@@ -357,7 +539,9 @@ function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" |
         ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
         : props.kind === "info"
           ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
-          : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+          : props.kind === "danger"
+            ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+            : { background: "#f8fafc", border: "#e2e8f0", color: "#475569" };
 
   return (
     <span
@@ -365,10 +549,10 @@ function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" |
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "4px 10px",
+        padding: "5px 10px",
         borderRadius: 999,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         border: `1px solid ${styles.border}`,
         background: styles.background,
         color: styles.color,
@@ -380,24 +564,35 @@ function Badge(props: { text: string; kind?: "neutral" | "success" | "warning" |
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function AlertBox(props: { kind: "error" | "info"; title: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
-      ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
-      : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
+      ? {
+          bg: "#fef2f2",
+          border: "#fecaca",
+          title: "#991b1b",
+          text: "#b91c1c",
+        }
+      : {
+          bg: "#eff6ff",
+          border: "#bfdbfe",
+          title: "#1d4ed8",
+          text: "#2563eb",
+        };
 
   return (
     <div
       style={{
-        padding: 14,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 18,
         background: tone.bg,
         border: `1px solid ${tone.border}`,
-        color: tone.text,
-        lineHeight: 1.5,
+        display: "grid",
+        gap: 6,
       }}
     >
-      {props.children}
+      <div style={{ fontSize: 14, fontWeight: 900, color: tone.title }}>{props.title}</div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: tone.text }}>{props.children}</div>
     </div>
   );
 }
@@ -410,307 +605,705 @@ export default function AGHome() {
   const [ags, setAgs] = useState<AGItem[]>([]);
   const [resolutions, setResolutions] = useState<ResolutionItem[]>([]);
 
-  useEffect(() => {
-    async function fetchData() {
-      setState("loading");
-      setError(null);
+  async function loadData() {
+    setState("loading");
+    setError(null);
 
-      let agRows: AGItem[] = [];
-      let resolutionRows: ResolutionItem[] = [];
-      let lastError: unknown = null;
+    let agRows: AGItem[] = [];
+    let resolutionRows: ResolutionItem[] = [];
+    let lastError: unknown = null;
 
-      for (const endpoint of AG_ENDPOINT_CANDIDATES) {
-        try {
-          const res = await api.get(endpoint);
-          const data = res?.data;
-          agRows = extractRows<Record<string, unknown>>(data)
-            .map(normalizeAGItem)
-            .filter((item) => item.id > 0);
-          break;
-        } catch (e) {
-          lastError = e;
-        }
+    for (const endpoint of AG_ENDPOINT_CANDIDATES) {
+      try {
+        const res = await api.get(endpoint);
+        agRows = extractRows<Record<string, unknown>>(res?.data)
+          .map(normalizeAGItem)
+          .filter((item) => item.id > 0);
+        break;
+      } catch (e) {
+        lastError = e;
       }
-
-      for (const endpoint of RESOLUTION_ENDPOINT_CANDIDATES) {
-        try {
-          const res = await api.get(endpoint);
-          const data = res?.data;
-          resolutionRows = extractRows<Record<string, unknown>>(data)
-            .map(normalizeResolutionItem)
-            .filter((item) => item.id > 0);
-          break;
-        } catch (e) {
-          lastError = e;
-        }
-      }
-
-      setAgs(agRows);
-      setResolutions(resolutionRows);
-
-      if (agRows.length === 0 && resolutionRows.length === 0 && lastError) {
-        setState("error");
-        setError(getErrorMessage(lastError, "Impossible de charger les indicateurs du module AG."));
-        return;
-      }
-
-      setState("success");
     }
 
-    void fetchData();
+    for (const endpoint of RESOLUTION_ENDPOINT_CANDIDATES) {
+      try {
+        const res = await api.get(endpoint);
+        resolutionRows = extractRows<Record<string, unknown>>(res?.data)
+          .map(normalizeResolutionItem)
+          .filter((item) => item.id > 0);
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    setAgs(agRows);
+    setResolutions(resolutionRows);
+
+    if (agRows.length === 0 && resolutionRows.length === 0 && lastError) {
+      setState("error");
+      setError(getErrorMessage(lastError, "Impossible de charger les indicateurs du module AG."));
+      return;
+    }
+
+    setState("success");
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData();
   }, []);
 
   const stats = useMemo(() => {
     const pvGeneres = ags.filter((x) => x.pv_genere).length;
+    const assembleesOuvertes = ags.filter((x) => x.statut === "OUVERTE").length;
+    const assembleesBrouillon = ags.filter((x) => x.statut === "BROUILLON").length;
+    const assembleesCloturees = ags.filter((x) => x.statut === "CLOTUREE").length;
+    const assembleesArchivees = ags.filter((x) => x.statut === "ARCHIVEE").length;
     const assembleesASuivre = ags.filter((x) => x.statut === "BROUILLON" || x.statut === "OUVERTE").length;
+
     const resolutionsEnAttente = resolutions.filter((x) => x.statut === "EN_ATTENTE").length;
-    const agDisponible = ags.length > 0 ? ags[0] : null;
+    const resolutionsAdoptees = resolutions.filter((x) => x.statut === "ADOPTEE").length;
+    const resolutionsRejetees = resolutions.filter((x) => x.statut === "REJETEE").length;
+
+    const firstAg = ags.length > 0 ? ags[0] : null;
+    const firstOpenAg = ags.find((x) => x.statut === "OUVERTE") ?? firstAg ?? null;
+    const dominantStatus =
+      ags.find((x) => x.statut === "OUVERTE")?.statut ??
+      ags.find((x) => x.statut === "BROUILLON")?.statut ??
+      ags[0]?.statut ??
+      null;
 
     return {
       agTotal: ags.length,
       resolutionsTotal: resolutions.length,
       pvGeneres,
+      assembleesOuvertes,
+      assembleesBrouillon,
+      assembleesCloturees,
+      assembleesArchivees,
       assembleesASuivre,
       resolutionsEnAttente,
-      firstAgId: agDisponible?.id ?? null,
+      resolutionsAdoptees,
+      resolutionsRejetees,
+      firstAgId: firstAg?.id ?? null,
+      firstOpenAgId: firstOpenAg?.id ?? null,
+      dominantStatus,
     };
   }, [ags, resolutions]);
 
-  const isLoading = state === "loading";
   const hasAnyAg = stats.firstAgId !== null;
+
+  const healthBadge: { text: string; kind: BadgeKind } = useMemo(() => {
+    if (stats.assembleesOuvertes > 0) return { text: "Cycle AG actif", kind: "info" };
+    if (stats.assembleesASuivre > 0) return { text: "Assemblées à suivre", kind: "warning" };
+    if (stats.agTotal > 0) return { text: "Module structuré", kind: "success" };
+    return { text: "Module à initialiser", kind: "neutral" };
+  }, [stats]);
+
+  const summarySentence = useMemo(() => {
+    if (stats.agTotal === 0) {
+      return "Aucune assemblée n’est encore disponible. Vous pouvez créer une première assemblée pour démarrer le cycle AG et enclencher ensuite résolutions, présences, votes et procès-verbal.";
+    }
+
+    return `Le module contient actuellement ${formatCount(stats.agTotal, "assemblée")}, ${formatCount(
+      stats.resolutionsTotal,
+      "résolution",
+    )}, ${formatCount(stats.resolutionsAdoptees, "résolution adoptée")} et ${formatCount(
+      stats.pvGeneres,
+      "procès-verbal généré",
+    )}.`;
+  }, [stats]);
+
+  const heroStatusText = useMemo(() => {
+    if (stats.agTotal === 0) return "Aucune assemblée détectée";
+    if (stats.assembleesOuvertes > 0) return `${stats.assembleesOuvertes} assemblée(s) ouverte(s)`;
+    if (stats.assembleesASuivre > 0) return `${stats.assembleesASuivre} assemblée(s) à suivre`;
+    return `${stats.agTotal} assemblée(s) structurée(s)`;
+  }, [stats]);
 
   return (
     <PageShell>
-      <SectionTitle
-        title="Assemblées générales"
-        subtitle="Pilotez les assemblées générales, les résolutions, les présences, les votes et les procès-verbaux depuis un espace unifié, lisible et orienté produit."
-        right={
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/")}>
-              Retour au tableau de bord
+      <div style={headerRow}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <span style={sectionEyebrow}>Pilotage du module AG</span>
+          <h1 style={headerTitle}>Assemblées générales</h1>
+          <p style={headerSubtitle}>
+            Pilotez la préparation des assemblées, le suivi des résolutions, les présences, les
+            votes et la production des procès-verbaux depuis une vue d’ensemble plus crédible,
+            mieux hiérarchisée et plus cohérente avec le reste du produit.
+          </p>
+        </div>
+
+        <div>
+          <Badge text={healthBadge.text} kind={healthBadge.kind} />
+        </div>
+      </div>
+
+      <HeroHeader
+        title="Un cockpit métier plus clair pour vos cycles AG"
+        subtitle="Centralisez les assemblées générales, suivez les décisions en cours et accédez rapidement aux écrans clés du parcours métier, de la préparation jusqu’au procès-verbal. Cette page doit servir d’entrée premium, sans répétition inutile avec les indicateurs détaillés situés plus bas."
+        leftActions={
+          <>
+            <SmallButton onClick={() => navigate("/ag/assemblees/nouveau")}>
+              Créer une assemblée
             </SmallButton>
-            <SmallButton onClick={() => navigate("/ag/assemblees/nouveau")} primary>
-              Nouvelle assemblée
+            <SmallButton onClick={() => navigate("/ag/assemblees")}>
+              Consulter les assemblées
             </SmallButton>
+            <SmallButton onClick={() => void loadData()} primary disabled={state === "loading"}>
+              {state === "loading" ? "Chargement..." : "Actualiser"}
+            </SmallButton>
+          </>
+        }
+        rightContent={
+          <div style={heroSideGrid}>
+            <HeroMiniCard
+              label="Statut global"
+              value={heroStatusText}
+              hint="Lecture rapide du niveau d’activité"
+            />
+            <HeroMiniCard
+              label="Première AG exploitable"
+              value={hasAnyAg ? `#${stats.firstAgId}` : "—"}
+              hint="Point d’entrée vers les écrans opérationnels"
+            />
+            <HeroMiniCard
+              label="PV générés"
+              value={String(stats.pvGeneres)}
+              hint="Progression documentaire du module"
+            />
           </div>
         }
       />
 
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Chargement partiel ou impossible</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Chargement partiel ou impossible">
+          {error}
         </AlertBox>
       ) : null}
 
-      <div className="ag-stat-grid">
-        <StatCard
-          title="Assemblées générales"
-          value={stats.agTotal}
-          sub="Nombre total d’assemblées actuellement disponibles."
-          isLoading={isLoading}
+      {state !== "error" && stats.agTotal === 0 ? (
+        <AlertBox kind="info" title="Le module AG est prêt à être initialisé">
+          Aucun enregistrement n’a encore été détecté. Commencez par créer une première assemblée,
+          puis ajoutez vos résolutions, vos présences et vos votes dans le cycle normal.
+        </AlertBox>
+      ) : null}
+
+      <div
+        className="ag-kpi-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
+        }}
+      >
+        <KpiCard
+          label="Assemblées"
+          value={state === "loading" ? "..." : String(stats.agTotal)}
+          hint="Nombre total d’assemblées visibles dans le module."
+          accent="neutral"
         />
-        <StatCard
-          title="Résolutions"
-          value={stats.resolutionsTotal}
-          sub="Volume global des résolutions rattachées aux assemblées."
-          isLoading={isLoading}
+        <KpiCard
+          label="À suivre"
+          value={state === "loading" ? "..." : String(stats.assembleesASuivre)}
+          hint="Assemblées en brouillon ou encore ouvertes."
+          accent="warning"
         />
-        <StatCard
-          title="Procès-verbaux générés"
-          value={stats.pvGeneres}
-          sub="Assemblées disposant déjà d’un procès-verbal généré ou archivé."
-          isLoading={isLoading}
+        <KpiCard
+          label="Résolutions adoptées"
+          value={state === "loading" ? "..." : String(stats.resolutionsAdoptees)}
+          hint="Décisions déjà validées dans le cycle AG."
+          accent="success"
         />
-        <StatCard
-          title="Assemblées à suivre"
-          value={stats.assembleesASuivre}
-          sub="Assemblées en brouillon ou encore ouvertes à surveiller."
-          isLoading={isLoading}
+        <KpiCard
+          label="PV générés"
+          value={state === "loading" ? "..." : String(stats.pvGeneres)}
+          hint="Procès-verbaux déjà produits ou signés."
+          accent="info"
         />
       </div>
 
-      <div className="ag-main-grid">
-        <Card
-          title="Vue produit du module"
-          right={<Badge text="Module opérationnel" kind="success" />}
-          minHeight={270}
-        >
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={paragraph}>
-              Le module Assemblées générales est désormais intégré dans l’application avec ses pages
-              métier principales : liste des assemblées, détail, résolutions, présences, votes et
-              pilotage documentaire du procès-verbal.
-            </div>
-
-            <div style={paragraph}>
-              Le socle produit déjà visible permet de :
-            </div>
-
-            <div style={bulletList}>
-              <div style={bulletItem}>• préparer les assemblées générales</div>
-              <div style={bulletItem}>• consulter l’état d’avancement des assemblées</div>
-              <div style={bulletItem}>• suivre les résolutions et leurs résultats</div>
-              <div style={bulletItem}>• accéder aux présences et aux votes depuis le cycle AG</div>
-              <div style={bulletItem}>• structurer le pilotage du procès-verbal avant la finition premium</div>
+      <Panel style={{ padding: 18 }}>
+        <div style={panelHeader}>
+          <div>
+            <div style={sectionEyebrow}>Accès rapides</div>
+            <div style={panelTitle}>Raccourcis utiles du module</div>
+            <div style={panelSubtitle}>
+              Raccourcis vers les écrans les plus utiles pour exploiter le module au quotidien.
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card
-          title="État actuel"
-          minHeight={270}
-          right={<Badge text="Branchement métier actif" kind="info" />}
+        <div
+          className="ag-actions-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 12,
+          }}
         >
-          <div style={{ display: "grid", gap: 12 }}>
-            <EmptyState
-              title="Cycle AG visible et exploitable"
-              text="La navigation principale du module est en place. Les écrans Présences et Votes existent maintenant dans le parcours AG, même si leur visibilité dashboard/KPI avancés sera encore enrichie dans la finition produit."
-            />
-
-            <div style={infoBox}>
-              {stats.resolutionsEnAttente > 0
-                ? `${stats.resolutionsEnAttente} résolution(s) restent encore en attente de décision ou de clôture.`
-                : "Les KPI affichés ici servent de première synthèse produit du module AG."}
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <Card title="Accès rapides AG" minHeight={120}>
-        <div className="ag-quick-grid">
-          <QuickActionCard
+          <ActionTile
             title="Créer une assemblée"
-            text="Préparez une nouvelle assemblée générale avec sa période, ses présences et son cadre de décision."
+            text="Démarrez un nouveau cycle AG sur la copropriété active."
             actionLabel="Nouvelle assemblée"
             onAction={() => navigate("/ag/assemblees/nouveau")}
+            accent="info"
           />
 
-          <QuickActionCard
-            title="Consulter les assemblées"
-            text="Accédez à la liste des assemblées générales déjà préparées, en cours ou clôturées."
-            actionLabel="Voir les assemblées"
+          <ActionTile
+            title="Voir les assemblées"
+            text="Consultez les assemblées préparées, ouvertes, clôturées ou archivées."
+            actionLabel="Ouvrir la liste"
             onAction={() => navigate("/ag/assemblees")}
+            accent="neutral"
           />
 
-          <QuickActionCard
-            title="Consulter les résolutions"
-            text="Suivez les résolutions, leur statut, leur résultat et leur impact métier sur la copropriété."
+          <ActionTile
+            title="Suivre les résolutions"
+            text="Accédez à la liste des résolutions pour suivre les décisions prises ou en attente."
             actionLabel="Voir les résolutions"
             onAction={() => navigate("/ag/resolutions")}
+            accent="info"
           />
 
-          <QuickActionCard
-            title="Présences AG"
-            text="Accédez directement à la gestion des présences et représentations pour une assemblée disponible."
-            actionLabel="Voir les présences"
-            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}/presences`)}
+          <ActionTile
+            title="Gérer les présences"
+            text="Accédez directement à la gestion des présences pour la première assemblée disponible."
+            actionLabel="Ouvrir les présences"
+            onAction={() => navigate(`/ag/assemblees/${stats.firstOpenAgId ?? stats.firstAgId}/presences`)}
             disabled={!hasAnyAg}
-            badge={<Badge text={hasAnyAg ? "Visible" : "Aucune AG"} kind={hasAnyAg ? "success" : "warning"} />}
-          />
-
-          <QuickActionCard
-            title="Votes AG"
-            text="Accédez directement à l’enregistrement et à la consultation des votes pour une assemblée disponible."
-            actionLabel="Voir les votes"
-            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}/votes`)}
-            disabled={!hasAnyAg}
-            badge={<Badge text={hasAnyAg ? "Visible" : "Aucune AG"} kind={hasAnyAg ? "success" : "warning"} />}
-          />
-
-          <QuickActionCard
-            title="Détail d’une AG"
-            text="Ouvrez une assemblée disponible pour accéder ensuite au quorum, au PV, aux présences et aux votes."
-            actionLabel="Ouvrir le détail"
-            onAction={() => navigate(`/ag/assemblees/${stats.firstAgId}`)}
-            disabled={!hasAnyAg}
-            badge={<Badge text={hasAnyAg ? "Recommandé" : "Aucune AG"} kind={hasAnyAg ? "info" : "warning"} />}
+            accent="success"
           />
         </div>
-      </Card>
+      </Panel>
 
-      <AlertBox kind="info">
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>Visibilité produit AG</div>
-        <div style={{ fontSize: 13 }}>
-          Les écrans <strong>Présences</strong> et <strong>Votes</strong> sont maintenant exposés dans la
-          page d’accueil du module AG via les accès rapides. Pour une visibilité encore plus forte,
-          on pourra ensuite les afficher aussi dans <strong>AGList</strong> et dans le
-          <strong> Dashboard</strong>.
-        </div>
-      </AlertBox>
+      <div
+        className="ag-main-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
+          gap: 16,
+        }}
+      >
+        <Panel style={{ padding: 18 }}>
+          <div style={panelHeader}>
+            <div>
+              <div style={sectionEyebrow}>Indicateurs clés</div>
+              <div style={panelTitle}>État opérationnel du module</div>
+              <div style={panelSubtitle}>
+                Lecture rapide de l’état du module et de son activité métier.
+              </div>
+            </div>
+          </div>
 
-      <style>{`
-        .ag-stat-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 14px;
-        }
+          <div
+            className="ag-summary-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <KpiCard
+              label="Assemblées en brouillon"
+              value={state === "loading" ? "..." : String(stats.assembleesBrouillon)}
+              hint="Assemblées encore en préparation avant ouverture."
+              accent="warning"
+            />
+            <KpiCard
+              label="Assemblées ouvertes"
+              value={state === "loading" ? "..." : String(stats.assembleesOuvertes)}
+              hint="Assemblées actuellement en cours de traitement."
+              accent="info"
+            />
+            <KpiCard
+              label="Assemblées clôturées"
+              value={state === "loading" ? "..." : String(stats.assembleesCloturees)}
+              hint="Cycles de vote terminés et stabilisés."
+              accent="success"
+            />
+            <KpiCard
+              label="Assemblées archivées"
+              value={state === "loading" ? "..." : String(stats.assembleesArchivees)}
+              hint="Assemblées finalisées et conservées pour consultation."
+              accent="neutral"
+            />
+          </div>
 
-        .ag-main-grid {
-          display: grid;
-          grid-template-columns: 1.1fr 0.9fr;
-          gap: 14px;
-        }
+          <div style={insightBox}>
+            <div style={insightTitle}>Synthèse produit</div>
+            <div style={insightText}>{summarySentence}</div>
+          </div>
+        </Panel>
 
-        .ag-quick-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-        }
+        <Panel style={{ padding: 18 }}>
+          <div style={panelHeader}>
+            <div>
+              <div style={sectionEyebrow}>Décisions et documentation</div>
+              <div style={panelTitle}>Lecture concentrée du cycle AG</div>
+              <div style={panelSubtitle}>
+                Résolutions, décisions et progression documentaire jusqu’au procès-verbal.
+              </div>
+            </div>
+          </div>
 
-        @media (max-width: 1280px) {
-          .ag-quick-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
+          <div style={stackStyle}>
+            <div style={metricRowStyle}>
+              <span style={metricLabelStyle}>Résolutions en attente</span>
+              <Badge text={String(stats.resolutionsEnAttente)} kind="warning" />
+            </div>
+            <div style={metricRowStyle}>
+              <span style={metricLabelStyle}>Résolutions adoptées</span>
+              <Badge text={String(stats.resolutionsAdoptees)} kind="success" />
+            </div>
+            <div style={metricRowStyle}>
+              <span style={metricLabelStyle}>Résolutions rejetées</span>
+              <Badge text={String(stats.resolutionsRejetees)} kind="danger" />
+            </div>
+            <div style={metricRowStyle}>
+              <span style={metricLabelStyle}>Procès-verbaux générés</span>
+              <Badge text={String(stats.pvGeneres)} kind="info" />
+            </div>
+          </div>
 
-        @media (max-width: 1200px) {
-          .ag-stat-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
+          <div style={insightBoxSecondary}>
+            <div style={insightTitle}>Lecture métier</div>
+            <div style={insightText}>
+              Cette zone permet d’évaluer rapidement le niveau de maturité du cycle AG :
+              décisions encore en attente, décisions validées et progression documentaire jusqu’au
+              procès-verbal.
+            </div>
+          </div>
+        </Panel>
+      </div>
 
-          .ag-main-grid {
-            grid-template-columns: 1fr;
-          }
-        }
+      <div
+        className="ag-bottom-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
+          gap: 16,
+        }}
+      >
+        <Panel style={{ padding: 18 }}>
+          <div style={panelHeader}>
+            <div>
+              <div style={sectionEyebrow}>Parcours recommandé</div>
+              <div style={panelTitle}>Ordre conseillé du cycle AG</div>
+              <div style={panelSubtitle}>
+                Ordre logique pour conduire une assemblée de bout en bout avec cohérence.
+              </div>
+            </div>
+          </div>
 
-        @media (max-width: 760px) {
-          .ag-stat-grid {
-            grid-template-columns: 1fr;
-          }
+          <div
+            className="ag-steps-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <ProcessStep
+              step={1}
+              title="Créer l’assemblée"
+              text="Préparez le cadre de l’assemblée, la date, le lieu et les informations structurantes."
+              accent="info"
+            />
+            <ProcessStep
+              step={2}
+              title="Ajouter les résolutions"
+              text="Définissez les décisions à soumettre avant l’ouverture du cycle de vote."
+              accent="warning"
+            />
+            <ProcessStep
+              step={3}
+              title="Saisir présences et votes"
+              text="Enregistrez les participants, vérifiez le quorum et capturez les votes."
+              accent="success"
+            />
+            <ProcessStep
+              step={4}
+              title="Finaliser le procès-verbal"
+              text="Générez, consultez puis verrouillez le PV dans le parcours documentaire final."
+              accent="neutral"
+            />
+          </div>
+        </Panel>
 
-          .ag-quick-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
+        <Panel style={{ padding: 18 }}>
+          <div style={panelHeader}>
+            <div>
+              <div style={sectionEyebrow}>Vision produit</div>
+              <div style={panelTitle}>Place du module AG dans la plateforme</div>
+              <div style={panelSubtitle}>
+                Positionnement du module AG dans la valeur globale du produit.
+              </div>
+            </div>
+
+            <div>
+              <Badge text="Module stratégique" kind="success" />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 14 }}>
+            <SummaryCard
+              title="Flux de gouvernance"
+              value="Décision, participation, vote, formalisation"
+              hint="Le module AG relie la préparation des décisions, la participation des copropriétaires, le vote et la formalisation du procès-verbal."
+              accent="info"
+            />
+
+            <SummaryCard
+              title="Ambition premium"
+              value="Lecture rapide, accès immédiat, cohérence produit"
+              hint="Dans une logique premium, cette vue doit servir de cockpit de pilotage : accès utile, structure claire et compréhension instantanée de l’avancement."
+              accent="success"
+            />
+
+            {stats.dominantStatus ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 700 }}>
+                  Statut dominant détecté :
+                </span>
+                {getStatusBadge(stats.dominantStatus)}
+              </div>
+            ) : null}
+          </div>
+        </Panel>
+      </div>
     </PageShell>
   );
 }
 
-const paragraph: CSSProperties = {
-  fontSize: 14,
-  color: "#4b5563",
-  lineHeight: 1.65,
-};
-
-const bulletList: CSSProperties = {
+const pageShell: CSSProperties = {
   display: "grid",
-  gap: 8,
+  gap: 18,
 };
 
-const bulletItem: CSSProperties = {
+const headerRow: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+};
+
+const headerTitle: CSSProperties = {
+  margin: 0,
+  fontSize: 32,
+  fontWeight: 900,
+  letterSpacing: -0.9,
+  color: "#0f172a",
+  lineHeight: 1.05,
+};
+
+const headerSubtitle: CSSProperties = {
+  margin: 0,
+  maxWidth: 980,
   fontSize: 14,
-  color: "#374151",
-  lineHeight: 1.55,
+  color: "#64748b",
+  lineHeight: 1.7,
 };
 
-const infoBox: CSSProperties = {
+const heroCard: CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 52%, rgba(37,99,235,0.88) 100%)",
+  borderRadius: 28,
+  padding: "28px 30px",
+  color: "#ffffff",
+  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
+  position: "relative",
+  overflow: "hidden",
+};
+
+const heroGlow: CSSProperties = {
+  position: "absolute",
+  inset: "auto -120px -140px auto",
+  width: 280,
+  height: 280,
+  borderRadius: "50%",
+  background: "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroGlowSecondary: CSSProperties = {
+  position: "absolute",
+  inset: "-60px auto auto -60px",
+  width: 220,
+  height: 220,
+  borderRadius: "50%",
+  background: "radial-gradient(circle, rgba(59,130,246,0.16) 0%, rgba(59,130,246,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroLayout: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(360px, 1.3fr) minmax(280px, 0.9fr)",
+  gap: 22,
+  alignItems: "end",
+  position: "relative",
+  zIndex: 1,
+};
+
+const heroMain: CSSProperties = {
+  minWidth: 0,
+};
+
+const heroSide: CSSProperties = {
+  minWidth: 0,
+};
+
+const heroSideGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  gap: 12,
+};
+
+const heroMiniCard: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  borderRadius: 18,
   padding: 14,
-  borderRadius: 14,
+  backdropFilter: "blur(10px)",
+};
+
+const heroMiniLabel: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+  color: "rgba(255,255,255,0.72)",
+};
+
+const heroMiniValue: CSSProperties = {
+  marginTop: 8,
+  fontSize: 22,
+  fontWeight: 900,
+  lineHeight: 1.1,
+  color: "#ffffff",
+};
+
+const heroMiniHint: CSSProperties = {
+  marginTop: 6,
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "rgba(255,255,255,0.76)",
+};
+
+const heroActionsLeft: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+  marginTop: 18,
+};
+
+const pageEyebrow: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.72)",
+  marginBottom: 6,
+};
+
+const pageTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  color: "#ffffff",
+  lineHeight: 1.08,
+  letterSpacing: -0.5,
+};
+
+const pageSubtitle: CSSProperties = {
+  marginTop: 8,
+  color: "rgba(255,255,255,0.84)",
+  fontSize: 14,
+  lineHeight: 1.6,
+  maxWidth: 860,
+};
+
+const sectionEyebrow: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.8,
+  textTransform: "uppercase",
+  color: "#2563eb",
+  marginBottom: 6,
+};
+
+const panelHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  marginBottom: 14,
+  flexWrap: "wrap",
+};
+
+const panelTitle: CSSProperties = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.2,
+};
+
+const panelSubtitle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  color: "#64748b",
+  lineHeight: 1.6,
+};
+
+const insightBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 18,
   background: "#f8fafc",
   border: "1px solid #e2e8f0",
-  color: "#475569",
+};
+
+const insightBoxSecondary: CSSProperties = {
+  padding: 14,
+  borderRadius: 18,
+  background: "#ffffff",
+  border: "1px dashed #cbd5e1",
+};
+
+const insightTitle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  color: "#0f172a",
+  marginBottom: 6,
+};
+
+const insightText: CSSProperties = {
   fontSize: 13,
-  lineHeight: 1.6,
+  lineHeight: 1.7,
+  color: "#475569",
+};
+
+const stackStyle: CSSProperties = {
+  display: "grid",
+  gap: 12,
+  marginBottom: 16,
+};
+
+const metricRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "12px 14px",
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  background: "#f8fafc",
+};
+
+const metricLabelStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#334155",
 };

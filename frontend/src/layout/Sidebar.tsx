@@ -1,22 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/authStore";
 import { SIDEBAR_SECTIONS } from "../config/productNavigation";
+import { useAuthStore } from "../store/authStore";
 
 const SIDEBAR_WIDTH = 276;
 
-const linkBase: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  width: "100%",
-  padding: "12px 14px",
-  borderRadius: 14,
-  textDecoration: "none",
-  color: "#374151",
-  transition:
-    "background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
-  boxSizing: "border-box",
+type SidebarLinkProps = {
+  to: string;
+  children: ReactNode;
+  end?: boolean;
 };
 
 function SectionTitle({ children }: { children: ReactNode }) {
@@ -36,7 +28,8 @@ function Dot({ active = false }: { active?: boolean }) {
         borderRadius: 999,
         background: active ? "#4f46e5" : "#cbd5e1",
         flexShrink: 0,
-        transition: "background 0.2s ease",
+        transition: "background 0.2s ease, transform 0.2s ease",
+        transform: active ? "scale(1.12)" : "scale(1)",
       }}
     />
   );
@@ -49,24 +42,33 @@ function buildLinkStyle(isActive: boolean): CSSProperties {
       ? "linear-gradient(180deg, #eef2ff 0%, #e9edff 100%)"
       : "transparent",
     color: isActive ? "#111827" : "#374151",
-    fontWeight: isActive ? 800 : 700,
-    boxShadow: isActive
-      ? "inset 0 0 0 1px rgba(99, 102, 241, 0.14)"
-      : "none",
+    fontWeight: isActive ? 900 : 750,
+    boxShadow: isActive ? "inset 0 0 0 1px rgba(99, 102, 241, 0.16)" : "none",
   };
 }
 
-function SidebarLink(props: { to: string; children: ReactNode }) {
+function SidebarLink({ to, children, end = true }: SidebarLinkProps) {
   return (
-    <NavLink to={props.to} style={({ isActive }) => buildLinkStyle(isActive)}>
+    <NavLink to={to} end={end} style={({ isActive }) => buildLinkStyle(isActive)}>
       {({ isActive }) => (
         <>
           <Dot active={isActive} />
-          <span style={{ lineHeight: 1.25 }}>{props.children}</span>
+          <span style={linkTextStyle}>{children}</span>
         </>
       )}
     </NavLink>
   );
+}
+
+function shouldUseExactMatch(path: string): boolean {
+  /**
+   * On garde une activation exacte pour éviter que :
+   * - /compta active aussi /compta/imports
+   * - /ag/assemblees active aussi /ag/assemblees/:id
+   *
+   * Cela rend la sidebar plus propre et évite les doubles états actifs.
+   */
+  return path !== "/";
 }
 
 export default function Sidebar() {
@@ -76,9 +78,7 @@ export default function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const activeCoproLabel = coproprieteId
-    ? `#${coproprieteId}`
-    : "Aucune copropriété active";
+  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Aucune copropriété active";
 
   const doLogout = () => {
     logout();
@@ -91,7 +91,7 @@ export default function Sidebar() {
         <div style={brandRow}>
           <div style={brandIcon}>C</div>
 
-          <div style={{ minWidth: 0 }}>
+          <div style={brandTextWrapStyle}>
             <div style={brandTitle}>Copropriété App</div>
             <div style={brandSubtitle}>Plateforme de gestion de copropriété</div>
           </div>
@@ -109,15 +109,21 @@ export default function Sidebar() {
       </div>
 
       <nav aria-label="Navigation principale" style={navStyle}>
-        <SidebarLink to="/">Tableau de bord</SidebarLink>
+        <SidebarLink to="/" end>
+          Tableau de bord
+        </SidebarLink>
 
         {SIDEBAR_SECTIONS.map((section) => (
-          <div key={section.title}>
+          <div key={section.title} style={sectionBlockStyle}>
             <SectionTitle>{section.title}</SectionTitle>
 
-            <div style={{ display: "grid", gap: 4 }}>
+            <div style={sectionItemsStyle}>
               {section.items.map((item) => (
-                <SidebarLink key={item.to} to={item.to}>
+                <SidebarLink
+                  key={item.to}
+                  to={item.to}
+                  end={shouldUseExactMatch(item.to)}
+                >
                   {item.label}
                 </SidebarLink>
               ))}
@@ -129,6 +135,7 @@ export default function Sidebar() {
       <div style={footerStyle}>
         <div style={footerCard}>
           <div style={footerTitle}>Session utilisateur</div>
+
           <div style={footerText}>
             Vous êtes connecté à l’espace d’administration de la plateforme.
           </div>
@@ -144,6 +151,28 @@ export default function Sidebar() {
   );
 }
 
+const linkBase: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  width: "100%",
+  padding: "11px 13px",
+  borderRadius: 14,
+  textDecoration: "none",
+  color: "#374151",
+  transition:
+    "background 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease",
+  boxSizing: "border-box",
+};
+
+const linkTextStyle: CSSProperties = {
+  lineHeight: 1.25,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "normal",
+};
+
 const sidebarStyle: CSSProperties = {
   width: SIDEBAR_WIDTH,
   minWidth: SIDEBAR_WIDTH,
@@ -155,8 +184,9 @@ const sidebarStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   borderRight: "1px solid #e5e7eb",
-  background: "rgba(255, 255, 255, 0.92)",
+  background: "rgba(255, 255, 255, 0.94)",
   backdropFilter: "blur(10px)",
+  overflow: "hidden",
 };
 
 const brandSection: CSSProperties = {
@@ -169,6 +199,7 @@ const brandRow: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
+  minWidth: 0,
 };
 
 const brandIcon: CSSProperties = {
@@ -184,6 +215,10 @@ const brandIcon: CSSProperties = {
   fontSize: 15,
   flexShrink: 0,
   boxShadow: "0 6px 18px rgba(79, 70, 229, 0.08)",
+};
+
+const brandTextWrapStyle: CSSProperties = {
+  minWidth: 0,
 };
 
 const brandTitle: CSSProperties = {
@@ -229,8 +264,19 @@ const navStyle: CSSProperties = {
   gap: 4,
   alignContent: "start",
   flex: 1,
+  minHeight: 0,
   overflowY: "auto",
   paddingRight: 2,
+};
+
+const sectionBlockStyle: CSSProperties = {
+  display: "grid",
+  gap: 4,
+};
+
+const sectionItemsStyle: CSSProperties = {
+  display: "grid",
+  gap: 4,
 };
 
 const footerStyle: CSSProperties = {

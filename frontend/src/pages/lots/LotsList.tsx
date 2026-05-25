@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
@@ -36,18 +43,23 @@ function pickString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
+
   return "";
 }
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
+
   return Number.isFinite(n) ? n : fallback;
 }
 
 function formatSurface(value?: string): string {
   if (!value) return "—";
+
   const n = Number(value);
+
   if (Number.isFinite(n)) return `${n.toLocaleString("fr-FR")} m²`;
+
   return value;
 }
 
@@ -59,6 +71,7 @@ function normalizeTypeLot(value: string): string {
     COMMERCE: "Commerce",
     AUTRE: "Autre",
   };
+
   return map[value] || value || "—";
 }
 
@@ -86,6 +99,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 function extractRows(data: unknown): LotItem[] {
   const normalize = (raw: unknown): LotItem => {
     const row = isRecord(raw) ? raw : {};
+
     return {
       id: toNumber(row.id),
       reference: pickString(row.reference),
@@ -101,6 +115,7 @@ function extractRows(data: unknown): LotItem[] {
 
   if (isRecord(data)) {
     const candidates = [data.results, data.items, data.data];
+
     for (const candidate of candidates) {
       if (Array.isArray(candidate)) {
         return candidate.map(normalize).filter((x) => x.id > 0);
@@ -112,30 +127,18 @@ function extractRows(data: unknown): LotItem[] {
 }
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
 function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-        alignItems: "flex-end",
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 30, fontWeight: 900, color: "#111827", lineHeight: 1.1 }}>
-          {props.title}
-        </div>
-        {props.subtitle ? (
-          <div style={{ marginTop: 6, fontSize: 14, color: "#6b7280", lineHeight: 1.5, maxWidth: 920 }}>
-            {props.subtitle}
-          </div>
-        ) : null}
+    <div style={sectionTitleWrapper}>
+      <div style={{ minWidth: 0 }}>
+        <div style={sectionTitle}>{props.title}</div>
+
+        {props.subtitle ? <div style={sectionSubtitle}>{props.subtitle}</div> : null}
       </div>
+
       {props.right ?? null}
     </div>
   );
@@ -157,6 +160,7 @@ function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode 
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
+        minWidth: 0,
       }}
     >
       {props.title ? <div style={{ fontWeight: 800, marginBottom: 4 }}>{props.title}</div> : null}
@@ -252,18 +256,17 @@ function AppButton(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; actionTo?: string }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
-    <div
-      style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
-      }}
-    >
-      <div style={{ fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+    <div style={emptyState}>
+      <div style={emptyStateTitle}>{props.title}</div>
+      <div style={emptyStateText}>{props.text}</div>
+
       {props.actionLabel && props.actionTo ? (
         <div style={{ marginTop: 12 }}>
           <AppButton to={props.actionTo} variant="primary">
@@ -277,34 +280,12 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
 
 function StatCard(props: { title: string; value: string | number; sub?: string }) {
   return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        padding: 16,
-        background: "#fff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-      }}
-    >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>
-        {props.title}
-      </div>
-      <div
-        style={{
-          fontSize: 28,
-          fontWeight: 900,
-          color: "#111827",
-          letterSpacing: -0.4,
-          lineHeight: 1.1,
-        }}
-      >
-        {props.value}
-      </div>
-      {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
-      ) : null}
+    <div style={statCard}>
+      <div style={statTitle}>{props.title}</div>
+
+      <div style={statValue}>{props.value}</div>
+
+      {props.sub ? <div style={statSub}>{props.sub}</div> : null}
     </div>
   );
 }
@@ -315,31 +296,46 @@ export default function LotsList() {
   const [rows, setRows] = useState<LotItem[]>([]);
   const [query, setQuery] = useState("");
 
-  async function fetchLots() {
+  const fetchLots = useCallback(async () => {
     setState("loading");
     setError(null);
 
     try {
       const res = await api.get(ENDPOINTS.lots);
+
       setRows(extractRows(res.data));
       setState("success");
-    } catch (e) {
+    } catch (e: unknown) {
       setRows([]);
       setState("error");
       setError(getErrorMessage(e, "Impossible de charger les lots."));
     }
-  }
+  }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchLots();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchLots]);
+
+  const handleRefresh = useCallback(() => {
     void fetchLots();
-  }, []);
+  }, [fetchLots]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+
     if (!q) return rows;
 
     return rows.filter((item) =>
-      [item.reference, item.type_lot, item.description, item.etage].join(" ").toLowerCase().includes(q),
+      [item.reference, item.type_lot, item.description, item.etage]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
     );
   }, [rows, query]);
 
@@ -368,18 +364,15 @@ export default function LotsList() {
         }
       />
 
-      <div
-        className="lots-stats-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          gap: 14,
-        }}
-      >
+      <div className="lots-stats-grid" style={statsGrid}>
         <StatCard title="Lots" value={stats.total} sub="Nombre total de lots chargés." />
         <StatCard title="Appartements" value={stats.appartements} sub="Lots de type appartement." />
         <StatCard title="Parkings" value={stats.parkings} sub="Lots de type parking." />
-        <StatCard title="Autres lots" value={stats.autres} sub="Caves, commerces et autres catégories." />
+        <StatCard
+          title="Autres lots"
+          value={stats.autres}
+          sub="Caves, commerces et autres catégories."
+        />
       </div>
 
       {state === "error" && error ? (
@@ -389,16 +382,7 @@ export default function LotsList() {
       ) : null}
 
       <div style={card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 14,
-            alignItems: "center",
-          }}
-        >
+        <div style={toolbar}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -406,9 +390,10 @@ export default function LotsList() {
             style={input}
           />
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={toolbarActions}>
             <Badge kind="neutral">{filtered.length} lot(s) affiché(s)</Badge>
-            <button type="button" onClick={() => void fetchLots()} style={secondaryButton}>
+
+            <button type="button" onClick={handleRefresh} style={secondaryButton}>
               {isLoading ? "Actualisation..." : "Actualiser"}
             </button>
           </div>
@@ -428,14 +413,12 @@ export default function LotsList() {
             actionTo="/lots/nouveau"
           />
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
             {filtered.map((item) => (
               <div key={item.id} style={rowCard}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>
-                      {item.reference || `Lot #${item.id}`}
-                    </div>
+                <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                  <div style={rowHeader}>
+                    <div style={lotTitle}>{item.reference || `Lot #${item.id}`}</div>
                     <Badge kind="neutral">{normalizeTypeLot(item.type_lot)}</Badge>
                     <Badge kind="info">{formatSurface(item.surface)}</Badge>
                   </div>
@@ -462,7 +445,8 @@ export default function LotsList() {
 
       {state === "success" && rows.length > 0 ? (
         <AlertBox kind="info" title="Lecture métier du module">
-          Les lots constituent une base structurante pour les présences, les votes en assemblée générale et les répartitions métier de la copropriété.
+          Les lots constituent une base structurante pour les présences, les votes en assemblée
+          générale et les répartitions métier de la copropriété.
         </AlertBox>
       ) : null}
 
@@ -483,23 +467,127 @@ export default function LotsList() {
   );
 }
 
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 16,
+  minWidth: 0,
+};
+
+const sectionTitleWrapper: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-end",
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const sectionTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.1,
+};
+
+const sectionSubtitle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 14,
+  color: "#6b7280",
+  lineHeight: 1.5,
+  maxWidth: 920,
+};
+
+const statsGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  minWidth: 0,
+};
+
+const statCard: CSSProperties = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 20,
+  padding: 16,
+  background: "#fff",
+  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
+};
+
+const statTitle: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  fontWeight: 700,
+  marginBottom: 8,
+};
+
+const statValue: CSSProperties = {
+  fontSize: 28,
+  fontWeight: 900,
+  color: "#111827",
+  letterSpacing: -0.4,
+  lineHeight: 1.1,
+  overflowWrap: "anywhere",
+};
+
+const statSub: CSSProperties = {
+  marginTop: 8,
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.45,
+};
+
 const card: CSSProperties = {
   border: "1px solid #e5e7eb",
   borderRadius: 20,
   padding: 18,
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
+};
+
+const toolbar: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  marginBottom: 14,
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const toolbarActions: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
 };
 
 const rowCard: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr auto",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: 12,
   alignItems: "start",
   padding: 14,
   border: "1px solid #eef2f7",
   borderRadius: 14,
   background: "#fff",
+  minWidth: 0,
+};
+
+const rowHeader: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const lotTitle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#111827",
+  minWidth: 0,
+  overflowWrap: "anywhere",
 };
 
 const input: CSSProperties = {
@@ -524,4 +612,24 @@ const secondaryButton: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   cursor: "pointer",
+};
+
+const emptyState: CSSProperties = {
+  border: "1px dashed #d1d5db",
+  borderRadius: 16,
+  padding: 18,
+  background: "#f9fafb",
+  minWidth: 0,
+};
+
+const emptyStateTitle: CSSProperties = {
+  fontWeight: 800,
+  color: "#111827",
+  marginBottom: 6,
+};
+
+const emptyStateText: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.5,
 };

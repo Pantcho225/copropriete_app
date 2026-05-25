@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -24,56 +25,63 @@ export default function AdminLayout() {
   );
 }
 
-const appShell: React.CSSProperties = {
+const appShell: CSSProperties = {
   display: "flex",
   minHeight: "100vh",
   width: "100%",
   background:
-    "linear-gradient(180deg, #f8fafc 0%, #f6f7fb 42%, #f3f4f6 100%)",
+    "linear-gradient(180deg, #f8fafc 0%, #f4f6fb 46%, #f1f5f9 100%)",
   color: "#111827",
+  overflow: "hidden",
 };
 
-const mainArea: React.CSSProperties = {
+const mainArea: CSSProperties = {
   flex: 1,
   minWidth: 0,
   minHeight: "100vh",
   display: "flex",
   flexDirection: "column",
   overflowX: "hidden",
+  overflowY: "auto",
 };
 
-const contentViewport: React.CSSProperties = {
+const contentViewport: CSSProperties = {
   flex: 1,
   width: "100%",
+  minWidth: 0,
   boxSizing: "border-box",
-  padding: "20px 20px 24px",
+  padding: "22px 24px 28px",
 };
 
-const contentContainer: React.CSSProperties = {
+const contentContainer: CSSProperties = {
   width: "100%",
-  maxWidth: 1360,
+  maxWidth: 1480,
   margin: "0 auto",
   boxSizing: "border-box",
+  minWidth: 0,
 };
 
-const contentFrame: React.CSSProperties = {
+const contentFrame: CSSProperties = {
   minHeight: "calc(100vh - 118px)",
   borderRadius: 28,
-  padding: 4,
-  background: "rgba(255, 255, 255, 0.42)",
-  border: "1px solid rgba(255, 255, 255, 0.58)",
-  boxShadow:
-    "0 12px 34px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.45)",
+  padding: 6,
+  background: "rgba(255, 255, 255, 0.58)",
+  border: "1px solid rgba(226, 232, 240, 0.9)",
+  boxShadow: "0 14px 34px rgba(15, 23, 42, 0.06)",
   backdropFilter: "blur(10px)",
+  boxSizing: "border-box",
+  minWidth: 0,
 };
 
-const contentSurface: React.CSSProperties = {
+const contentSurface: CSSProperties = {
   width: "100%",
-  minHeight: "calc(100vh - 126px)",
+  minHeight: "calc(100vh - 130px)",
   borderRadius: 24,
-  padding: 20,
+  padding: 24,
   boxSizing: "border-box",
-  background: "rgba(255, 255, 255, 0.8)",
-  border: "1px solid rgba(229, 231, 235, 0.72)",
-  backdropFilter: "blur(8px)",
+  background: "#ffffff",
+  border: "1px solid rgba(226, 232, 240, 0.95)",
+  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.8)",
+  overflowX: "hidden",
+  minWidth: 0,
 };

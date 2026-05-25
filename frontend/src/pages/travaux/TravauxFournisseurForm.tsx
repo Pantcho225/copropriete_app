@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -51,6 +52,8 @@ type FormValues = {
   is_active: boolean;
 };
 
+type FormErrors = Partial<Record<keyof FormValues, string>>;
+
 const INITIAL_VALUES: FormValues = {
   nom: "",
   specialite: "",
@@ -61,8 +64,54 @@ const INITIAL_VALUES: FormValues = {
   is_active: true,
 };
 
+function getTone(kind: BadgeKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      border: "#86efac",
+      text: "#166534",
+      strongText: "#14532d",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      border: "#93c5fd",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      border: "#fcd34d",
+      text: "#92400e",
+      strongText: "#78350f",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      border: "#fca5a5",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+    };
+  }
+
+  return {
+    softBg: "#f9fafb",
+    border: "#e5e7eb",
+    text: "#4b5563",
+    strongText: "#111827",
+  };
+}
+
 function cleanText(v: unknown): string {
   if (v === null || v === undefined) return "";
+
   return String(v).trim();
 }
 
@@ -72,8 +121,11 @@ function normalizeEmail(value: string) {
 
 function fmtDateTime(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return String(value);
+
   return d.toLocaleString("fr-FR");
 }
 
@@ -112,13 +164,9 @@ function getErrorMessage(e: unknown, fallback: string) {
   const data = err?.response?.data;
 
   if (data && typeof data === "object") {
-    if (typeof data.detail === "string" && data.detail.trim()) {
-      return data.detail;
-    }
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
 
-    if (typeof data.message === "string" && data.message.trim()) {
-      return data.message;
-    }
+    if (typeof data.message === "string" && data.message.trim()) return data.message;
 
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
@@ -147,6 +195,8 @@ function getErrorMessage(e: unknown, fallback: string) {
         fieldMessages.push(`${label} : ${value.join(" / ")}`);
       } else if (typeof value === "string" && value.trim()) {
         fieldMessages.push(`${label} : ${value}`);
+      } else if (value !== null && value !== undefined) {
+        fieldMessages.push(`${label} : ${JSON.stringify(value)}`);
       }
     }
 
@@ -159,49 +209,38 @@ function getErrorMessage(e: unknown, fallback: string) {
 }
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
 function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.5,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
-        </div>
-        {props.subtitle ? (
-          <div
-            style={{
-              marginTop: 8,
-              color: "#6b7280",
-              fontSize: 14,
-              lineHeight: 1.5,
-              maxWidth: 900,
-            }}
-          >
-            {props.subtitle}
-          </div>
-        ) : null}
+    <div style={sectionTitleWrapper}>
+      <div style={sectionTitleTextBlock}>
+        <div style={sectionTitle}>{props.title}</div>
+
+        {props.subtitle ? <div style={sectionSubtitle}>{props.subtitle}</div> : null}
       </div>
 
-      {props.right ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{props.right}</div> : null}
+      {props.right ? <div style={sectionActions}>{props.right}</div> : null}
     </div>
+  );
+}
+
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 22,
+        padding: 16,
+        background: "#fff",
+        boxShadow: "0 16px 40px rgba(15, 23, 42, 0.05)",
+        minWidth: 0,
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
   );
 }
 
@@ -216,17 +255,27 @@ function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode 
   return (
     <div
       style={{
-        padding: 14,
-        borderRadius: 16,
+        padding: 13,
+        borderRadius: 14,
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
         whiteSpace: "pre-wrap",
         lineHeight: 1.5,
+        minWidth: 0,
       }}
     >
       {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
-      <div style={{ fontSize: 13 }}>{props.children}</div>
+      <div style={{ fontSize: 12.5 }}>{props.children}</div>
+    </div>
+  );
+}
+
+function MutedInfoBox(props: { title?: string; children: ReactNode }) {
+  return (
+    <div style={mutedInfoBox}>
+      {props.title ? <div style={mutedInfoTitle}>{props.title}</div> : null}
+      <div style={mutedInfoText}>{props.children}</div>
     </div>
   );
 }
@@ -272,8 +321,8 @@ function AppButton(props: {
           background: props.disabled ? "#f9fafb" : styles.background,
           color: props.disabled ? "#9ca3af" : styles.color,
           borderRadius: 12,
-          padding: "10px 14px",
-          fontSize: 13,
+          padding: "9px 13px",
+          fontSize: 12.5,
           fontWeight: 800,
           textDecoration: "none",
           display: "inline-flex",
@@ -298,8 +347,8 @@ function AppButton(props: {
         background: props.disabled ? "#f9fafb" : styles.background,
         color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
@@ -315,16 +364,7 @@ function RequiredMark() {
 }
 
 function Badge(props: { text: string; kind?: BadgeKind }) {
-  const styles =
-    props.kind === "success"
-      ? { background: "#ecfdf5", border: "#a7f3d0", color: "#065f46" }
-      : props.kind === "warning"
-        ? { background: "#fffbeb", border: "#fde68a", color: "#92400e" }
-        : props.kind === "danger"
-          ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
-          : props.kind === "info"
-            ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
-            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+  const tone = getTone(props.kind ?? "neutral");
 
   return (
     <span
@@ -332,14 +372,15 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
+        minHeight: 26,
         padding: "4px 10px",
         borderRadius: 999,
-        fontSize: 12,
+        fontSize: 11.5,
         fontWeight: 800,
         whiteSpace: "nowrap",
-        border: `1px solid ${styles.border}`,
-        background: styles.background,
-        color: styles.color,
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        color: tone.text,
       }}
     >
       {props.text}
@@ -347,26 +388,42 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
   );
 }
 
-function InfoCard(props: { title: string; children: ReactNode }) {
+function InfoCard(props: { title: string; children: ReactNode; kind?: BadgeKind }) {
+  const tone = getTone(props.kind ?? "neutral");
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 16,
-        padding: 14,
-        background: "#fff",
+        border: `1px solid ${tone.border}`,
+        borderRadius: 15,
+        padding: 12,
+        background: tone.softBg,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>
-        {props.title}
+      <div style={{ ...infoCardTitle, color: tone.text }}>{props.title}</div>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 800,
+          color: tone.strongText,
+          lineHeight: 1.4,
+          minWidth: 0,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {props.children}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", lineHeight: 1.45 }}>{props.children}</div>
     </div>
   );
 }
 
 function FieldHint(props: { children: ReactNode }) {
   return <div style={hint}>{props.children}</div>;
+}
+
+function FieldError(props: { children: ReactNode }) {
+  return <div style={fieldError}>{props.children}</div>;
 }
 
 export default function TravauxFournisseurForm() {
@@ -380,64 +437,76 @@ export default function TravauxFournisseurForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<FournisseurResponse | null>(null);
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
 
-  useEffect(() => {
-    async function run() {
-      if (!isEdit || !id) return;
+  const fetchFournisseur = useCallback(async () => {
+    if (!isEdit || !id) return;
 
-      setState("loading");
-      setError(null);
-      setSuccess(null);
+    setState("loading");
+    setError(null);
+    setSuccess(null);
 
-      try {
-        const { data } = await api.get<FournisseurResponse>(ENDPOINTS.travauxFournisseurDetail(id));
+    try {
+      const { data } = await api.get<FournisseurResponse>(
+        ENDPOINTS.travauxFournisseurDetail(id),
+      );
 
-        setLoaded(data);
-        setValues({
-          nom: cleanText(data.nom),
-          specialite: cleanText(data.specialite),
-          email: cleanText(data.email),
-          telephone: cleanText(data.telephone),
-          adresse: cleanText(data.adresse),
-          identifiant: cleanText(data.identifiant),
-          is_active: extractActif(data),
-        });
+      setLoaded(data);
 
-        setState("success");
-      } catch (e) {
-        setState("error");
-        setLoaded(null);
-        setError(getErrorMessage(e, "Impossible de charger ce fournisseur."));
-      }
+      setValues({
+        nom: cleanText(data.nom),
+        specialite: cleanText(data.specialite),
+        email: cleanText(data.email),
+        telephone: cleanText(data.telephone),
+        adresse: cleanText(data.adresse),
+        identifiant: cleanText(data.identifiant),
+        is_active: extractActif(data),
+      });
+
+      setState("success");
+    } catch (e) {
+      setState("error");
+      setLoaded(null);
+      setError(getErrorMessage(e, "Impossible de charger ce prestataire."));
     }
-
-    void run();
   }, [id, isEdit]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchFournisseur();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchFournisseur]);
+
   const pageTitle = useMemo(
-    () => (isEdit ? "Modifier le fournisseur" : "Nouveau fournisseur"),
+    () => (isEdit ? "Modifier le prestataire" : "Nouveau prestataire"),
     [isEdit],
   );
 
   const pageSubtitle = useMemo(
     () =>
       isEdit
-        ? "Mettez à jour les informations de la fiche fournisseur sélectionnée."
-        : "Renseignez les informations utiles pour enregistrer un nouveau fournisseur dans le module Travaux.",
+        ? "Mettez à jour les informations du prestataire pour maintenir un référentiel fiable et exploitable."
+        : "Renseignez les informations pour enregistrer un nouveau prestataire dans le module Travaux.",
     [isEdit],
   );
 
-  function updateField<K extends keyof FormValues>(field: K, value: FormValues[K]) {
+  const updateField = useCallback(<K extends keyof FormValues>(field: K, value: FormValues[K]) => {
     setValues((prev) => ({ ...prev, [field]: value }));
-  }
+    setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+  }, []);
 
-  function resetForm() {
+  const resetForm = useCallback(() => {
     setValues(INITIAL_VALUES);
+    setFieldErrors({});
     setError(null);
     setSuccess(null);
-  }
+  }, []);
 
-  function buildPayload(): FournisseurPayload {
+  const buildPayload = useCallback((): FournisseurPayload => {
     return {
       nom: values.nom.trim(),
       specialite: values.specialite.trim(),
@@ -447,59 +516,77 @@ export default function TravauxFournisseurForm() {
       identifiant: values.identifiant.trim(),
       is_active: Boolean(values.is_active),
     };
-  }
+  }, [values]);
 
-  function validate(payload: FournisseurPayload) {
-    if (!payload.nom) return "Le nom du fournisseur est obligatoire.";
-    if (payload.nom.length < 2) return "Le nom du fournisseur doit contenir au moins 2 caractères.";
+  const validate = useCallback((payload: FournisseurPayload) => {
+    const nextErrors: FormErrors = {};
+
+    if (!payload.nom) {
+      nextErrors.nom = "Ce champ est obligatoire.";
+    } else if (payload.nom.length < 2) {
+      nextErrors.nom = "Le nom doit contenir au moins 2 caractères.";
+    }
 
     if (payload.email) {
       const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email);
-      if (!ok) return "L’adresse email n’est pas valide.";
+
+      if (!ok) nextErrors.email = "L’adresse email n’est pas valide.";
     }
 
-    return null;
-  }
+    return nextErrors;
+  }, []);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
+  const handleSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      setError(null);
+      setSuccess(null);
 
-    const payload = buildPayload();
-    const validationError = validate(payload);
+      const payload = buildPayload();
+      const validationErrors = validate(payload);
 
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+      setFieldErrors(validationErrors);
 
-    setSaving(true);
-
-    try {
-      if (isEdit && id) {
-        await api.patch(ENDPOINTS.travauxFournisseurDetail(id), payload);
-        setSuccess("Le fournisseur a bien été mis à jour.");
-      } else {
-        await api.post(ENDPOINTS.travauxFournisseurs, payload);
-        setSuccess("Le fournisseur a bien été créé.");
-        setValues(INITIAL_VALUES);
+      if (Object.keys(validationErrors).length > 0) {
+        setError(
+          isEdit
+            ? "Corrigez les champs signalés avant de mettre à jour le prestataire."
+            : "Corrigez les champs signalés avant de créer le prestataire.",
+        );
+        return;
       }
 
-      window.setTimeout(() => {
-        navigate("/travaux/fournisseurs");
-      }, 700);
-    } catch (e) {
-      setError(
-        getErrorMessage(
-          e,
-          isEdit ? "Impossible de modifier ce fournisseur." : "Impossible d’enregistrer ce fournisseur.",
-        ),
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
+      setSaving(true);
+
+      try {
+        if (isEdit && id) {
+          await api.patch(ENDPOINTS.travauxFournisseurDetail(id), payload);
+          setSuccess("Le prestataire a bien été mis à jour.");
+        } else {
+          await api.post(ENDPOINTS.travauxFournisseurs, payload);
+          setSuccess("Le prestataire a bien été créé.");
+          setValues(INITIAL_VALUES);
+          setFieldErrors({});
+        }
+
+        window.setTimeout(() => {
+          navigate("/travaux/fournisseurs");
+        }, 700);
+      } catch (e) {
+        setError(
+          getErrorMessage(
+            e,
+            isEdit
+              ? "Impossible de modifier ce prestataire."
+              : "Impossible d’enregistrer ce prestataire.",
+          ),
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [buildPayload, id, isEdit, navigate, validate],
+  );
 
   const isBusy = state === "loading" || saving;
   const canShowForm = !isEdit || state === "success";
@@ -510,23 +597,15 @@ export default function TravauxFournisseurForm() {
         title={pageTitle}
         subtitle={pageSubtitle}
         right={
-          <>
-            <AppButton to="/travaux/fournisseurs" variant="secondary">
-              Retour à la liste
-            </AppButton>
-
-            {isEdit && id ? (
-              <AppButton to="/travaux/fournisseurs" variant="secondary">
-                Voir la liste
-              </AppButton>
-            ) : null}
-          </>
+          <AppButton to="/travaux/fournisseurs" variant="secondary">
+            Retour aux prestataires
+          </AppButton>
         }
       />
 
       {state === "loading" ? (
         <AlertBox kind="info" title="Chargement du formulaire">
-          Récupération des informations du fournisseur en cours.
+          Récupération des informations du prestataire en cours.
         </AlertBox>
       ) : null}
 
@@ -543,158 +622,196 @@ export default function TravauxFournisseurForm() {
       ) : null}
 
       {isEdit && loaded ? (
-        <div style={infoGrid} className="travaux-fournisseur-form-info-grid">
-          <InfoCard title="ID fournisseur">#{loaded.id}</InfoCard>
-          <InfoCard title="Créé le">{fmtDateTime(loaded.created_at)}</InfoCard>
-          <InfoCard title="Mis à jour le">{fmtDateTime(loaded.updated_at)}</InfoCard>
-          <InfoCard title="État">
+        <Panel style={{ paddingTop: 14, paddingBottom: 14 }}>
+          <div style={summaryHeader}>
+            <div style={summaryTitle}>Synthèse du prestataire</div>
             <Badge text={humanizeActif(values.is_active)} kind={getActifKind(values.is_active)} />
-          </InfoCard>
-        </div>
-      ) : null}
+          </div>
 
-      {isEdit && loaded ? (
-        <AlertBox kind="info" title="Lecture métier du fournisseur">
-          Cette fiche permet de maintenir les informations du prestataire. La liaison directe entre fournisseur et dossier travaux pourra être renforcée plus tard sans bloquer l’exploitation actuelle.
-        </AlertBox>
+          <div style={infoGrid} className="travaux-fournisseur-form-info-grid">
+            <InfoCard title="ID prestataire" kind="neutral">
+              #{loaded.id}
+            </InfoCard>
+
+            <InfoCard title="Créé le" kind="neutral">
+              {fmtDateTime(loaded.created_at)}
+            </InfoCard>
+
+            <InfoCard title="Mis à jour le" kind="neutral">
+              {fmtDateTime(loaded.updated_at)}
+            </InfoCard>
+
+            <InfoCard title="État" kind={getActifKind(values.is_active)}>
+              <Badge text={humanizeActif(values.is_active)} kind={getActifKind(values.is_active)} />
+            </InfoCard>
+          </div>
+        </Panel>
       ) : null}
 
       {state === "error" && isEdit ? (
-        <div style={card}>
-          <div style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.6 }}>
-            Le formulaire ne peut pas être affiché tant que le chargement du fournisseur n’a pas abouti.
+        <Panel>
+          <div style={blockedText}>
+            Le formulaire ne peut pas être affiché tant que le chargement du prestataire n’a pas
+            abouti.
           </div>
-        </div>
+        </Panel>
       ) : null}
 
       {canShowForm ? (
-        <form onSubmit={handleSubmit} style={card}>
-          <div style={requiredInfo}>
-            Les champs marqués d’un <span style={requiredMark}>*</span> sont obligatoires.
-          </div>
-
-          <div style={grid2} className="travaux-fournisseur-form-grid">
-            <div style={field}>
-              <label style={label}>
-                Nom du fournisseur <RequiredMark />
-              </label>
-              <input
-                value={values.nom}
-                onChange={(e) => updateField("nom", e.target.value)}
-                style={input}
-                placeholder="Ex. ETS TOITURE PRO"
-                disabled={isBusy}
-              />
-              <FieldHint>Nom commercial ou raison sociale du prestataire.</FieldHint>
+        <Panel>
+          <form onSubmit={handleSubmit}>
+            <div style={requiredInfo}>
+              Les champs marqués d’un <span style={requiredMark}>*</span> sont obligatoires.
             </div>
 
-            <div style={field}>
-              <label style={label}>Spécialité</label>
-              <input
-                value={values.specialite}
-                onChange={(e) => updateField("specialite", e.target.value)}
-                style={input}
-                placeholder="Ex. Couverture, plomberie, peinture"
-                disabled={isBusy}
-              />
-              <FieldHint>Champ optionnel mais utile pour filtrer et retrouver rapidement le prestataire.</FieldHint>
+            <div style={grid2} className="travaux-fournisseur-form-grid">
+              <div style={field}>
+                <label style={label}>
+                  Nom du prestataire <RequiredMark />
+                </label>
+
+                <input
+                  value={values.nom}
+                  onChange={(e) => updateField("nom", e.target.value)}
+                  style={fieldErrors.nom ? inputError : input}
+                  placeholder="Ex. ETS TOITURE PRO"
+                  disabled={isBusy}
+                  aria-invalid={Boolean(fieldErrors.nom)}
+                />
+
+                {fieldErrors.nom ? <FieldError>{fieldErrors.nom}</FieldError> : null}
+
+                <FieldHint>Nom commercial ou raison sociale du prestataire.</FieldHint>
+              </div>
+
+              <div style={field}>
+                <label style={label}>Spécialité</label>
+
+                <input
+                  value={values.specialite}
+                  onChange={(e) => updateField("specialite", e.target.value)}
+                  style={input}
+                  placeholder="Ex. Couverture, plomberie, peinture"
+                  disabled={isBusy}
+                />
+
+                <FieldHint>
+                  Champ optionnel utile pour filtrer et retrouver rapidement le prestataire.
+                </FieldHint>
+              </div>
+
+              <div style={field}>
+                <label style={label}>Téléphone</label>
+
+                <input
+                  value={values.telephone}
+                  onChange={(e) => updateField("telephone", e.target.value)}
+                  style={input}
+                  placeholder="Ex. 07 00 00 00 00"
+                  disabled={isBusy}
+                />
+              </div>
+
+              <div style={field}>
+                <label style={label}>Email</label>
+
+                <input
+                  type="email"
+                  value={values.email}
+                  onChange={(e) => updateField("email", e.target.value)}
+                  style={fieldErrors.email ? inputError : input}
+                  placeholder="Ex. contact@prestataire.ci"
+                  disabled={isBusy}
+                  aria-invalid={Boolean(fieldErrors.email)}
+                />
+
+                {fieldErrors.email ? <FieldError>{fieldErrors.email}</FieldError> : null}
+              </div>
+
+              <div style={field}>
+                <label style={label}>Adresse</label>
+
+                <input
+                  value={values.adresse}
+                  onChange={(e) => updateField("adresse", e.target.value)}
+                  style={input}
+                  placeholder="Ex. Cocody, Riviera, Abidjan"
+                  disabled={isBusy}
+                />
+              </div>
+
+              <div style={field}>
+                <label style={label}>Identifiant</label>
+
+                <input
+                  value={values.identifiant}
+                  onChange={(e) => updateField("identifiant", e.target.value)}
+                  style={input}
+                  placeholder="Ex. RCCM, IFU, SIRET ou référence interne"
+                  disabled={isBusy}
+                />
+
+                <FieldHint>
+                  Champ secondaire utile pour l’exploitation, le contrôle ou une future montée en
+                  gamme du module.
+                </FieldHint>
+              </div>
+
+              <div style={{ ...field, gridColumn: "1 / -1" }}>
+                <label style={label}>État du prestataire</label>
+
+                <select
+                  value={values.is_active ? "ACTIF" : "INACTIF"}
+                  onChange={(e) => updateField("is_active", e.target.value === "ACTIF")}
+                  style={selectInput}
+                  disabled={isBusy}
+                >
+                  <option value="ACTIF">Actif</option>
+                  <option value="INACTIF">Inactif</option>
+                </select>
+
+                <FieldHint>
+                  Un prestataire inactif reste historisé mais n’est plus utilisé dans les nouveaux
+                  dossiers.
+                </FieldHint>
+              </div>
             </div>
 
-            <div style={field}>
-              <label style={label}>Téléphone</label>
-              <input
-                value={values.telephone}
-                onChange={(e) => updateField("telephone", e.target.value)}
-                style={input}
-                placeholder="Ex. 07 00 00 00 00"
-                disabled={isBusy}
-              />
-            </div>
+            <div style={actions}>
+              {!isEdit ? (
+                <AppButton onClick={resetForm} variant="secondary" disabled={isBusy}>
+                  Réinitialiser
+                </AppButton>
+              ) : (
+                <AppButton to="/travaux/fournisseurs" variant="secondary" disabled={saving}>
+                  Annuler
+                </AppButton>
+              )}
 
-            <div style={field}>
-              <label style={label}>Email</label>
-              <input
-                type="email"
-                value={values.email}
-                onChange={(e) => updateField("email", e.target.value)}
-                style={input}
-                placeholder="Ex. contact@prestataire.ci"
+              <button
+                type="submit"
                 disabled={isBusy}
-              />
-            </div>
-
-            <div style={field}>
-              <label style={label}>Adresse</label>
-              <input
-                value={values.adresse}
-                onChange={(e) => updateField("adresse", e.target.value)}
-                style={input}
-                placeholder="Ex. Cocody, Riviera, Abidjan"
-                disabled={isBusy}
-              />
-            </div>
-
-            <div style={field}>
-              <label style={label}>Identifiant</label>
-              <input
-                value={values.identifiant}
-                onChange={(e) => updateField("identifiant", e.target.value)}
-                style={input}
-                placeholder="Ex. RCCM, IFU, SIRET ou référence interne"
-                disabled={isBusy}
-              />
-              <FieldHint>
-                Champ secondaire utile pour l’exploitation, le contrôle ou une future montée en gamme du module.
-              </FieldHint>
-            </div>
-
-            <div style={{ ...field, gridColumn: "1 / -1" }}>
-              <label style={label}>État du fournisseur</label>
-              <select
-                value={values.is_active ? "ACTIF" : "INACTIF"}
-                onChange={(e) => updateField("is_active", e.target.value === "ACTIF")}
-                style={selectInput}
-                disabled={isBusy}
+                style={{
+                  ...primaryButton,
+                  opacity: isBusy ? 0.8 : 1,
+                  cursor: isBusy ? "not-allowed" : "pointer",
+                }}
               >
-                <option value="ACTIF">Actif</option>
-                <option value="INACTIF">Inactif</option>
-              </select>
-              <FieldHint>
-                Un fournisseur inactif reste historisé mais n’est plus considéré comme prestataire courant.
-              </FieldHint>
+                {saving
+                  ? "Enregistrement..."
+                  : isEdit
+                    ? "Enregistrer les modifications"
+                    : "Créer le prestataire"}
+              </button>
             </div>
-          </div>
-
-          <div style={actions}>
-            {!isEdit ? (
-              <AppButton onClick={resetForm} variant="secondary" disabled={isBusy}>
-                Réinitialiser
-              </AppButton>
-            ) : (
-              <AppButton to="/travaux/fournisseurs" variant="secondary" disabled={saving}>
-                Annuler
-              </AppButton>
-            )}
-
-            <button
-              type="submit"
-              disabled={isBusy}
-              style={{
-                ...primaryButton,
-                opacity: isBusy ? 0.8 : 1,
-                cursor: isBusy ? "not-allowed" : "pointer",
-              }}
-            >
-              {saving ? "Enregistrement..." : isEdit ? "Enregistrer les modifications" : "Créer le fournisseur"}
-            </button>
-          </div>
-        </form>
+          </form>
+        </Panel>
       ) : null}
 
-      <AlertBox kind="info" title="Lecture métier du formulaire">
-        Ce formulaire sert à créer ou mettre à jour les informations principales d’un fournisseur du module Travaux.
-        Les futurs liens directs avec les dossiers travaux pourront être enrichis sans remettre en cause cette fiche de base.
-      </AlertBox>
+      <MutedInfoBox title="Lecture métier">
+        Ce formulaire gère les informations principales d’un prestataire intervenant sur les travaux.
+        Les liaisons avec les dossiers pourront être enrichies sans modifier cette fiche.
+      </MutedInfoBox>
 
       <style>{`
         @media (max-width: 900px) {
@@ -717,29 +834,117 @@ export default function TravauxFournisseurForm() {
   );
 }
 
-const card: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
-  padding: 18,
-  background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 14,
+  width: "100%",
+  minWidth: 0,
+};
+
+const sectionTitleWrapper: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+  alignItems: "flex-end",
+  minWidth: 0,
+};
+
+const sectionTitleTextBlock: CSSProperties = {
+  minWidth: 280,
+};
+
+const sectionTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  letterSpacing: -0.5,
+  color: "#111827",
+  lineHeight: 1.08,
+};
+
+const sectionSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "#6b7280",
+  fontSize: 13,
+  lineHeight: 1.55,
+  maxWidth: 860,
+};
+
+const sectionActions: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const mutedInfoBox: CSSProperties = {
+  padding: "11px 12px",
+  borderRadius: 12,
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  color: "#1d4ed8",
+  minWidth: 0,
+};
+
+const mutedInfoTitle: CSSProperties = {
+  fontSize: 12.5,
+  fontWeight: 800,
+  marginBottom: 3,
+};
+
+const mutedInfoText: CSSProperties = {
+  fontSize: 11.5,
+  lineHeight: 1.5,
+};
+
+const infoCardTitle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  marginBottom: 7,
+  textTransform: "uppercase",
+  letterSpacing: 0.32,
+};
+
+const summaryHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "center",
+  marginBottom: 10,
+  minWidth: 0,
+};
+
+const summaryTitle: CSSProperties = {
+  fontSize: 14.5,
+  fontWeight: 900,
+  color: "#111827",
+};
+
+const blockedText: CSSProperties = {
+  color: "#6b7280",
+  fontSize: 14,
+  lineHeight: 1.6,
 };
 
 const infoGrid: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 14,
+  gap: 10,
+  minWidth: 0,
 };
 
 const grid2: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 14,
+  gap: 12,
+  minWidth: 0,
 };
 
 const field: CSSProperties = {
   display: "grid",
-  gap: 8,
+  gap: 7,
+  minWidth: 0,
 };
 
 const label: CSSProperties = {
@@ -749,9 +954,16 @@ const label: CSSProperties = {
 };
 
 const hint: CSSProperties = {
-  fontSize: 12,
-  color: "#6b7280",
+  fontSize: 11.5,
+  color: "#7b8494",
   lineHeight: 1.45,
+};
+
+const fieldError: CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  lineHeight: 1.45,
+  fontWeight: 700,
 };
 
 const requiredMark: CSSProperties = {
@@ -761,19 +973,19 @@ const requiredMark: CSSProperties = {
 };
 
 const requiredInfo: CSSProperties = {
-  marginBottom: 16,
-  padding: "10px 12px",
+  marginBottom: 14,
+  padding: "9px 12px",
   borderRadius: 12,
-  background: "#fff7ed",
-  border: "1px solid #fed7aa",
-  color: "#9a3412",
-  fontSize: 13,
+  background: "#fffbeb",
+  border: "1px solid #fde68a",
+  color: "#92400e",
+  fontSize: 12.5,
   lineHeight: 1.5,
 };
 
 const input: CSSProperties = {
   width: "100%",
-  padding: "12px 12px",
+  padding: "11px 12px",
   borderRadius: 12,
   border: "1px solid #e5e7eb",
   background: "#fff",
@@ -782,9 +994,15 @@ const input: CSSProperties = {
   boxSizing: "border-box",
 };
 
+const inputError: CSSProperties = {
+  ...input,
+  border: "1px solid #fca5a5",
+  background: "#fffafa",
+};
+
 const selectInput: CSSProperties = {
   width: "100%",
-  padding: "12px 12px",
+  padding: "11px 12px",
   borderRadius: 12,
   border: "1px solid #e5e7eb",
   background: "#fff",
@@ -798,7 +1016,7 @@ const actions: CSSProperties = {
   justifyContent: "flex-end",
   gap: 10,
   flexWrap: "wrap",
-  marginTop: 16,
+  marginTop: 8,
 };
 
 const primaryButton: CSSProperties = {
@@ -806,7 +1024,7 @@ const primaryButton: CSSProperties = {
   background: "#eef2ff",
   color: "#3730a3",
   borderRadius: 12,
-  padding: "11px 16px",
-  fontSize: 14,
+  padding: "10px 15px",
+  fontSize: 13.5,
   fontWeight: 800,
 };

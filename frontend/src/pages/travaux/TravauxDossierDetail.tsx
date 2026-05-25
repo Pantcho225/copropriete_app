@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
@@ -35,15 +42,22 @@ type DossierDetailView = {
   notes?: string | null;
 };
 
+type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
+type FlashKind = "error" | "info";
+
 function toNumberOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
+
   const n = Number(v);
+
   return Number.isFinite(n) ? n : null;
 }
 
 function cleanText(v: unknown): string | null {
   if (v === null || v === undefined) return null;
+
   const s = String(v).trim();
+
   return s ? s : null;
 }
 
@@ -76,21 +90,91 @@ function humanizeStatut(value?: unknown) {
 function getStatutHint(value?: unknown) {
   const s = normalizeStatut(value);
 
-  if (s === "BROUILLON") return "Le dossier peut encore être enrichi avant soumission.";
-  if (s === "SOUMIS_AG") return "Le dossier a été soumis pour traitement dans le circuit AG.";
-  if (s === "A_VALIDER") return "Le dossier attend une validation avant exécution complète.";
-  if (s === "VALIDE") return "Le dossier est validé et prêt pour l’exploitation prévue.";
-  if (s === "EN_COURS") return "Le dossier est en cours d’exécution ou de suivi.";
-  if (s === "TERMINE") return "Le dossier est clôturé sur le plan opérationnel.";
-  if (s === "REFUSE") return "Le dossier n’a pas été retenu ou a été rejeté.";
-  if (s === "ANNULE") return "Le dossier a été annulé et ne suit plus le flux actif.";
+  if (s === "BROUILLON") return "Le dossier est encore en préparation avant sa soumission.";
+  if (s === "SOUMIS_AG") return "Le dossier attend un arbitrage ou un traitement dans le circuit AG.";
+  if (s === "A_VALIDER") return "Le dossier est en attente de validation avant poursuite.";
+  if (s === "VALIDE") return "Le dossier est validé et peut suivre son exécution prévue.";
+  if (s === "EN_COURS") return "Le dossier est en cours d’exécution ou de suivi opérationnel.";
+  if (s === "TERMINE") return "Le dossier est terminé sur le plan opérationnel.";
+  if (s === "REFUSE") return "Le dossier a été rejeté et ne poursuit pas le flux prévu.";
+  if (s === "ANNULE") return "Le dossier a été annulé et sorti du flux actif.";
   if (s === "ARCHIVE") return "Le dossier est conservé à titre d’historique.";
+
   return "État courant du dossier travaux.";
+}
+
+function getStatutKind(statut?: unknown): BadgeKind {
+  const s = normalizeStatut(statut);
+
+  if (s === "VALIDE" || s === "TERMINE") return "success";
+  if (s === "EN_COURS") return "info";
+  if (s === "SOUMIS_AG" || s === "A_VALIDER") return "warning";
+  if (s === "REFUSE" || s === "ANNULE") return "danger";
+  if (s === "BROUILLON" || s === "ARCHIVE") return "neutral";
+
+  return "neutral";
+}
+
+function getTone(kind: BadgeKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      bg: "#dcfce7",
+      border: "#86efac",
+      strongBorder: "#22c55e",
+      text: "#166534",
+      strongText: "#14532d",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      bg: "#dbeafe",
+      border: "#93c5fd",
+      strongBorder: "#3b82f6",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      bg: "#fef3c7",
+      border: "#fcd34d",
+      strongBorder: "#f59e0b",
+      text: "#92400e",
+      strongText: "#78350f",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      bg: "#fee2e2",
+      border: "#fca5a5",
+      strongBorder: "#ef4444",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+    };
+  }
+
+  return {
+    softBg: "#f8fafc",
+    bg: "#f1f5f9",
+    border: "#e2e8f0",
+    strongBorder: "#cbd5e1",
+    text: "#475569",
+    strongText: "#0f172a",
+  };
 }
 
 function fmtMoney(value?: number | null) {
   if (value === null || value === undefined) return "—";
+
   const n = Number(value);
+
   if (Number.isNaN(n)) return "—";
 
   try {
@@ -106,15 +190,21 @@ function fmtMoney(value?: number | null) {
 
 function fmtDate(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return String(value);
+
   return d.toLocaleDateString("fr-FR");
 }
 
 function fmtDateTime(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return String(value);
+
   return d.toLocaleString("fr-FR");
 }
 
@@ -132,82 +222,42 @@ function getErrorMessage(e: unknown, fallback: string) {
   };
 
   const data = err?.response?.data;
+
   if (data && typeof data === "object") {
     if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
     if (typeof data.message === "string" && data.message.trim()) return data.message;
+
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
     }
 
     try {
       const entries = Object.entries(data).filter(
-        ([key]) => key !== "detail" && key !== "message" && key !== "non_field_errors"
+        ([key]) => key !== "detail" && key !== "message" && key !== "non_field_errors",
       );
+
       if (entries.length) {
         return entries
-          .map(([k, v]) => {
-            if (Array.isArray(v)) return `${k}: ${v.join(" / ")}`;
-            if (typeof v === "string") return `${k}: ${v}`;
-            return `${k}: ${JSON.stringify(v)}`;
+          .map(([key, value]) => {
+            if (Array.isArray(value)) return `${key}: ${value.join(" / ")}`;
+            if (typeof value === "string") return `${key}: ${value}`;
+
+            return `${key}: ${JSON.stringify(value)}`;
           })
           .join("\n");
       }
     } catch {
-      //
+      return err?.message || fallback;
     }
   }
 
   return err?.message || fallback;
 }
 
-function getStatutStyle(statut?: unknown): CSSProperties {
-  const s = normalizeStatut(statut);
-
-  if (s === "VALIDE" || s === "TERMINE") {
-    return {
-      ...badgeBase,
-      color: "#166534",
-      background: "#ecfdf5",
-      border: "1px solid #a7f3d0",
-    };
-  }
-
-  if (s === "SOUMIS_AG" || s === "A_VALIDER" || s === "EN_COURS") {
-    return {
-      ...badgeBase,
-      color: "#1d4ed8",
-      background: "#eff6ff",
-      border: "1px solid #bfdbfe",
-    };
-  }
-
-  if (s === "BROUILLON") {
-    return {
-      ...badgeBase,
-      color: "#374151",
-      background: "#f3f4f6",
-      border: "1px solid #e5e7eb",
-    };
-  }
-
-  if (s === "REFUSE" || s === "ANNULE") {
-    return {
-      ...badgeBase,
-      color: "#991b1b",
-      background: "#fef2f2",
-      border: "1px solid #fecaca",
-    };
-  }
-
-  return {
-    ...badgeBase,
-    color: "#92400e",
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-  };
-}
-
-function getMoneyTone(value: number | null, kind: "paid" | "remaining" | "neutral"): CSSProperties {
+function getMoneyTone(
+  value: number | null,
+  kind: "paid" | "remaining" | "neutral",
+): CSSProperties {
   if (value === null) return { color: "#111827" };
 
   if (kind === "paid") {
@@ -221,26 +271,47 @@ function getMoneyTone(value: number | null, kind: "paid" | "remaining" | "neutra
   return { color: "#111827" };
 }
 
+function getBudgetCardTone(kind: "paid" | "remaining" | "neutral", value: number | null) {
+  if (kind === "paid") {
+    return value !== null && value > 0 ? getTone("success") : getTone("neutral");
+  }
+
+  if (kind === "remaining") {
+    if (value === null) return getTone("neutral");
+
+    return value > 0 ? getTone("warning") : getTone("success");
+  }
+
+  return getTone("neutral");
+}
+
 function extractFournisseurLabel(raw: TravauxRawItem) {
   const fournisseur = raw.fournisseur;
 
   if (fournisseur && typeof fournisseur === "object") {
     const obj = fournisseur as Record<string, unknown>;
     const nom = obj.nom ?? obj.raison_sociale ?? obj.libelle ?? obj.name;
+
     if (typeof nom === "string" && nom.trim()) return nom.trim();
-    if (typeof obj.id === "number") return `Fournisseur #${obj.id}`;
+    if (typeof obj.id === "number") return `Prestataire #${obj.id}`;
   }
 
   const direct = raw.fournisseur_nom ?? raw.fournisseur_label ?? raw.nom_fournisseur;
+
   if (typeof direct === "string" && direct.trim()) return direct.trim();
 
   const fid = toNumberOrNull(raw.fournisseur_id ?? raw.fournisseur);
-  if (fid !== null) return `Fournisseur #${fid}`;
+
+  if (fid !== null) return `Prestataire #${fid}`;
 
   return "—";
 }
 
-function computeBudgetReference(raw: TravauxRawItem, budgetEstime: number | null, budgetVote: number | null) {
+function computeBudgetReference(
+  raw: TravauxRawItem,
+  budgetEstime: number | null,
+  budgetVote: number | null,
+) {
   const explicit =
     toNumberOrNull(raw.budget_reference) ??
     toNumberOrNull(raw.budget_retained) ??
@@ -249,6 +320,7 @@ function computeBudgetReference(raw: TravauxRawItem, budgetEstime: number | null
   if (explicit !== null) return explicit;
   if (budgetVote !== null) return budgetVote;
   if (budgetEstime !== null) return budgetEstime;
+
   return null;
 }
 
@@ -263,7 +335,11 @@ function computeTotalPaye(raw: TravauxRawItem) {
   );
 }
 
-function computeResteAPayer(raw: TravauxRawItem, budgetReference: number | null, totalPaye: number | null) {
+function computeResteAPayer(
+  raw: TravauxRawItem,
+  budgetReference: number | null,
+  totalPaye: number | null,
+) {
   const explicit =
     toNumberOrNull(raw.reste_a_payer) ??
     toNumberOrNull(raw.reste) ??
@@ -271,6 +347,7 @@ function computeResteAPayer(raw: TravauxRawItem, budgetReference: number | null,
 
   if (explicit !== null) return explicit;
   if (budgetReference === null) return null;
+
   return Math.max(budgetReference - (totalPaye ?? 0), 0);
 }
 
@@ -307,6 +384,7 @@ function normalizeDossier(raw: TravauxRawItem): DossierDetailView {
     null;
 
   const lockedAt = cleanText(raw.locked_at);
+
   const locked =
     Boolean(raw.is_locked) ||
     Boolean(raw.locked) ||
@@ -343,46 +421,53 @@ function normalizeDossier(raw: TravauxRawItem): DossierDetailView {
 }
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+  return <div style={pageShell}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function HeroHeader(props: {
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.5,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
+    <section style={heroCard}>
+      <div style={heroGlow} />
+
+      <div style={heroGrid}>
+        <div style={heroMainBlock}>
+          <div style={pageEyebrow}>Travaux · Détail dossier</div>
+          <div style={pageTitle}>{props.title}</div>
+          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+
+          {props.actions ? <div style={{ ...heroActions, marginTop: 18 }}>{props.actions}</div> : null}
         </div>
 
-        {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 920 }}>
-            {props.subtitle}
-          </div>
-        ) : null}
+        {props.aside ? <div style={heroAsidePanel}>{props.aside}</div> : null}
       </div>
-
-      {props.right ? <div>{props.right}</div> : null}
-    </div>
+    </section>
   );
 }
 
-function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
+function Panel(props: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <section
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 22,
+        background: "#ffffff",
+        boxShadow: "0 16px 40px rgba(15, 23, 42, 0.05)",
+        overflow: "hidden",
+        minWidth: 0,
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </section>
+  );
+}
+
+function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -397,15 +482,16 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
         border: `1px solid ${tone.border}`,
         color: tone.text,
         whiteSpace: "pre-wrap",
-        lineHeight: 1.5,
+        lineHeight: 1.55,
       }}
     >
-      {props.children}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }
 
-function SmallButton(props: {
+function AppButton(props: {
   children: ReactNode;
   to?: string;
   onClick?: () => void;
@@ -423,12 +509,12 @@ function SmallButton(props: {
         aria-disabled={props.disabled}
         title={props.title}
         style={{
-          border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-          background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-          color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+          border: props.primary ? "1px solid #93c5fd" : "1px solid #cbd5e1",
+          background: props.disabled ? "#f9fafb" : props.primary ? "#dbeafe" : "#fff",
+          color: props.disabled ? "#9ca3af" : props.primary ? "#1e3a8a" : "#111827",
           borderRadius: 12,
           padding: "10px 14px",
-          fontSize: 13,
+          fontSize: 12.5,
           fontWeight: 800,
           textDecoration: "none",
           display: "inline-flex",
@@ -450,12 +536,12 @@ function SmallButton(props: {
       disabled={props.disabled}
       title={props.title}
       style={{
-        border: props.primary ? "1px solid #c7d2fe" : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.primary ? "#3730a3" : "#111827",
+        border: props.primary ? "1px solid #93c5fd" : "1px solid #cbd5e1",
+        background: props.disabled ? "#f9fafb" : props.primary ? "#dbeafe" : "#fff",
+        color: props.disabled ? "#9ca3af" : props.primary ? "#1e3a8a" : "#111827",
         borderRadius: 12,
         padding: "10px 14px",
-        fontSize: 13,
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
@@ -466,61 +552,51 @@ function SmallButton(props: {
   );
 }
 
-function InfoCard(props: { title: string; children: ReactNode; right?: ReactNode }) {
+function Badge(props: { text: string; kind?: BadgeKind }) {
+  const tone = getTone(props.kind ?? "neutral");
+
   return (
-    <section
+    <span
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 20,
-        background: "#fff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-        overflow: "hidden",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 28,
+        padding: "4px 10px",
+        borderRadius: 999,
+        fontSize: 11.5,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        color: tone.text,
       }}
     >
-      <div
-        style={{
-          padding: "16px 18px",
-          borderBottom: "1px solid #f3f4f6",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+      {props.text}
+    </span>
+  );
+}
+
+function InfoCard(props: { title: string; children: ReactNode; right?: ReactNode }) {
+  return (
+    <Panel>
+      <div style={infoCardHeader}>
+        <div style={infoCardTitle}>{props.title}</div>
         {props.right ? <div>{props.right}</div> : null}
       </div>
 
-      <div style={{ padding: 18 }}>{props.children}</div>
-    </section>
+      <div style={infoCardBody}>{props.children}</div>
+    </Panel>
   );
 }
 
 function DataGrid(props: { items: Array<{ label: string; value: ReactNode }> }) {
   return (
-    <div
-      className="travaux-detail-grid"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-        gap: 14,
-      }}
-    >
+    <div className="travaux-detail-grid" style={dataGrid}>
       {props.items.map((item) => (
-        <div
-          key={String(item.label)}
-          style={{
-            border: "1px solid #f3f4f6",
-            borderRadius: 16,
-            background: "#fcfcfd",
-            padding: 14,
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#6b7280", marginBottom: 8 }}>
-            {item.label}
-          </div>
-          <div style={{ fontSize: 14, color: "#111827", lineHeight: 1.5 }}>{item.value}</div>
+        <div key={String(item.label)} style={dataCell}>
+          <div style={dataCellLabel}>{item.label}</div>
+          <div style={dataCellValue}>{item.value}</div>
         </div>
       ))}
     </div>
@@ -534,31 +610,35 @@ function BudgetCard(props: {
   tone?: "paid" | "remaining" | "neutral";
   rawValue?: number | null;
 }) {
+  const tone = getBudgetCardTone(props.tone ?? "neutral", props.rawValue ?? null);
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: `1px solid ${tone.border}`,
         borderRadius: 18,
-        padding: 16,
-        background: "#fff",
+        padding: 14,
+        background: tone.softBg,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 800, marginBottom: 8 }}>
-        {props.title}
-      </div>
+      <div style={{ ...budgetTitle, color: tone.text }}>{props.title}</div>
+
       <div
         style={{
-          fontSize: 24,
+          fontSize: 22,
           fontWeight: 900,
-          letterSpacing: -0.4,
+          letterSpacing: -0.35,
           lineHeight: 1.1,
+          overflowWrap: "anywhere",
           ...getMoneyTone(props.rawValue ?? null, props.tone ?? "neutral"),
         }}
       >
         {props.value}
       </div>
+
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
+        <div style={{ marginTop: 6, fontSize: 11.5, color: tone.text, lineHeight: 1.45 }}>
           {props.sub}
         </div>
       ) : null}
@@ -568,41 +648,54 @@ function BudgetCard(props: {
 
 function LockPill({ locked }: { locked: boolean }) {
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "4px 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 800,
-        whiteSpace: "nowrap",
-        color: locked ? "#166534" : "#92400e",
-        background: locked ? "#ecfdf5" : "#fffbeb",
-        border: locked ? "1px solid #a7f3d0" : "1px solid #fde68a",
-      }}
-    >
-      {locked ? "Verrouillé" : "Non verrouillé"}
-    </span>
+    <Badge
+      text={locked ? "Verrouillé" : "Non verrouillé"}
+      kind={locked ? "success" : "warning"}
+    />
   );
 }
 
-function SummaryStat(props: { label: string; value: ReactNode; sub?: string }) {
+function SummaryStat(props: {
+  label: string;
+  value: ReactNode;
+  sub?: string;
+  kind?: BadgeKind;
+}) {
+  const tone = getTone(props.kind ?? "neutral");
+
   return (
     <div
       style={{
-        border: "1px solid #eef2f7",
-        borderRadius: 18,
-        background: "#fff",
-        padding: 16,
+        border: `1px solid ${tone.border}`,
+        borderRadius: 16,
+        background: tone.softBg,
+        padding: 14,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#6b7280", marginBottom: 8 }}>{props.label}</div>
-      <div style={{ fontSize: 18, fontWeight: 900, color: "#111827", lineHeight: 1.2 }}>{props.value}</div>
+      <div style={{ ...summaryLabel, color: tone.text }}>{props.label}</div>
+      <div style={{ ...summaryValue, color: tone.strongText }}>{props.value}</div>
+
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45, color: "#6b7280" }}>{props.sub}</div>
+        <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.45, color: tone.text }}>
+          {props.sub}
+        </div>
       ) : null}
+    </div>
+  );
+}
+
+function EmptyValue({ children }: { children: ReactNode }) {
+  return <span style={{ color: "#9ca3af" }}>{children}</span>;
+}
+
+function InfoStrip() {
+  return (
+    <div style={infoStrip}>
+      <div style={infoStripText}>
+        Cette fiche centralise la lecture produit du dossier : budget, état d’avancement,
+        verrouillage, résolution liée, dates utiles et commentaires complémentaires.
+      </div>
     </div>
   );
 }
@@ -615,10 +708,10 @@ export default function TravauxDossierDetail() {
   const [error, setError] = useState<string | null>(null);
   const [item, setItem] = useState<DossierDetailView | null>(null);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!id) {
       setState("error");
-      setError("Identifiant de dossier travaux manquant.");
+      setError("Identifiant de dossier de travaux manquant.");
       setItem(null);
       return;
     }
@@ -629,18 +722,33 @@ export default function TravauxDossierDetail() {
     try {
       const res = await api.get(ENDPOINTS.travauxDossierDetail(id));
       const data = (res?.data ?? {}) as TravauxRawItem;
+
       setItem(normalizeDossier(data));
       setState("success");
     } catch (e) {
       setState("error");
-      setError(getErrorMessage(e, "Impossible de charger le détail du dossier travaux."));
+      setError(getErrorMessage(e, "Impossible de charger le détail du dossier de travaux."));
       setItem(null);
     }
-  }
+  }, [id]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchData();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchData]);
+
+  const goBackToDossiers = useCallback(() => {
+    navigate("/travaux/dossiers");
+  }, [navigate]);
+
+  const handleRefresh = useCallback(() => {
     void fetchData();
-  }, [id]);
+  }, [fetchData]);
 
   const isLoading = state === "loading";
 
@@ -663,17 +771,20 @@ export default function TravauxDossierDetail() {
   const canOpenResolution = Boolean(item?.resolutionId);
   const canEdit = Boolean(item && !item.locked);
 
+  const statutKind = getStatutKind(item?.statut);
+  const statutLabel = humanizeStatut(item?.statut);
+
   return (
     <PageShell>
-      <SectionTitle
-        title={item ? item.titre : "Détail du dossier travaux"}
-        subtitle="Consultez la fiche détaillée du dossier, sa situation budgétaire, son état d’avancement, la résolution liée et le niveau de verrouillage."
-        right={
+      <HeroHeader
+        title={item ? item.titre : "Détail du dossier de travaux"}
+        subtitle="Consultez la fiche détaillée du dossier, sa situation budgétaire, la résolution liée et le niveau de verrouillage depuis une vue claire, démontrable et exploitable."
+        actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/travaux/dossiers")}>Retour à la liste</SmallButton>
+            <AppButton onClick={goBackToDossiers}>Retour aux dossiers</AppButton>
 
             {id ? (
-              <SmallButton
+              <AppButton
                 to={`/travaux/dossiers/${id}/modifier`}
                 primary
                 disabled={!canEdit}
@@ -684,104 +795,173 @@ export default function TravauxDossierDetail() {
                 }
               >
                 Modifier le dossier
-              </SmallButton>
+              </AppButton>
             ) : null}
 
-            <SmallButton onClick={() => void fetchData()} disabled={isLoading}>
+            <AppButton onClick={handleRefresh} disabled={isLoading}>
               {isLoading ? "Actualisation..." : "Actualiser"}
-            </SmallButton>
+            </AppButton>
+          </div>
+        }
+        aside={
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={heroAsideTitle}>Lecture immédiate</div>
+
+            <div style={heroAsideText}>
+              Cette fiche doit permettre de comprendre en quelques secondes la maturité du dossier :
+              statut courant, solidité budgétaire, résolution liée et niveau de verrouillage.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Badge text={statutLabel} kind={statutKind} />
+              <LockPill locked={Boolean(item?.locked)} />
+              {item?.resolutionId ? (
+                <Badge text={`Résolution #${item.resolutionId}`} kind="info" />
+              ) : null}
+            </div>
           </div>
         }
       />
 
+      <InfoStrip />
+
       {state === "error" && error ? (
-        <AlertBox kind="error">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Impossible de charger le dossier travaux</div>
-          <div style={{ fontSize: 13 }}>{error}</div>
+        <AlertBox kind="error" title="Impossible de charger le dossier de travaux">
+          {error}
         </AlertBox>
       ) : null}
 
       {isLoading ? (
         <InfoCard title="Chargement">
-          <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement du détail du dossier travaux...</div>
+          <div style={{ color: "#6b7280", fontSize: 13.5 }}>
+            Chargement du détail du dossier de travaux...
+          </div>
         </InfoCard>
       ) : null}
 
       {!isLoading && !item && state !== "error" ? (
         <InfoCard title="Aucune donnée">
-          <div style={{ color: "#6b7280", fontSize: 14 }}>
-            Aucun dossier travaux n’a pu être affiché pour cet identifiant.
+          <div style={{ color: "#6b7280", fontSize: 13.5 }}>
+            Aucun dossier de travaux n’a pu être affiché pour cet identifiant.
           </div>
         </InfoCard>
       ) : null}
 
       {item ? (
         <>
-          <InfoCard
-            title="Vue d’ensemble"
-            right={
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <span style={getStatutStyle(item.statut)}>{humanizeStatut(item.statut)}</span>
-                <LockPill locked={item.locked} />
-              </div>
-            }
-          >
-            <div style={{ display: "grid", gap: 16 }}>
-              <div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 900,
-                    color: "#111827",
-                    lineHeight: 1.15,
-                    letterSpacing: -0.4,
-                  }}
-                >
-                  {item.titre}
+          <div className="travaux-overview-grid" style={overviewGrid}>
+            <InfoCard
+              title="Vue d’ensemble"
+              right={
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Badge text={humanizeStatut(item.statut)} kind={getStatutKind(item.statut)} />
+                  <LockPill locked={item.locked} />
+                </div>
+              }
+            >
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <div style={mainTitle}>{item.titre}</div>
+
+                  {item.description ? (
+                    <div style={mainDescription}>{item.description}</div>
+                  ) : (
+                    <div style={emptyDescription}>Aucune description renseignée.</div>
+                  )}
                 </div>
 
-                {item.description ? (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      color: "#4b5563",
-                      fontSize: 14,
-                      lineHeight: 1.7,
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
-                    {item.description}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 14 }}>
-                    Aucune description renseignée.
-                  </div>
-                )}
-              </div>
-
-              <div
-                className="travaux-summary-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 14,
-                }}
-              >
-                <SummaryStat label="Statut" value={humanizeStatut(item.statut)} sub={getStatutHint(item.statut)} />
-                <SummaryStat
-                  label="Résolution liée"
-                  value={item.resolutionId ? `#${item.resolutionId}` : "—"}
-                  sub={item.resolutionId ? "Le dossier est rattaché à une résolution." : "Aucune résolution liée."}
+                <DataGrid
+                  items={[
+                    { label: "ID dossier", value: <strong>#{item.id}</strong> },
+                    {
+                      label: "Référence",
+                      value: item.reference ? (
+                        item.reference
+                      ) : (
+                        <EmptyValue>Aucune référence renseignée</EmptyValue>
+                      ),
+                    },
+                    {
+                      label: "Prestataire",
+                      value:
+                        item.fournisseurLabel && item.fournisseurLabel !== "—" ? (
+                          item.fournisseurLabel
+                        ) : (
+                          <EmptyValue>Aucun prestataire associé</EmptyValue>
+                        ),
+                    },
+                    {
+                      label: "Résolution liée",
+                      value: item.resolutionId ? (
+                        <span style={{ fontWeight: 700, color: "#374151" }}>
+                          #{item.resolutionId}
+                        </span>
+                      ) : (
+                        <EmptyValue>Aucune résolution liée</EmptyValue>
+                      ),
+                    },
+                    {
+                      label: "État de verrouillage",
+                      value: item.locked ? (
+                        <span style={{ color: "#166534", fontWeight: 800 }}>
+                          Dossier verrouillé
+                        </span>
+                      ) : (
+                        <span style={{ color: "#92400e", fontWeight: 800 }}>
+                          Dossier non verrouillé
+                        </span>
+                      ),
+                    },
+                    {
+                      label: "Date de verrouillage",
+                      value: item.lockedAt ? (
+                        fmtDateTime(item.lockedAt)
+                      ) : (
+                        <EmptyValue>Aucune date de verrouillage</EmptyValue>
+                      ),
+                    },
+                  ]}
                 />
+              </div>
+            </InfoCard>
+
+            <InfoCard title="Synthèse produit">
+              <div className="travaux-summary-grid" style={summaryGrid}>
                 <SummaryStat
-                  label="Fournisseur"
-                  value={item.fournisseurLabel || "—"}
+                  label="Statut"
+                  value={humanizeStatut(item.statut)}
+                  sub={getStatutHint(item.statut)}
+                  kind={getStatutKind(item.statut)}
+                />
+
+                <SummaryStat
+                  label="Budget de référence"
+                  value={fmtMoney(finance.budgetReference)}
                   sub={
-                    item.fournisseurLabel && item.fournisseurLabel !== "—"
-                      ? "Prestataire actuellement associé au dossier."
-                      : "Aucun fournisseur exploitable n’est affiché."
+                    finance.budgetReference !== null
+                      ? "Base retenue pour le suivi financier."
+                      : "Aucun budget de référence disponible."
+                  }
+                  kind="neutral"
+                />
+
+                <SummaryStat
+                  label="Reste à payer"
+                  value={fmtMoney(finance.resteAPayer)}
+                  sub={
+                    finance.resteAPayer !== null
+                      ? "Montant restant à engager ou à régler."
+                      : "Aucun reste à payer exploitable."
+                  }
+                  kind={
+                    finance.resteAPayer === null
+                      ? "neutral"
+                      : finance.resteAPayer > 0
+                        ? "warning"
+                        : "success"
                   }
                 />
+
                 <SummaryStat
                   label="Verrouillage"
                   value={item.locked ? "Verrouillé" : "Non verrouillé"}
@@ -790,41 +970,14 @@ export default function TravauxDossierDetail() {
                       ? "Le dossier n’est plus librement modifiable."
                       : "Le dossier reste modifiable dans le flux courant."
                   }
+                  kind={item.locked ? "success" : "warning"}
                 />
               </div>
-
-              <DataGrid
-                items={[
-                  { label: "ID dossier", value: <strong>#{item.id}</strong> },
-                  { label: "Référence", value: item.reference || "—" },
-                  { label: "Fournisseur", value: item.fournisseurLabel || "—" },
-                  { label: "Résolution liée", value: item.resolutionId ? `#${item.resolutionId}` : "—" },
-                  {
-                    label: "État de verrouillage",
-                    value: item.locked ? (
-                      <span style={{ color: "#166534", fontWeight: 800 }}>Dossier verrouillé</span>
-                    ) : (
-                      <span style={{ color: "#92400e", fontWeight: 800 }}>Dossier non verrouillé</span>
-                    ),
-                  },
-                  {
-                    label: "Date de verrouillage",
-                    value: item.lockedAt ? fmtDateTime(item.lockedAt) : "—",
-                  },
-                ]}
-              />
-            </div>
-          </InfoCard>
+            </InfoCard>
+          </div>
 
           <InfoCard title="Situation budgétaire">
-            <div
-              className="travaux-budget-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                gap: 14,
-              }}
-            >
+            <div className="travaux-budget-grid" style={budgetGrid}>
               <BudgetCard
                 title="Budget estimé"
                 value={fmtMoney(finance.budgetEstime)}
@@ -832,6 +985,7 @@ export default function TravauxDossierDetail() {
                 tone="neutral"
                 sub="Montant prévisionnel initial."
               />
+
               <BudgetCard
                 title="Budget voté"
                 value={fmtMoney(finance.budgetVote)}
@@ -839,6 +993,7 @@ export default function TravauxDossierDetail() {
                 tone="neutral"
                 sub="Montant validé par décision."
               />
+
               <BudgetCard
                 title="Budget de référence"
                 value={fmtMoney(finance.budgetReference)}
@@ -846,58 +1001,83 @@ export default function TravauxDossierDetail() {
                 tone="neutral"
                 sub="Base retenue pour le suivi financier."
               />
+
               <BudgetCard
                 title="Total payé"
                 value={fmtMoney(finance.totalPaye)}
                 rawValue={finance.totalPaye}
                 tone="paid"
-                sub="Paiements déjà enregistrés sur ce dossier."
+                sub="Paiements déjà enregistrés."
               />
+
               <BudgetCard
                 title="Reste à payer"
                 value={fmtMoney(finance.resteAPayer)}
                 rawValue={finance.resteAPayer}
                 tone="remaining"
-                sub="Montant restant à engager ou à régler."
+                sub="Montant restant à régler."
               />
             </div>
           </InfoCard>
 
-          <InfoCard title="Dates utiles">
-            <DataGrid
-              items={[
-                { label: "Créé le", value: fmtDateTime(item.createdAt) },
-                { label: "Mis à jour le", value: fmtDateTime(item.updatedAt) },
-                { label: "Soumis à l’AG le", value: fmtDateTime(item.submittedAt) },
-                { label: "Validé le", value: fmtDateTime(item.validatedAt) },
-                { label: "Début prévu / réel", value: fmtDate(item.startedAt) },
-                { label: "Fin prévue / réelle", value: fmtDate(item.endedAt) },
-              ]}
-            />
-          </InfoCard>
+          <div className="travaux-secondary-grid" style={secondaryGrid}>
+            <InfoCard title="Dates utiles">
+              <DataGrid
+                items={[
+                  { label: "Créé le", value: fmtDateTime(item.createdAt) },
+                  { label: "Mis à jour le", value: fmtDateTime(item.updatedAt) },
+                  {
+                    label: "Soumis à l’AG le",
+                    value: item.submittedAt ? (
+                      fmtDateTime(item.submittedAt)
+                    ) : (
+                      <EmptyValue>Aucune soumission enregistrée</EmptyValue>
+                    ),
+                  },
+                  {
+                    label: "Validé le",
+                    value: item.validatedAt ? (
+                      fmtDateTime(item.validatedAt)
+                    ) : (
+                      <EmptyValue>Aucune validation enregistrée</EmptyValue>
+                    ),
+                  },
+                  {
+                    label: "Début prévu / réel",
+                    value: item.startedAt ? (
+                      fmtDate(item.startedAt)
+                    ) : (
+                      <EmptyValue>Aucune date de début renseignée</EmptyValue>
+                    ),
+                  },
+                  {
+                    label: "Fin prévue / réelle",
+                    value: item.endedAt ? (
+                      fmtDate(item.endedAt)
+                    ) : (
+                      <EmptyValue>Aucune date de fin renseignée</EmptyValue>
+                    ),
+                  },
+                ]}
+              />
+            </InfoCard>
 
-          <InfoCard title="Notes complémentaires">
-            {item.notes ? (
-              <div
-                style={{
-                  color: "#374151",
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {item.notes}
-              </div>
-            ) : (
-              <div style={{ color: "#9ca3af", fontSize: 14 }}>Aucune note complémentaire.</div>
-            )}
-          </InfoCard>
+            <InfoCard title="Notes complémentaires">
+              {item.notes ? (
+                <div style={notesText}>{item.notes}</div>
+              ) : (
+                <div style={{ color: "#9ca3af", fontSize: 13.5 }}>
+                  Aucune note complémentaire.
+                </div>
+              )}
+            </InfoCard>
+          </div>
 
           <InfoCard title="Actions rapides">
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <SmallButton to="/travaux/dossiers">Retour à la liste</SmallButton>
+              <AppButton to="/travaux/dossiers">Retour aux dossiers</AppButton>
 
-              <SmallButton
+              <AppButton
                 to={`/travaux/dossiers/${item.id}/modifier`}
                 primary
                 disabled={!canEdit}
@@ -908,9 +1088,9 @@ export default function TravauxDossierDetail() {
                 }
               >
                 Modifier le dossier
-              </SmallButton>
+              </AppButton>
 
-              <SmallButton
+              <AppButton
                 to={canOpenResolution ? `/ag/resolutions/${item.resolutionId}` : undefined}
                 disabled={!canOpenResolution}
                 title={
@@ -920,28 +1100,39 @@ export default function TravauxDossierDetail() {
                 }
               >
                 Ouvrir la résolution liée
-              </SmallButton>
+              </AppButton>
             </div>
           </InfoCard>
+
+          <AlertBox kind="info" title="Lecture métier">
+            Cette fiche centralise la lecture produit d’un dossier de travaux : statut,
+            verrouillage, budget, résolution liée, dates utiles et notes complémentaires.
+          </AlertBox>
         </>
       ) : null}
 
       <style>{`
-        @media (max-width: 1180px) {
+        @media (max-width: 1280px) {
           .travaux-budget-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
           }
+        }
 
-          .travaux-summary-grid {
+        @media (max-width: 1180px) {
+          .travaux-overview-grid,
+          .travaux-secondary-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 980px) {
+          .travaux-budget-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
         }
 
         @media (max-width: 860px) {
-          .travaux-detail-grid {
-            grid-template-columns: 1fr !important;
-          }
-
+          .travaux-detail-grid,
           .travaux-summary-grid {
             grid-template-columns: 1fr !important;
           }
@@ -957,13 +1148,255 @@ export default function TravauxDossierDetail() {
   );
 }
 
-const badgeBase: CSSProperties = {
-  display: "inline-flex",
+const pageShell: CSSProperties = {
+  display: "grid",
+  gap: 18,
+  width: "100%",
+  minWidth: 0,
+};
+
+const heroCard: CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.88) 100%)",
+  borderRadius: 28,
+  padding: "28px 30px",
+  color: "#ffffff",
+  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
+  position: "relative",
+  overflow: "hidden",
+  minWidth: 0,
+};
+
+const heroGlow: CSSProperties = {
+  position: "absolute",
+  inset: "auto -120px -140px auto",
+  width: 280,
+  height: 280,
+  borderRadius: "50%",
+  background:
+    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.15fr) minmax(260px, 0.85fr)",
+  gap: 18,
+  alignItems: "stretch",
+  minWidth: 0,
+};
+
+const heroMainBlock: CSSProperties = {
+  minWidth: 0,
+  position: "relative",
+  zIndex: 1,
+};
+
+const heroActions: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
   alignItems: "center",
-  justifyContent: "center",
-  padding: "4px 10px",
-  borderRadius: 999,
-  fontSize: 12,
+};
+
+const heroAsidePanel: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  alignContent: "start",
+  minWidth: 0,
+};
+
+const heroAsideTitle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideText: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.84)",
+};
+
+const pageEyebrow: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.72)",
+  marginBottom: 6,
+};
+
+const pageTitle: CSSProperties = {
+  fontSize: 30,
+  fontWeight: 900,
+  letterSpacing: -0.5,
+  color: "#ffffff",
+  lineHeight: 1.08,
+};
+
+const pageSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "rgba(255,255,255,0.84)",
+  fontSize: 13.5,
+  lineHeight: 1.6,
+  maxWidth: 860,
+};
+
+const overviewGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.05fr) minmax(320px, 0.95fr)",
+  gap: 16,
+  minWidth: 0,
+};
+
+const secondaryGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 16,
+  minWidth: 0,
+};
+
+const budgetGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 12,
+  minWidth: 0,
+};
+
+const summaryGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+  minWidth: 0,
+};
+
+const dataGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+  minWidth: 0,
+};
+
+const infoCardHeader: CSSProperties = {
+  padding: "14px 16px",
+  borderBottom: "1px solid #f3f4f6",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const infoCardTitle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#111827",
+};
+
+const infoCardBody: CSSProperties = {
+  padding: 16,
+  minWidth: 0,
+};
+
+const dataCell: CSSProperties = {
+  border: "1px solid #f1f5f9",
+  borderRadius: 16,
+  background: "#fcfcfd",
+  padding: 13,
+  minWidth: 0,
+};
+
+const dataCellLabel: CSSProperties = {
+  fontSize: 11.5,
   fontWeight: 800,
-  whiteSpace: "nowrap",
+  color: "#6b7280",
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.28,
+};
+
+const dataCellValue: CSSProperties = {
+  fontSize: 13.5,
+  color: "#111827",
+  lineHeight: 1.5,
+  minWidth: 0,
+  overflowWrap: "anywhere",
+};
+
+const budgetTitle: CSSProperties = {
+  fontSize: 11.5,
+  fontWeight: 800,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.32,
+};
+
+const summaryLabel: CSSProperties = {
+  fontSize: 11.5,
+  fontWeight: 800,
+  marginBottom: 8,
+  textTransform: "uppercase",
+  letterSpacing: 0.28,
+};
+
+const summaryValue: CSSProperties = {
+  fontSize: 16,
+  fontWeight: 900,
+  lineHeight: 1.2,
+  minWidth: 0,
+  overflowWrap: "anywhere",
+};
+
+const mainTitle: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#111827",
+  lineHeight: 1.15,
+  letterSpacing: -0.35,
+  overflowWrap: "anywhere",
+};
+
+const mainDescription: CSSProperties = {
+  marginTop: 8,
+  color: "#4b5563",
+  fontSize: 13.5,
+  lineHeight: 1.65,
+  whiteSpace: "pre-wrap",
+};
+
+const emptyDescription: CSSProperties = {
+  marginTop: 8,
+  color: "#9ca3af",
+  fontSize: 13.5,
+};
+
+const notesText: CSSProperties = {
+  color: "#374151",
+  fontSize: 13.5,
+  lineHeight: 1.65,
+  whiteSpace: "pre-wrap",
+};
+
+const infoStrip: CSSProperties = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  borderRadius: 18,
+  padding: "14px 16px",
+};
+
+const infoStripText: CSSProperties = {
+  fontSize: 13,
+  color: "#1d4ed8",
+  lineHeight: 1.6,
+  fontWeight: 600,
 };

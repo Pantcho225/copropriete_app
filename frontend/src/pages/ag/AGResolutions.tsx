@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 
@@ -8,6 +15,7 @@ type FlashKind = "success" | "error" | "info";
 type MajoriteType = "SIMPLE" | "ABSOLUE" | "QUALIFIEE_2_3" | "UNANIMITE";
 type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
 type ButtonVariant = "primary" | "secondary" | "danger";
+type KPIAccent = "neutral" | "success" | "warning" | "danger" | "info";
 
 type ResolutionItem = {
   id: number;
@@ -75,8 +83,18 @@ function isPaginatedResponse<T = unknown>(value: unknown): value is DRFPage<T> {
   return isRecord(value) && Array.isArray(value.results) && typeof value.count === "number";
 }
 
-function asArray<T = unknown>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
+function extractRows<T = unknown>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (isPaginatedResponse<T>(value)) return value.results;
+
+  if (isRecord(value)) {
+    const candidates = [value.results, value.items, value.data];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate as T[];
+    }
+  }
+
+  return [];
 }
 
 function toNumberOrNull(value: unknown): number | null {
@@ -92,9 +110,13 @@ function toBooleanOrNull(value: unknown): boolean | null {
 
   if (typeof value === "string") {
     const s = value.trim().toLowerCase();
-    if (["true", "1", "oui", "yes", "ok", "cloturee", "clôturée", "closed", "done"].includes(s)) {
+
+    if (
+      ["true", "1", "oui", "yes", "ok", "cloturee", "clôturée", "closed", "done"].includes(s)
+    ) {
       return true;
     }
+
     if (["false", "0", "non", "no", "ouverte", "open", "draft"].includes(s)) {
       return false;
     }
@@ -116,45 +138,42 @@ function pickNullableString(...values: unknown[]): string | null {
 }
 
 function normalizeDecisionValue(value: unknown): ResolutionStatus | null {
-  const s = String(value ?? "").trim().toUpperCase();
+  const s = String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
 
-  if (
-    [
-      "ADOPTEE",
-      "ADOPTÉE",
-      "VALIDEE",
-      "VALIDÉE",
-      "VALIDE",
-      "APPROUVEE",
-      "APPROUVÉE",
-      "ADOPTED",
-    ].includes(s)
-  ) {
+  if (["ADOPTEE", "VALIDEE", "VALIDE", "APPROUVEE", "ADOPTED"].includes(s)) {
     return "ADOPTEE";
   }
 
-  if (
-    [
-      "REJETEE",
-      "REJETÉE",
-      "REJETE",
-      "REFUSEE",
-      "REFUSÉE",
-      "REFUSE",
-      "REJECTED",
-    ].includes(s)
-  ) {
+  if (["REJETEE", "REJETE", "REFUSEE", "REFUSE", "REJECTED"].includes(s)) {
     return "REJETEE";
   }
 
-  if (s === "EN_ATTENTE" || s === "PENDING") {
+  if (["EN_ATTENTE", "PENDING"].includes(s)) {
     return "EN_ATTENTE";
   }
 
   return null;
 }
 
-function normalizeResolutionStatusFromRaw(row: Record<string, unknown>, cloturee?: boolean | null): ResolutionStatus {
+function normalizeResolutionStatusFromRaw(
+  row: Record<string, unknown>,
+  cloturee?: boolean | null,
+): ResolutionStatus {
+  const isClosed =
+    cloturee ??
+    toBooleanOrNull(row.cloturee) ??
+    toBooleanOrNull(row.est_cloturee) ??
+    toBooleanOrNull(row.closed) ??
+    false;
+
+  if (!isClosed) {
+    return "EN_ATTENTE";
+  }
+
   const candidates = [
     row.decision,
     row.statut_resolution,
@@ -172,7 +191,7 @@ function normalizeResolutionStatusFromRaw(row: Record<string, unknown>, cloturee
 
   for (const candidate of candidates) {
     const normalized = normalizeDecisionValue(candidate);
-    if (normalized) return normalized;
+    if (normalized && normalized !== "EN_ATTENTE") return normalized;
   }
 
   const adoptedFlag =
@@ -193,7 +212,7 @@ function normalizeResolutionStatusFromRaw(row: Record<string, unknown>, cloturee
 
   if (rejectedFlag === true) return "REJETEE";
 
-  return cloturee ? "EN_ATTENTE" : "EN_ATTENTE";
+  return "EN_ATTENTE";
 }
 
 function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
@@ -212,6 +231,7 @@ function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
     null;
 
   const ordre = toNumberOrNull(row.ordre) ?? toNumberOrNull(row.numero_ordre);
+
   const cloturee =
     toBooleanOrNull(row.cloturee) ??
     toBooleanOrNull(row.est_cloturee) ??
@@ -277,6 +297,10 @@ function normalizeResolutionResult(raw: unknown): ResolutionResult | null {
   if (!["ADOPTEE", "REJETEE"].includes(decision)) return null;
 
   const tantiemesRow = isRecord(row.tantiemes) ? row.tantiemes : {};
+  const ratioRaw =
+    typeof tantiemesRow.ratio_pour_exprimes === "number"
+      ? tantiemesRow.ratio_pour_exprimes
+      : Number(tantiemesRow.ratio_pour_exprimes ?? 0);
 
   return {
     resolution_id: toNumberOrNull(row.resolution_id) ?? 0,
@@ -287,10 +311,7 @@ function normalizeResolutionResult(raw: unknown): ResolutionResult | null {
       contre: toNumberOrNull(tantiemesRow.contre) ?? 0,
       abstention: toNumberOrNull(tantiemesRow.abstention) ?? 0,
       exprimes: toNumberOrNull(tantiemesRow.exprimes) ?? 0,
-      ratio_pour_exprimes:
-        typeof tantiemesRow.ratio_pour_exprimes === "number"
-          ? tantiemesRow.ratio_pour_exprimes
-          : Number(tantiemesRow.ratio_pour_exprimes ?? 0),
+      ratio_pour_exprimes: Number.isFinite(ratioRaw) ? ratioRaw : 0,
     },
   };
 }
@@ -331,6 +352,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function formatMoneyFCFA(amount?: number | null): string {
   if (amount === null || amount === undefined) return "—";
+
   try {
     return new Intl.NumberFormat("fr-FR", {
       style: "currency",
@@ -342,7 +364,7 @@ function formatMoneyFCFA(amount?: number | null): string {
   }
 }
 
-function truncateText(value?: string | null, max = 120): string {
+function truncateText(value?: string | null, max = 140): string {
   if (!value) return "—";
   const s = String(value).trim();
   if (s.length <= max) return s;
@@ -352,11 +374,6 @@ function truncateText(value?: string | null, max = 120): string {
 function formatPercent(value?: number | null): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "0 %";
   return `${Math.round(value * 100)} %`;
-}
-
-function formatMoneySimple(value?: number | null): string {
-  if (value === null || value === undefined) return "0";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
 }
 
 function buildCreatePayload(values: ResolutionFormValues) {
@@ -370,81 +387,177 @@ function buildCreatePayload(values: ResolutionFormValues) {
   };
 }
 
-function PageShell({ children }: { children: ReactNode }) {
-  return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
+function getResolutionStatusMeta(item: ResolutionItem): {
+  label: string;
+  kind: BadgeKind;
+  description: string;
+} {
+  if (item.statut === "ADOPTEE") {
+    return {
+      label: "Adoptée",
+      kind: "success",
+      description: "Résolution validée à l’issue du calcul et de la clôture.",
+    };
+  }
+
+  if (item.statut === "REJETEE") {
+    return {
+      label: "Rejetée",
+      kind: "danger",
+      description: "Résolution refusée après traitement des votes.",
+    };
+  }
+
+  if (item.cloturee) {
+    return {
+      label: "Clôturée",
+      kind: "neutral",
+      description: "Résolution clôturée sans décision consolidée visible dans cette vue.",
+    };
+  }
+
+  return {
+    label: "En attente",
+    kind: "warning",
+    description: "Résolution encore en cours d’analyse ou de clôture.",
+  };
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function PageShell({ children }: { children: ReactNode }) {
+  return <div style={pageShellStyle}>{children}</div>;
+}
+
+function PageHeader(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 30,
-            fontWeight: 900,
-            letterSpacing: -0.6,
-            color: "#111827",
-            lineHeight: 1.1,
-          }}
-        >
-          {props.title}
+    <section style={pageHeaderStyle}>
+      <div style={pageHeaderInnerStyle}>
+        <div style={pageHeaderCopyStyle}>
+          <div style={pageEyebrowStyle}>Pilotage du module AG</div>
+          <h1 style={pageTitleStyle}>{props.title}</h1>
+          {props.subtitle ? <p style={pageSubtitleStyle}>{props.subtitle}</p> : null}
         </div>
-
-        {props.subtitle ? (
-          <div
-            style={{
-              fontSize: 14,
-              color: "#6b7280",
-              marginTop: 6,
-              lineHeight: 1.5,
-              maxWidth: 920,
-            }}
-          >
-            {props.subtitle}
-          </div>
-        ) : null}
+        {props.right ? <div>{props.right}</div> : null}
       </div>
-
-      {props.right ? <div>{props.right}</div> : null}
-    </div>
+    </section>
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string; isLoading?: boolean }) {
+function SectionCard(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  children: ReactNode;
+  flush?: boolean;
+}) {
+  return (
+    <section style={sectionCardStyle}>
+      <div style={sectionCardHeaderStyle}>
+        <div style={sectionCardTitleWrapStyle}>
+          <div style={sectionCardTitleStyle}>{props.title}</div>
+          {props.subtitle ? <div style={sectionCardSubtitleStyle}>{props.subtitle}</div> : null}
+        </div>
+
+        {props.right ? <div style={sectionCardRightStyle}>{props.right}</div> : null}
+      </div>
+
+      <div style={props.flush ? { minWidth: 0 } : sectionCardBodyStyle}>{props.children}</div>
+    </section>
+  );
+}
+
+function HeroSection(props: {
+  title: string;
+  text: string;
+  primaryLabel: string;
+  primaryAction: () => void;
+  secondaryLabel: string;
+  secondaryAction: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <section style={heroCardStyle}>
+      <div style={heroGridStyle}>
+        <div style={heroMainStyle}>
+          <div style={heroPillStyle}>ASSEMBLÉES GÉNÉRALES · RÉSOLUTIONS</div>
+
+          <div style={heroCopyBlockStyle}>
+            <h2 style={heroTitleStyle}>{props.title}</h2>
+            <p style={heroTextStyle}>{props.text}</p>
+          </div>
+
+          <div style={heroActionsStyle}>
+            <button type="button" onClick={props.primaryAction} style={heroPrimaryButtonStyle}>
+              {props.primaryLabel}
+            </button>
+
+            <button type="button" onClick={props.secondaryAction} style={heroSecondaryButtonStyle}>
+              {props.secondaryLabel}
+            </button>
+          </div>
+        </div>
+
+        {props.children ? <div style={heroAsideStyle}>{props.children}</div> : null}
+      </div>
+    </section>
+  );
+}
+
+function SummaryCard(props: {
+  label: string;
+  value: string | number;
+  helper: string;
+  tone?: KPIAccent;
+  isLoading?: boolean;
+}) {
+  const tone =
+    props.tone === "success"
+      ? { bg: "#f0fdf4", border: "#bbf7d0", value: "#166534", label: "#15803d" }
+      : props.tone === "warning"
+        ? { bg: "#fffbeb", border: "#fde68a", value: "#92400e", label: "#b45309" }
+        : props.tone === "danger"
+          ? { bg: "#fef2f2", border: "#fecaca", value: "#991b1b", label: "#b91c1c" }
+          : props.tone === "info"
+            ? { bg: "#eff6ff", border: "#bfdbfe", value: "#1d4ed8", label: "#2563eb" }
+            : { bg: "#f8fafc", border: "#e2e8f0", value: "#0f172a", label: "#475569" };
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: `1px solid ${tone.border}`,
         borderRadius: 20,
+        background: tone.bg,
         padding: 18,
-        background: "#ffffff",
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
-        minHeight: 112,
+        display: "grid",
+        gap: 10,
+        minWidth: 0,
+        boxSizing: "border-box",
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>{props.title}</div>
       <div
         style={{
-          fontSize: 28,
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: 0.7,
           fontWeight: 900,
-          letterSpacing: -0.5,
-          color: "#111827",
-          lineHeight: 1.1,
+          color: tone.label,
         }}
       >
-        {props.isLoading ? "…" : props.value}
+        {props.label}
       </div>
-      {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
-      ) : null}
+
+      <div
+        style={{
+          fontSize: 30,
+          lineHeight: 1,
+          fontWeight: 900,
+          letterSpacing: -0.6,
+          color: tone.value,
+        }}
+      >
+        {props.isLoading ? "..." : props.value}
+      </div>
+
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: "#64748b" }}>{props.helper}</div>
     </div>
   );
 }
@@ -452,23 +565,38 @@ function StatCard(props: { title: string; value: string | number; sub?: string; 
 function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode }) {
   const tone =
     props.kind === "error"
-      ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
+      ? {
+          bg: "linear-gradient(180deg, #fef2f2 0%, #fff7f7 100%)",
+          border: "#fecaca",
+          text: "#991b1b",
+        }
       : props.kind === "success"
-        ? { bg: "#ecfdf5", border: "#a7f3d0", text: "#166534" }
-        : { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" };
+        ? {
+            bg: "linear-gradient(180deg, #ecfdf5 0%, #f3fff8 100%)",
+            border: "#a7f3d0",
+            text: "#166534",
+          }
+        : {
+            bg: "linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%)",
+            border: "#bfdbfe",
+            text: "#1d4ed8",
+          };
 
   return (
     <div
       style={{
-        padding: 14,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 18,
         background: tone.bg,
         border: `1px solid ${tone.border}`,
         color: tone.text,
-        lineHeight: 1.5,
+        lineHeight: 1.55,
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
       }}
     >
-      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 6 }}>{props.title}</div> : null}
       <div style={{ fontSize: 13 }}>{props.children}</div>
     </div>
   );
@@ -484,7 +612,7 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
           ? { background: "#fef2f2", border: "#fecaca", color: "#991b1b" }
           : props.kind === "info"
             ? { background: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" }
-            : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
+            : { background: "#f8fafc", border: "#e2e8f0", color: "#475569" };
 
   return (
     <span
@@ -492,10 +620,10 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "4px 10px",
+        padding: "5px 10px",
         borderRadius: 999,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         border: `1px solid ${styles.border}`,
         background: styles.background,
         color: styles.color,
@@ -504,6 +632,46 @@ function Badge(props: { text: string; kind?: BadgeKind }) {
     >
       {props.text}
     </span>
+  );
+}
+
+function SmallButton(props: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  danger?: boolean;
+}) {
+  const border = props.danger
+    ? "1px solid #fecaca"
+    : props.primary
+      ? "1px solid #c7d2fe"
+      : "1px solid #dbe1ea";
+
+  const background = props.danger ? "#fef2f2" : props.primary ? "#eef2ff" : "#ffffff";
+  const color = props.danger ? "#991b1b" : props.primary ? "#3730a3" : "#0f172a";
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      style={{
+        minHeight: 42,
+        padding: "10px 14px",
+        borderRadius: 12,
+        border,
+        background: props.disabled ? "#f8fafc" : background,
+        color: props.disabled ? "#94a3b8" : color,
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        boxShadow: props.primary ? "0 10px 24px rgba(79, 70, 229, 0.10)" : "none",
+      }}
+    >
+      {props.children}
+    </button>
   );
 }
 
@@ -521,17 +689,20 @@ function AppButton(props: {
           border: "1px solid #c7d2fe",
           background: "#eef2ff",
           color: "#3730a3",
+          shadow: "0 8px 20px rgba(79, 70, 229, 0.10)",
         }
       : variant === "danger"
         ? {
             border: "1px solid #fecaca",
             background: "#fef2f2",
             color: "#991b1b",
+            shadow: "none",
           }
         : {
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            color: "#111827",
+            border: "1px solid #e2e8f0",
+            background: "#ffffff",
+            color: "#0f172a",
+            shadow: "none",
           };
 
   return (
@@ -541,7 +712,7 @@ function AppButton(props: {
       disabled={props.disabled}
       style={{
         border: styles.border,
-        background: props.disabled ? "#f9fafb" : styles.background,
+        background: props.disabled ? "#f8fafc" : styles.background,
         color: props.disabled ? "#9ca3af" : styles.color,
         borderRadius: 12,
         padding: "10px 14px",
@@ -549,6 +720,7 @@ function AppButton(props: {
         fontWeight: 800,
         cursor: props.disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        boxShadow: styles.shadow,
       }}
     >
       {props.children}
@@ -558,32 +730,19 @@ function AppButton(props: {
 
 function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
   return (
-    <div
-      style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
-      }}
-    >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>{props.title}</div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+    <div style={emptyStateStyle}>
+      <div style={emptyStateTitleStyle}>{props.title}</div>
+      <div style={emptyStateTextStyle}>{props.text}</div>
+
       {props.actionLabel && props.onAction ? (
-        <div style={{ marginTop: 12 }}>
-          <AppButton onClick={props.onAction} variant="primary">
+        <div style={{ marginTop: 14 }}>
+          <SmallButton primary onClick={props.onAction}>
             {props.actionLabel}
-          </AppButton>
+          </SmallButton>
         </div>
       ) : null}
     </div>
   );
-}
-
-function getStatusBadge(item: ResolutionItem) {
-  if (item.statut === "ADOPTEE") return <Badge text="Adoptée" kind="success" />;
-  if (item.statut === "REJETEE") return <Badge text="Rejetée" kind="danger" />;
-  if (item.cloturee) return <Badge text="Clôturée" kind="neutral" />;
-  return <Badge text="En attente" kind="warning" />;
 }
 
 export default function AGResolutions() {
@@ -613,13 +772,19 @@ export default function AGResolutions() {
   const [resultByResolution, setResultByResolution] = useState<Record<number, ResolutionResult | null>>({});
 
   useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      ag,
-    }));
+    const timer = window.setTimeout(() => {
+      setForm((prev) => ({
+        ...prev,
+        ag,
+      }));
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [ag]);
 
-  async function fetchResolutions() {
+  const fetchResolutions = useCallback(async () => {
     setState("loading");
     setError(null);
 
@@ -629,11 +794,7 @@ export default function AGResolutions() {
       try {
         const finalEndpoint = ag ? `${endpoint}?ag=${ag}` : endpoint;
         const res = await api.get(finalEndpoint);
-        const data = res?.data;
-
-        const rawRows = isPaginatedResponse<Record<string, unknown>>(data)
-          ? data.results
-          : asArray<Record<string, unknown>>(data);
+        const rawRows = extractRows<Record<string, unknown>>(res?.data);
 
         const normalized = rawRows
           .map(normalizeResolutionItem)
@@ -656,11 +817,17 @@ export default function AGResolutions() {
     setRows([]);
     setState("error");
     setError(getErrorMessage(lastError, "Impossible de charger la liste des résolutions."));
-  }
+  }, [ag]);
 
   useEffect(() => {
-    void fetchResolutions();
-  }, [ag]);
+    const timer = window.setTimeout(() => {
+      void fetchResolutions();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchResolutions]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -694,6 +861,8 @@ export default function AGResolutions() {
       adoptees: rows.filter((x) => x.statut === "ADOPTEE").length,
       rejetees: rows.filter((x) => x.statut === "REJETEE").length,
       attente: rows.filter((x) => x.statut === "EN_ATTENTE").length,
+      cloturees: rows.filter((x) => x.cloturee).length,
+      avecBudget: rows.filter((x) => x.budget_vote !== null && x.budget_vote !== undefined).length,
     };
   }, [rows]);
 
@@ -832,15 +1001,15 @@ export default function AGResolutions() {
 
   return (
     <PageShell>
-      <SectionTitle
-        title={ag ? `Résolutions de l’AG ${ag}` : "Résolutions"}
+      <PageHeader
+        title={ag ? `Résolutions de l’assemblée ${ag}` : "Résolutions"}
         subtitle={
           ag
-            ? "Créez, suivez et clôturez les résolutions de cette assemblée générale avant la génération du procès-verbal."
-            : "Suivez les résolutions rattachées aux assemblées générales, leur majorité, leur clôture et leur impact métier."
+            ? "Créez, suivez, analysez et clôturez les résolutions de cette assemblée générale dans une lecture plus cohérente avec AGList et AGDetail."
+            : "Supervisez les résolutions rattachées aux assemblées générales, leur majorité, leur résultat et leur impact métier."
         }
         right={
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={pageHeaderActionsStyle}>
             {ag ? (
               <AppButton onClick={() => navigate(`/ag/assemblees/${ag}`)} variant="secondary">
                 Retour à l’assemblée
@@ -868,37 +1037,60 @@ export default function AGResolutions() {
         }
       />
 
-      {message ? (
-        <AlertBox kind={message.kind}>
-          {message.text}
+      <HeroSection
+        title={ag ? `Cockpit des résolutions de l’assemblée ${ag}` : "Cockpit des résolutions"}
+        text={
+          ag
+            ? "Cette vue centralise la création, le suivi, le calcul des résultats et la clôture des résolutions de l’assemblée active, avec une grammaire visuelle alignée sur le reste du module AG."
+            : "Cette vue centralise la création, l’analyse, le calcul des résultats et la clôture des résolutions rattachées aux assemblées générales."
+        }
+        primaryLabel="Ajouter une résolution"
+        primaryAction={suggestNextOrdre}
+        secondaryLabel={ag ? "Retour à l’assemblée" : "Voir les assemblées"}
+        secondaryAction={() => (ag ? navigate(`/ag/assemblees/${ag}`) : navigate("/ag/assemblees"))}
+      >
+        <div style={heroAsidePanelStyle}>
+          <div style={heroAsideTitleStyle}>Lecture rapide</div>
+          <div style={heroAsideTextStyle}>
+            Utilisez cette vue pour suivre les décisions soumises à l’assemblée, leur majorité,
+            leur résultat pondéré et leur état de clôture sans surcharge visuelle.
+          </div>
+
+          <div style={heroAsideDividerStyle} />
+
+          <div style={heroAsideMiniNoteStyle}>
+            Les indicateurs détaillés restent dans les blocs du dessous pour éviter les répétitions
+            et garder une vraie cohérence transverse avec AGList et AGDetail.
+          </div>
+        </div>
+      </HeroSection>
+
+      {message ? <AlertBox kind={message.kind}>{message.text}</AlertBox> : null}
+
+      {state === "error" && error ? (
+        <AlertBox kind="error" title="Impossible de charger la liste des résolutions.">
+          {error}
         </AlertBox>
       ) : null}
 
       {showCreateForm ? (
-        <div style={card}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              marginBottom: 14,
-            }}
-          >
-            <div style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>Créer une résolution</div>
-            <AppButton onClick={() => setShowCreateForm(false)} disabled={saving} variant="secondary">
+        <SectionCard
+          title="Créer une résolution"
+          subtitle="Renseignez les champs obligatoires pour enregistrer une nouvelle résolution dans l’assemblée concernée."
+          right={
+            <SmallButton onClick={() => setShowCreateForm(false)} disabled={saving}>
               Fermer
-            </AppButton>
+            </SmallButton>
+          }
+        >
+          <div style={formIntroBoxStyle}>
+            Cette zone permet d’ajouter rapidement une résolution au cycle AG, avec son ordre,
+            son texte, sa majorité et, si nécessaire, son budget voté.
           </div>
 
-          <div style={formIntroBox}>
-            Renseignez les champs obligatoires pour enregistrer une nouvelle résolution dans l’assemblée concernée.
-          </div>
-
-          <div className="ag-resolutions-form-grid" style={formGrid}>
-            <div style={field}>
-              <label style={label}>Assemblée (ID) *</label>
+          <div className="ag-resolutions-form-grid" style={formGridStyle}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Assemblée (ID) *</label>
               <input
                 type="number"
                 min="1"
@@ -906,18 +1098,18 @@ export default function AGResolutions() {
                 value={form.ag ?? ""}
                 onChange={(e) => updateField("ag", toNumberOrNull(e.target.value))}
                 placeholder="Ex. 11"
-                style={input}
+                style={inputStyle}
                 disabled={Boolean(ag)}
               />
-              <div style={hint}>
+              <div style={hintStyle}>
                 {ag
-                  ? `Cette résolution sera créée dans l’AG ${ag}.`
+                  ? `Cette résolution sera créée dans l’assemblée ${ag}.`
                   : "Saisissez l’identifiant numérique de l’assemblée concernée."}
               </div>
             </div>
 
-            <div style={field}>
-              <label style={label}>Ordre *</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Ordre *</label>
               <input
                 type="number"
                 min="1"
@@ -925,37 +1117,37 @@ export default function AGResolutions() {
                 value={form.ordre ?? ""}
                 onChange={(e) => updateField("ordre", toNumberOrNull(e.target.value))}
                 placeholder="Ex. 1"
-                style={input}
+                style={inputStyle}
               />
-              <div style={hint}>Ordre d’apparition de la résolution dans l’assemblée générale.</div>
+              <div style={hintStyle}>Ordre d’apparition de la résolution dans l’assemblée générale.</div>
             </div>
 
-            <div style={fieldFull}>
-              <label style={label}>Titre *</label>
+            <div style={fieldFullStyle}>
+              <label style={labelStyle}>Titre *</label>
               <input
                 value={form.titre}
                 onChange={(e) => updateField("titre", e.target.value)}
                 placeholder="Ex. Validation des comptes de l’exercice"
-                style={input}
+                style={inputStyle}
               />
             </div>
 
-            <div style={fieldFull}>
-              <label style={label}>Texte *</label>
+            <div style={fieldFullStyle}>
+              <label style={labelStyle}>Texte *</label>
               <textarea
                 value={form.texte}
                 onChange={(e) => updateField("texte", e.target.value)}
                 placeholder="Texte détaillé de la résolution"
-                style={textarea}
+                style={textareaStyle}
               />
             </div>
 
-            <div style={field}>
-              <label style={label}>Type de majorité *</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Type de majorité *</label>
               <select
                 value={form.type_majorite}
                 onChange={(e) => updateField("type_majorite", e.target.value as MajoriteType)}
-                style={input}
+                style={inputStyle}
               >
                 <option value="SIMPLE">Majorité simple</option>
                 <option value="ABSOLUE">Majorité absolue</option>
@@ -964,253 +1156,296 @@ export default function AGResolutions() {
               </select>
             </div>
 
-            <div style={field}>
-              <label style={label}>Budget voté (optionnel)</label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Budget voté (optionnel)</label>
               <input
                 value={form.budget_vote}
                 onChange={(e) => updateField("budget_vote", e.target.value)}
                 placeholder="Ex. 1400000"
-                style={input}
+                style={inputStyle}
               />
             </div>
           </div>
 
-          <div style={actions}>
-            <AppButton onClick={resetForm} disabled={saving} variant="secondary">
+          <div style={formActionsStyle}>
+            <SmallButton onClick={resetForm} disabled={saving}>
               Réinitialiser
-            </AppButton>
-            <AppButton onClick={() => void handleCreateResolution()} variant="primary" disabled={saving}>
+            </SmallButton>
+            <SmallButton primary onClick={() => void handleCreateResolution()} disabled={saving}>
               {saving ? "Création..." : "Créer la résolution"}
-            </AppButton>
+            </SmallButton>
           </div>
-        </div>
+        </SectionCard>
       ) : null}
 
-      {state === "error" && error ? (
-        <AlertBox kind="error" title="Impossible de charger la liste des résolutions.">
-          {error}
-        </AlertBox>
-      ) : null}
-
-      <div className="ag-resolutions-stat-grid">
-        <StatCard
-          title="Résolutions"
+      <div className="ag-resolutions-kpi-grid">
+        <SummaryCard
+          label="Résolutions"
           value={stats.total}
-          sub="Nombre total de résolutions visibles."
+          helper="Nombre total de résolutions visibles dans la sélection courante."
           isLoading={isLoading}
+          tone="neutral"
         />
-        <StatCard
-          title="Adoptées"
+        <SummaryCard
+          label="Adoptées"
           value={stats.adoptees}
-          sub="Résolutions validées dans le cycle AG."
+          helper="Résolutions validées dans le cycle AG."
           isLoading={isLoading}
+          tone="success"
         />
-        <StatCard
-          title="Rejetées"
+        <SummaryCard
+          label="Rejetées"
           value={stats.rejetees}
-          sub="Résolutions refusées après clôture."
+          helper="Résolutions refusées après calcul et clôture."
           isLoading={isLoading}
+          tone="danger"
         />
-        <StatCard
-          title="En attente"
+        <SummaryCard
+          label="En attente"
           value={stats.attente}
-          sub="Résolutions encore non clôturées ou non tranchées."
+          helper="Résolutions encore non tranchées ou non clôturées."
           isLoading={isLoading}
+          tone="warning"
         />
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher : résolution, assemblée, majorité, dossier travaux..."
-            style={searchInput}
-          />
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "TOUS" | ResolutionStatus)}
-            style={selectInput}
-          >
-            <option value="TOUS">Tous les statuts</option>
-            <option value="ADOPTEE">Adoptées</option>
-            <option value="REJETEE">Rejetées</option>
-            <option value="EN_ATTENTE">En attente</option>
-          </select>
-
-          <AppButton onClick={() => void fetchResolutions()} disabled={isLoading} variant="secondary">
-            {isLoading ? "Actualisation..." : "Actualiser"}
-          </AppButton>
-        </div>
-
-        <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? "Chargement des résolutions..." : `${filtered.length} résolution(s) affichée(s)`}
-        </div>
-      </div>
-
-      <div style={tableWrap}>
-        {isLoading ? (
-          <div style={{ padding: 16, color: "#6b7280", fontSize: 14 }}>Chargement des résolutions...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 16 }}>
-            <EmptyState
-              title={rows.length === 0 ? "Aucune résolution enregistrée" : "Aucune résolution à afficher"}
-              text={
-                rows.length === 0
-                  ? "Aucune résolution n’a encore été trouvée pour cette sélection."
-                  : "Aucune résolution ne correspond à la recherche ou aux filtres sélectionnés."
-              }
-              actionLabel="Créer une résolution"
-              onAction={suggestNextOrdre}
-            />
+      <SectionCard
+        title="Recherche et supervision"
+        subtitle="Filtrez les résolutions par contenu, statut, majorité ou assemblée."
+        right={
+          <div style={badgeRowStyle}>
+            <Badge text={`${filtered.length} affichée(s)`} kind="info" />
+            <Badge text={`${stats.cloturees} clôturée(s)`} kind="success" />
+            <Badge text={`${stats.avecBudget} avec budget`} kind="neutral" />
           </div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th style={th}>Résolution</th>
-                <th style={th}>Assemblée</th>
-                <th style={th}>Contenu</th>
-                <th style={th}>Cadre</th>
-                <th style={th}>Budget voté</th>
-                <th style={th}>État</th>
-                <th style={th}>Actions</th>
-              </tr>
-            </thead>
+        }
+      >
+        <div style={toolbarWrapStyle}>
+          <div style={toolbarInputsWrapStyle}>
+            <div style={fieldGroupFluidStyle}>
+              <div style={fieldLabelStyle}>Recherche</div>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Résolution, assemblée, majorité, dossier travaux..."
+                style={searchInputStyle}
+              />
+            </div>
 
-            <tbody>
-              {filtered.map((item) => {
-                const result = resultByResolution[item.id];
+            <div style={fieldGroupCompactStyle}>
+              <div style={fieldLabelStyle}>Statut</div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as "TOUS" | ResolutionStatus)}
+                style={selectInputStyle}
+              >
+                <option value="TOUS">Tous les statuts</option>
+                <option value="ADOPTEE">Adoptées</option>
+                <option value="REJETEE">Rejetées</option>
+                <option value="EN_ATTENTE">En attente</option>
+              </select>
+            </div>
 
-                return (
-                  <tr key={item.id}>
-                    <td style={tdMono}>
-                      <div style={{ fontWeight: 900 }}>{item.numero}</div>
-                      {item.ordre !== null && item.ordre !== undefined ? (
-                        <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>Ordre {item.ordre}</div>
-                      ) : null}
-                    </td>
+            <div style={toolbarButtonsStyle}>
+              <SmallButton
+                onClick={() => {
+                  setQuery("");
+                  setStatusFilter("TOUS");
+                }}
+                disabled={!query && statusFilter === "TOUS"}
+              >
+                Réinitialiser
+              </SmallButton>
 
-                    <td style={td}>
-                      <div style={{ fontWeight: 800, color: "#111827" }}>{item.assemblee_ref}</div>
-                      <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{item.assemblee_titre}</div>
-                    </td>
+              <SmallButton onClick={() => void fetchResolutions()} disabled={isLoading}>
+                {isLoading ? "Actualisation..." : "Actualiser"}
+              </SmallButton>
+            </div>
+          </div>
 
-                    <td style={td}>
-                      <div style={{ fontWeight: 700, color: "#111827" }}>{item.titre}</div>
-                      {item.texte ? (
-                        <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-                          {truncateText(item.texte, 140)}
-                        </div>
-                      ) : null}
+          <div style={toolbarMetaStyle}>
+            {isLoading ? "Chargement des résolutions..." : `${filtered.length} résolution(s) affichée(s)`}
+          </div>
+        </div>
+      </SectionCard>
 
-                      {result ? (
-                        <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <Badge
-                            text={`Décision : ${result.decision}`}
-                            kind={result.decision === "ADOPTEE" ? "success" : "danger"}
-                          />
-                          <Badge text={`Expr. : ${formatMoneySimple(result.tantiemes?.exprimes)}`} kind="info" />
-                          <Badge text={`Pour : ${formatMoneySimple(result.tantiemes?.pour)}`} kind="success" />
-                          <Badge text={`Contre : ${formatMoneySimple(result.tantiemes?.contre)}`} kind="danger" />
-                          <Badge text={`Ratio : ${formatPercent(result.tantiemes?.ratio_pour_exprimes)}`} kind="neutral" />
-                        </div>
-                      ) : null}
-                    </td>
+      <SectionCard
+        title="Liste des résolutions"
+        subtitle="Lecture métier des décisions, de leur cadre, de leur contenu, de leur résultat et de leurs actions."
+        right={<Badge text="Suivi métier" kind="info" />}
+        flush
+      >
+        <div style={tableWrapStyle}>
+          {isLoading ? (
+            <div style={loadingWrapStyle}>Chargement des résolutions...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: 18 }}>
+              <EmptyState
+                title={rows.length === 0 ? "Aucune résolution enregistrée" : "Aucune résolution à afficher"}
+                text={
+                  rows.length === 0
+                    ? "Aucune résolution n’a encore été trouvée pour cette sélection."
+                    : "Aucune résolution ne correspond à la recherche ou aux filtres sélectionnés."
+                }
+                actionLabel="Créer une résolution"
+                onAction={suggestNextOrdre}
+              />
+            </div>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th style={thStyle}>Résolution</th>
+                  <th style={thStyle}>Assemblée</th>
+                  <th style={thStyle}>Contenu</th>
+                  <th style={thStyle}>Cadre</th>
+                  <th style={thStyle}>Budget voté</th>
+                  <th style={thStyle}>État</th>
+                  <th style={thStyle}>Actions métier</th>
+                </tr>
+              </thead>
 
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {item.type_majorite ? <Badge text={item.type_majorite} kind="neutral" /> : null}
-                        {item.tantieme_categorie ? <Badge text={item.tantieme_categorie} kind="info" /> : null}
-                        {item.travaux_dossier_titre ? <Badge text={item.travaux_dossier_titre} kind="warning" /> : null}
-                      </div>
-                    </td>
+              <tbody>
+                {filtered.map((item) => {
+                  const result = resultByResolution[item.id];
+                  const statusMeta = getResolutionStatusMeta(item);
 
-                    <td style={tdStrong}>{formatMoneyFCFA(item.budget_vote)}</td>
-
-                    <td style={td}>{getStatusBadge(item)}</td>
-
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Link
-                          to={item.assemblee_id ? `/ag/assemblees/${item.assemblee_id}` : "/ag/assemblees"}
-                          style={primaryMiniLink}
-                        >
-                          Voir l’assemblée
-                        </Link>
-
-                        {!item.cloturee ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => void handleComputeResult(item)}
-                              disabled={busyResultId === item.id || busyCloseId === item.id}
-                              style={{
-                                ...secondaryMiniButton,
-                                opacity: busyResultId === item.id || busyCloseId === item.id ? 0.6 : 1,
-                                cursor:
-                                  busyResultId === item.id || busyCloseId === item.id ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {busyResultId === item.id ? "Calcul..." : "Résultat"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => void handleCloseResolution(item)}
-                              disabled={busyCloseId === item.id || busyResultId === item.id}
-                              style={{
-                                ...dangerMiniButton,
-                                opacity: busyCloseId === item.id || busyResultId === item.id ? 0.6 : 1,
-                                cursor:
-                                  busyCloseId === item.id || busyResultId === item.id ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {busyCloseId === item.id ? "Clôture..." : "Clôturer"}
-                            </button>
-                          </>
+                  return (
+                    <tr key={item.id} style={rowBaseStyle}>
+                      <td style={tdMonoStyle}>
+                        <div style={{ fontWeight: 900 }}>{item.numero}</div>
+                        {item.ordre !== null && item.ordre !== undefined ? (
+                          <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>Ordre {item.ordre}</div>
                         ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      </td>
+
+                      <td style={tdStyle}>
+                        <div style={titleCellStyle}>
+                          <div style={titleMainStyle}>{item.assemblee_ref}</div>
+                          <div style={titleSubStyle}>{item.assemblee_titre}</div>
+                        </div>
+                      </td>
+
+                      <td style={tdStyle}>
+                        <div style={titleCellStyle}>
+                          <div style={titleMainStyle}>{item.titre}</div>
+                          {item.texte ? <div style={titleSubStyle}>{truncateText(item.texte, 150)}</div> : null}
+                        </div>
+
+                        {result ? (
+                          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <Badge
+                              text={`Décision : ${result.decision}`}
+                              kind={result.decision === "ADOPTEE" ? "success" : "danger"}
+                            />
+                            <Badge text={`Exprimés : ${result.tantiemes?.exprimes ?? 0}`} kind="info" />
+                            <Badge text={`Pour : ${result.tantiemes?.pour ?? 0}`} kind="success" />
+                            <Badge text={`Contre : ${result.tantiemes?.contre ?? 0}`} kind="danger" />
+                            <Badge
+                              text={`Ratio : ${formatPercent(result.tantiemes?.ratio_pour_exprimes ?? 0)}`}
+                              kind="neutral"
+                            />
+                          </div>
+                        ) : null}
+                      </td>
+
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {item.type_majorite ? <Badge text={item.type_majorite} kind="neutral" /> : null}
+                          {item.tantieme_categorie ? <Badge text={item.tantieme_categorie} kind="info" /> : null}
+                          {item.travaux_dossier_titre ? <Badge text={item.travaux_dossier_titre} kind="warning" /> : null}
+                        </div>
+                      </td>
+
+                      <td style={tdStrongStyle}>{formatMoneyFCFA(item.budget_vote)}</td>
+
+                      <td style={tdStyle}>
+                        <div style={titleCellStyle}>
+                          <Badge text={statusMeta.label} kind={statusMeta.kind} />
+                          <div style={titleSubStyle}>{statusMeta.description}</div>
+                        </div>
+                      </td>
+
+                      <td style={tdStyle}>
+                        <div style={actionsWrapStyle}>
+                          <Link
+                            to={item.assemblee_id ? `/ag/assemblees/${item.assemblee_id}` : "/ag/assemblees"}
+                            style={primaryMiniLinkStyle}
+                          >
+                            Voir l’assemblée
+                          </Link>
+
+                          {!item.cloturee ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void handleComputeResult(item)}
+                                disabled={busyResultId === item.id || busyCloseId === item.id}
+                                style={{
+                                  ...secondaryMiniButtonStyle,
+                                  opacity: busyResultId === item.id || busyCloseId === item.id ? 0.6 : 1,
+                                  cursor:
+                                    busyResultId === item.id || busyCloseId === item.id ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {busyResultId === item.id ? "Calcul..." : "Calculer"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => void handleCloseResolution(item)}
+                                disabled={busyCloseId === item.id || busyResultId === item.id}
+                                style={{
+                                  ...dangerMiniButtonStyle,
+                                  opacity: busyCloseId === item.id || busyResultId === item.id ? 0.6 : 1,
+                                  cursor:
+                                    busyCloseId === item.id || busyResultId === item.id ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {busyCloseId === item.id ? "Clôture..." : "Clôturer"}
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </SectionCard>
+
+      <AlertBox kind="info" title="Lecture produit">
+        Cette page devient le cockpit dédié aux décisions de l’assemblée générale : création,
+        analyse, calcul du résultat, clôture et lecture consolidée des éléments utiles au procès-verbal.
+      </AlertBox>
 
       <style>{`
-        .ag-resolutions-stat-grid {
+        .ag-resolutions-form-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 14px;
         }
 
-        @media (max-width: 1200px) {
-          .ag-resolutions-stat-grid {
+        .ag-resolutions-kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+          min-width: 0;
+        }
+
+        @media (max-width: 1280px) {
+          .ag-resolutions-kpi-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
 
-        @media (max-width: 900px) {
-          .ag-resolutions-form-grid {
+        @media (max-width: 980px) {
+          .ag-resolutions-form-grid,
+          .ag-resolutions-kpi-grid {
             grid-template-columns: 1fr !important;
-          }
-        }
-
-        @media (max-width: 760px) {
-          .ag-resolutions-stat-grid {
-            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -1218,15 +1453,267 @@ export default function AGResolutions() {
   );
 }
 
-const card: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
-  padding: 18,
-  background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+const pageShellStyle: CSSProperties = {
+  display: "grid",
+  gap: 20,
+  width: "100%",
+  minWidth: 0,
+  overflowX: "hidden",
 };
 
-const formIntroBox: CSSProperties = {
+const pageHeaderStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+};
+
+const pageHeaderInnerStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
+const pageHeaderCopyStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const pageHeaderActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const pageEyebrowStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: 0.9,
+  textTransform: "uppercase",
+  color: "#2563eb",
+};
+
+const pageTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 32,
+  lineHeight: 1.02,
+  fontWeight: 900,
+  letterSpacing: -0.9,
+  color: "#0f172a",
+};
+
+const pageSubtitleStyle: CSSProperties = {
+  margin: 0,
+  maxWidth: 980,
+  fontSize: 13,
+  lineHeight: 1.65,
+  color: "#64748b",
+};
+
+const sectionCardStyle: CSSProperties = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 24,
+  padding: 20,
+  background: "#ffffff",
+  boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
+};
+
+const sectionCardHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+  flexWrap: "wrap",
+  marginBottom: 16,
+  minWidth: 0,
+};
+
+const sectionCardTitleWrapStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  minWidth: 0,
+};
+
+const sectionCardTitleStyle: CSSProperties = {
+  fontSize: 18,
+  lineHeight: 1.2,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const sectionCardSubtitleStyle: CSSProperties = {
+  fontSize: 13,
+  lineHeight: 1.6,
+  color: "#64748b",
+};
+
+const sectionCardRightStyle: CSSProperties = {
+  minWidth: 0,
+};
+
+const sectionCardBodyStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+};
+
+const heroCardStyle: CSSProperties = {
+  borderRadius: 24,
+  padding: "18px 20px",
+  background: "linear-gradient(135deg, #0f172a 0%, #172554 44%, #2563eb 100%)",
+  boxShadow: "0 16px 32px rgba(37, 99, 235, 0.12)",
+  width: "100%",
+  minWidth: 0,
+  overflow: "hidden",
+  boxSizing: "border-box",
+};
+
+const heroGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)",
+  gap: 16,
+  alignItems: "stretch",
+  width: "100%",
+  minWidth: 0,
+};
+
+const heroMainStyle: CSSProperties = {
+  display: "grid",
+  gap: 14,
+  alignContent: "start",
+  minWidth: 0,
+  justifyItems: "start",
+};
+
+const heroPillStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  width: "fit-content",
+  maxWidth: "100%",
+  padding: "5px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: 0.8,
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.84)",
+};
+
+const heroCopyBlockStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const heroTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 25,
+  lineHeight: 1.08,
+  fontWeight: 900,
+  letterSpacing: -0.7,
+  color: "#ffffff",
+};
+
+const heroTextStyle: CSSProperties = {
+  margin: 0,
+  maxWidth: 720,
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.84)",
+};
+
+const heroActionsStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  justifyContent: "flex-start",
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const heroPrimaryButtonStyle: CSSProperties = {
+  minHeight: 40,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "#ffffff",
+  color: "#0f172a",
+  borderRadius: 12,
+  padding: "9px 13px",
+  fontSize: 12.5,
+  fontWeight: 800,
+  cursor: "pointer",
+  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
+};
+
+const heroSecondaryButtonStyle: CSSProperties = {
+  minHeight: 40,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  borderRadius: 12,
+  padding: "9px 13px",
+  fontSize: 12.5,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const heroAsideStyle: CSSProperties = {
+  minWidth: 0,
+  display: "flex",
+  alignItems: "stretch",
+};
+
+const heroAsidePanelStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+  borderRadius: 18,
+  padding: 16,
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  display: "grid",
+  gap: 12,
+  alignContent: "start",
+};
+
+const heroAsideTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideTextStyle: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.82)",
+};
+
+const heroAsideDividerStyle: CSSProperties = {
+  width: "100%",
+  height: 1,
+  background: "rgba(255,255,255,0.12)",
+};
+
+const heroAsideMiniNoteStyle: CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.72)",
+};
+
+const badgeRowStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  alignItems: "center",
+};
+
+const formIntroBoxStyle: CSSProperties = {
   padding: 14,
   borderRadius: 14,
   background: "#f8fafc",
@@ -1237,53 +1724,53 @@ const formIntroBox: CSSProperties = {
   marginBottom: 14,
 };
 
-const formGrid: CSSProperties = {
+const formGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 14,
 };
 
-const field: CSSProperties = {
+const fieldStyle: CSSProperties = {
   display: "grid",
   gap: 8,
 };
 
-const fieldFull: CSSProperties = {
-  ...field,
+const fieldFullStyle: CSSProperties = {
+  ...fieldStyle,
   gridColumn: "1 / -1",
 };
 
-const label: CSSProperties = {
+const labelStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
-  color: "#374151",
+  color: "#334155",
 };
 
-const input: CSSProperties = {
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "11px 12px",
   borderRadius: 12,
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
+  border: "1px solid #e2e8f0",
+  background: "#ffffff",
+  color: "#0f172a",
   fontSize: 14,
   outline: "none",
   boxSizing: "border-box",
 };
 
-const textarea: CSSProperties = {
-  ...input,
+const textareaStyle: CSSProperties = {
+  ...inputStyle,
   minHeight: 120,
   resize: "vertical",
 };
 
-const hint: CSSProperties = {
+const hintStyle: CSSProperties = {
   fontSize: 12,
-  color: "#6b7280",
+  color: "#64748b",
   lineHeight: 1.45,
 };
 
-const actions: CSSProperties = {
+const formActionsStyle: CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
   gap: 10,
@@ -1291,95 +1778,215 @@ const actions: CSSProperties = {
   marginTop: 18,
 };
 
-const searchInput: CSSProperties = {
-  minWidth: 280,
+const toolbarWrapStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-end",
+  gap: 16,
+  flexWrap: "wrap",
+  width: "100%",
+  minWidth: 0,
+};
+
+const toolbarInputsWrapStyle: CSSProperties = {
+  display: "flex",
+  gap: 12,
+  flexWrap: "wrap",
+  alignItems: "flex-end",
+  flex: "1 1 720px",
+  minWidth: 0,
+};
+
+const toolbarButtonsStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  alignItems: "flex-end",
+};
+
+const toolbarMetaStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#64748b",
+  textAlign: "right",
+};
+
+const fieldGroupFluidStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  minWidth: 260,
+  flex: "1 1 340px",
+};
+
+const fieldGroupCompactStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  minWidth: 180,
+  flex: "0 1 220px",
+};
+
+const fieldLabelStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: 0.3,
+};
+
+const searchInputStyle: CSSProperties = {
+  width: "100%",
   padding: "11px 12px",
   borderRadius: 12,
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
+  border: "1px solid #e2e8f0",
+  background: "#ffffff",
+  color: "#0f172a",
   fontSize: 14,
   outline: "none",
+  boxSizing: "border-box",
 };
 
-const selectInput: CSSProperties = {
+const selectInputStyle: CSSProperties = {
+  width: "100%",
   padding: "11px 12px",
   borderRadius: 12,
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  color: "#111827",
+  border: "1px solid #e2e8f0",
+  background: "#ffffff",
+  color: "#0f172a",
   fontWeight: 700,
+  boxSizing: "border-box",
 };
 
-const tableWrap: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 20,
+const tableWrapStyle: CSSProperties = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 22,
   overflowX: "auto",
-  background: "#fff",
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  overflowY: "hidden",
+  background: "#ffffff",
+  boxShadow: "0 12px 32px rgba(15, 23, 42, 0.05)",
+  width: "100%",
+  minWidth: 0,
 };
 
-const th: CSSProperties = {
+const tableStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 1480,
+  borderCollapse: "collapse",
+};
+
+const loadingWrapStyle: CSSProperties = {
+  padding: 18,
+  color: "#64748b",
+  fontSize: 14,
+};
+
+const thStyle: CSSProperties = {
   padding: "14px 12px",
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: "1px solid #e2e8f0",
   whiteSpace: "nowrap",
   fontSize: 12,
-  color: "#6b7280",
-  background: "#f9fafb",
+  color: "#64748b",
+  background: "#f8fafc",
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: 0.3,
 };
 
-const td: CSSProperties = {
-  padding: "14px 12px",
-  borderBottom: "1px solid #f3f4f6",
+const tdStyle: CSSProperties = {
+  padding: "15px 12px",
+  borderBottom: "1px solid #f1f5f9",
   verticalAlign: "middle",
-  color: "#111827",
+  color: "#0f172a",
   fontSize: 14,
 };
 
-const tdMono: CSSProperties = {
-  ...td,
-  fontWeight: 700,
-  whiteSpace: "nowrap",
-};
-
-const tdStrong: CSSProperties = {
-  ...td,
+const tdMonoStyle: CSSProperties = {
+  ...tdStyle,
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
 
-const primaryMiniLink: CSSProperties = {
+const tdStrongStyle: CSSProperties = {
+  ...tdStyle,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+};
+
+const titleCellStyle: CSSProperties = {
+  display: "grid",
+  gap: 4,
+  minWidth: 0,
+};
+
+const titleMainStyle: CSSProperties = {
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const titleSubStyle: CSSProperties = {
+  fontSize: 12,
+  color: "#64748b",
+  lineHeight: 1.45,
+};
+
+const actionsWrapStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const rowBaseStyle: CSSProperties = {
+  transition: "background 0.2s ease",
+};
+
+const primaryMiniLinkStyle: CSSProperties = {
   padding: "7px 10px",
   borderRadius: 10,
   border: "1px solid #c7d2fe",
   background: "#eef2ff",
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
   color: "#3730a3",
   textDecoration: "none",
   display: "inline-flex",
   alignItems: "center",
 };
 
-const secondaryMiniButton: CSSProperties = {
+const secondaryMiniButtonStyle: CSSProperties = {
   padding: "7px 10px",
   borderRadius: 10,
   border: "1px solid #dbeafe",
   background: "#eff6ff",
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
   color: "#1d4ed8",
 };
 
-const dangerMiniButton: CSSProperties = {
+const dangerMiniButtonStyle: CSSProperties = {
   padding: "7px 10px",
   borderRadius: 10,
   border: "1px solid #fecaca",
   background: "#fef2f2",
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
   color: "#991b1b",
+};
+
+const emptyStateStyle: CSSProperties = {
+  border: "1px dashed #cbd5e1",
+  borderRadius: 18,
+  padding: 22,
+  background: "linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)",
+};
+
+const emptyStateTitleStyle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 900,
+  color: "#0f172a",
+  marginBottom: 8,
+};
+
+const emptyStateTextStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#64748b",
+  lineHeight: 1.6,
 };

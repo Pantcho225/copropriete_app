@@ -1,20 +1,22 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
   type CSSProperties,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/authStore";
 import { getPageSubtitle, getPageTitle } from "../config/productNavigation";
+import { useAuthStore } from "../store/authStore";
 
 function isValidCoproId(value: string) {
   const normalized = (value ?? "").trim();
+
   if (!normalized) return false;
 
   const parsed = Number(normalized);
+
   return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed);
 }
 
@@ -80,30 +82,32 @@ export default function Topbar() {
   const logout = useAuthStore((s) => s.logout);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [coproInput, setCoproInput] = useState(coproprieteId ?? "");
+  const [coproInput, setCoproInput] = useState(coproprieteId ? String(coproprieteId) : "");
   const [coproError, setCoproError] = useState<string | null>(null);
 
   const pageTitle = useMemo(() => getPageTitle(location.pathname), [location.pathname]);
-  const pageSubtitle = useMemo(
-    () => getPageSubtitle(location.pathname),
-    [location.pathname]
-  );
 
-  const activeCoproLabel = coproprieteId
-    ? `#${coproprieteId}`
-    : "Aucune copropriété active";
+  const pageSubtitle = useMemo(() => getPageSubtitle(location.pathname), [location.pathname]);
+
+  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Aucune copropriété active";
 
   useEffect(() => {
-    if (!isModalOpen) {
-      setCoproInput(coproprieteId ?? "");
+    if (isModalOpen) return;
+
+    const timer = window.setTimeout(() => {
+      setCoproInput(coproprieteId ? String(coproprieteId) : "");
       setCoproError(null);
-    }
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [coproprieteId, isModalOpen]);
 
   useEffect(() => {
-    if (!isModalOpen) return;
+    if (!isModalOpen) return undefined;
 
-    const onKeyDown = (event: KeyboardEvent | globalThis.KeyboardEvent) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsModalOpen(false);
         setCoproError(null);
@@ -111,21 +115,24 @@ export default function Topbar() {
     };
 
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [isModalOpen]);
 
-  const openChangeCoproModal = () => {
-    setCoproInput(coproprieteId ?? "");
+  const openChangeCoproModal = useCallback(() => {
+    setCoproInput(coproprieteId ? String(coproprieteId) : "");
     setCoproError(null);
     setIsModalOpen(true);
-  };
+  }, [coproprieteId]);
 
-  const closeChangeCoproModal = () => {
+  const closeChangeCoproModal = useCallback(() => {
     setIsModalOpen(false);
     setCoproError(null);
-  };
+  }, []);
 
-  const submitChangeCopro = () => {
+  const submitChangeCopro = useCallback(() => {
     const normalized = coproInput.trim();
 
     if (!normalized) {
@@ -134,9 +141,7 @@ export default function Topbar() {
     }
 
     if (!isValidCoproId(normalized)) {
-      setCoproError(
-        "Veuillez saisir un identifiant numérique valide, par exemple 7 ou 11."
-      );
+      setCoproError("Veuillez saisir un identifiant numérique valide, par exemple 7 ou 11.");
       return;
     }
 
@@ -150,12 +155,12 @@ export default function Topbar() {
     setCoproError(null);
 
     navigate("/", { replace: true });
-  };
+  }, [coproInput, coproprieteId, navigate, setCopropriete]);
 
-  const onLogout = () => {
+  const onLogout = useCallback(() => {
     logout();
     navigate("/login", { replace: true });
-  };
+  }, [logout, navigate]);
 
   return (
     <>
@@ -163,17 +168,12 @@ export default function Topbar() {
         <div style={headerInner}>
           <div style={headingBlock}>
             <div style={eyebrowStyle}>Plateforme de gestion de copropriété</div>
-
             <div style={titleStyle}>{pageTitle}</div>
-
             <div style={subtitleStyle}>{pageSubtitle}</div>
           </div>
 
           <div style={actionsBlock}>
-            <ContextBadge
-              label="Copropriété active"
-              value={activeCoproLabel}
-            />
+            <ContextBadge label="Copropriété active" value={activeCoproLabel} />
 
             <SmallButton
               onClick={openChangeCoproModal}
@@ -190,14 +190,10 @@ export default function Topbar() {
       </header>
 
       {isModalOpen ? (
-        <div
-          style={modalBackdrop}
-          onClick={closeChangeCoproModal}
-          aria-hidden="true"
-        >
+        <div style={modalBackdrop} onClick={closeChangeCoproModal}>
           <div
             style={modalCard}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="change-copro-title"
@@ -209,8 +205,7 @@ export default function Topbar() {
               </div>
 
               <div id="change-copro-description" style={modalDescription}>
-                Saisissez l’identifiant de la copropriété à charger dans votre
-                session de travail.
+                Saisissez l’identifiant de la copropriété à charger dans votre session de travail.
                 <br />
                 Copropriété actuellement active :{" "}
                 <strong style={{ color: "#111827" }}>{activeCoproLabel}</strong>
@@ -227,12 +222,17 @@ export default function Topbar() {
                 type="text"
                 inputMode="numeric"
                 value={coproInput}
-                onChange={(e) => {
-                  setCoproInput(e.target.value);
-                  if (coproError) setCoproError(null);
+                onChange={(event) => {
+                  setCoproInput(event.target.value);
+
+                  if (coproError) {
+                    setCoproError(null);
+                  }
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitChangeCopro();
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    submitChangeCopro();
+                  }
                 }}
                 placeholder="Ex. : 11"
                 autoFocus
@@ -252,13 +252,13 @@ export default function Topbar() {
               </div>
             ) : (
               <div id="copro-id-help" style={helpBox}>
-                Utilisez un identifiant numérique valide correspondant à une
-                copropriété existante.
+                Utilisez un identifiant numérique valide correspondant à une copropriété existante.
               </div>
             )}
 
             <div style={modalActions}>
               <SmallButton onClick={closeChangeCoproModal}>Annuler</SmallButton>
+
               <SmallButton onClick={submitChangeCopro} primary>
                 Valider le changement
               </SmallButton>
@@ -280,12 +280,12 @@ const headerStyle: CSSProperties = {
 };
 
 const headerInner: CSSProperties = {
-  minHeight: 84,
-  padding: "16px 20px",
+  minHeight: 96,
+  padding: "18px 22px",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 16,
+  gap: 20,
   flexWrap: "wrap",
 };
 
@@ -298,42 +298,45 @@ const headingBlock: CSSProperties = {
 };
 
 const eyebrowStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: 10,
   fontWeight: 900,
-  letterSpacing: 0.9,
+  letterSpacing: 1.2,
   textTransform: "uppercase",
-  color: "#6b7280",
+  color: "#94a3b8",
 };
 
 const titleStyle: CSSProperties = {
-  fontSize: 24,
+  fontSize: 26,
   fontWeight: 900,
-  color: "#111827",
+  color: "#0f172a",
   lineHeight: 1.1,
-  letterSpacing: -0.4,
+  letterSpacing: -0.6,
 };
 
 const subtitleStyle: CSSProperties = {
   fontSize: 13,
-  color: "#6b7280",
+  color: "#64748b",
   lineHeight: 1.5,
-  maxWidth: 780,
+  maxWidth: 760,
 };
 
 const actionsBlock: CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: 12,
   flexWrap: "wrap",
   alignItems: "center",
   justifyContent: "flex-end",
+  padding: "10px 12px",
+  borderRadius: 16,
+  background: "#ffffff",
+  border: "1px solid #e5e7eb",
 };
 
 const contextBadge: CSSProperties = {
-  padding: "10px 12px",
+  padding: "10px 14px",
   borderRadius: 14,
-  background: "#f8fafc",
-  border: "1px solid #e5e7eb",
-  whiteSpace: "nowrap",
+  background: "#f1f5f9",
+  border: "1px solid #e2e8f0",
 };
 
 const contextBadgeLabel: CSSProperties = {
@@ -353,13 +356,14 @@ const contextBadgeValue: CSSProperties = {
 };
 
 const buttonBase: CSSProperties = {
-  padding: "10px 12px",
+  padding: "10px 14px",
   borderRadius: 12,
   fontWeight: 800,
   fontSize: 13,
   lineHeight: 1.2,
   whiteSpace: "nowrap",
   transition: "all 0.2s ease",
+  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.05)",
 };
 
 const modalBackdrop: CSSProperties = {

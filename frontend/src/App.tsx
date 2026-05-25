@@ -39,6 +39,8 @@ import AGVotes from "./pages/ag/AGVotes";
 
 // Facturation
 import BillingHome from "./pages/billing/BillingHome";
+import BillingFactures from "./pages/billing/BillingFactures";
+import BillingAbonnement from "./pages/billing/BillingAbonnement";
 
 // Plateforme
 import PlatformAdminHome from "./pages/platform-admin/PlatformAdminHome";
@@ -117,13 +119,19 @@ export default function App() {
           {/* Assemblées générales */}
           <Route path="ag">
             <Route index element={<AGHome />} />
+
+            {/* Assemblées */}
             <Route path="assemblees" element={<AGList />} />
             <Route path="assemblees/nouveau" element={<AGForm />} />
             <Route path="assemblees/:id/modifier" element={<AGForm />} />
             <Route path="assemblees/:id" element={<AGDetail />} />
+
+            {/* Cycle opérationnel AG */}
             <Route path="assemblees/:id/presences" element={<AGPresences />} />
             <Route path="assemblees/:id/votes" element={<AGVotes />} />
             <Route path="assemblees/:id/pv" element={<AGPV />} />
+
+            {/* Résolutions */}
             <Route path="assemblees/:id/resolutions" element={<AGResolutions />} />
             <Route path="resolutions" element={<AGResolutions />} />
 
@@ -143,6 +151,8 @@ export default function App() {
           {/* Facturation */}
           <Route path="billing">
             <Route index element={<BillingHome />} />
+            <Route path="factures" element={<BillingFactures />} />
+            <Route path="abonnement" element={<BillingAbonnement />} />
           </Route>
 
           {/* Plateforme */}

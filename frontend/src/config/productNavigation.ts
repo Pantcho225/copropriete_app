@@ -31,6 +31,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Ressources humaines",
     items: [
+      { label: "Vue d’ensemble", to: "/rh" },
       { label: "Employés", to: "/rh/employes" },
       { label: "Contrats", to: "/rh/contrats" },
     ],
@@ -45,6 +46,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Travaux",
     items: [
+      { label: "Vue d’ensemble", to: "/travaux" },
       { label: "Dossiers de travaux", to: "/travaux/dossiers" },
       { label: "Nouveau dossier de travaux", to: "/travaux/dossiers/nouveau" },
       { label: "Fournisseurs", to: "/travaux/fournisseurs" },
@@ -55,16 +57,24 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: "Assemblées générales",
     items: [
       { label: "Vue d’ensemble", to: "/ag" },
-      { label: "Assemblées", to: "/ag/assemblees" },
+      { label: "Liste des assemblées", to: "/ag/assemblees" },
+      { label: "Nouvelle assemblée", to: "/ag/assemblees/nouveau" },
+      { label: "Résolutions", to: "/ag/resolutions" },
     ],
   },
   {
     title: "Facturation",
-    items: [{ label: "Vue d’ensemble", to: "/billing" }],
+    items: [
+      { label: "Vue d’ensemble", to: "/billing" },
+      { label: "Factures", to: "/billing/factures" },
+      { label: "Abonnement", to: "/billing/abonnement" },
+    ],
   },
   {
     title: "Plateforme",
-    items: [{ label: "Administration plateforme", to: "/platform-admin" }],
+    items: [
+      { label: "Administration plateforme", to: "/platform-admin" },
+    ],
   },
 ];
 
@@ -72,23 +82,24 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Tableau de bord";
 
   // Comptabilité
-  if (pathname === "/compta") return "Comptabilité";
+  if (pathname === "/compta") return "Vue d’ensemble Comptabilité";
   if (pathname === "/compta/import") return "Importer un relevé";
   if (pathname === "/compta/imports") return "Historique des imports";
   if (pathname.startsWith("/compta/imports/") && pathname.endsWith("/lignes")) {
     return "Lignes importées";
   }
-  if (pathname === "/compta/mouvements") return "Mouvements bancaires";
+  if (pathname === "/compta/mouvements") return "Mouvements comptables";
   if (pathname === "/compta/stats") return "Statistiques comptables";
 
   // Relances
-  if (pathname === "/relances") return "Relances";
+  if (pathname === "/relances") return "Vue d’ensemble Relances";
   if (pathname === "/relances/dossiers") return "Dossiers impayés";
   if (pathname.startsWith("/relances/dossiers/")) return "Détail du dossier impayé";
   if (pathname === "/relances/historique") return "Historique des relances";
   if (pathname === "/relances/avis") return "Avis de régularisation";
 
-  // RH
+  // Ressources humaines
+  if (pathname === "/rh") return "Vue d’ensemble Ressources humaines";
   if (pathname === "/rh/employes") return "Employés";
   if (pathname === "/rh/employes/nouveau") return "Nouvel employé";
   if (pathname.startsWith("/rh/employes/") && pathname.endsWith("/modifier")) {
@@ -108,6 +119,7 @@ export function getPageTitle(pathname: string): string {
   }
 
   // Travaux
+  if (pathname === "/travaux") return "Vue d’ensemble Travaux";
   if (pathname === "/travaux/dossiers") return "Dossiers de travaux";
   if (pathname === "/travaux/dossiers/nouveau") return "Nouveau dossier de travaux";
   if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
@@ -122,18 +134,35 @@ export function getPageTitle(pathname: string): string {
     return "Modifier un fournisseur";
   }
 
-  // AG
-  if (pathname === "/ag") return "Assemblées générales";
-  if (pathname === "/ag/assemblees") return "Assemblées";
-  if (pathname === "/ag/assemblees/nouveau") return "Nouvelle assemblée générale";
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) return "Présences";
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/resolutions")) return "Résolutions";
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/votes")) return "Votes";
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/pv")) return "Procès-verbal";
-  if (pathname.startsWith("/ag/assemblees/")) return "Détail de l’assemblée générale";
+  // Assemblées générales
+  if (pathname === "/ag") return "Vue d’ensemble Assemblées générales";
+  if (pathname === "/ag/assemblees") return "Liste des assemblées";
+  if (pathname === "/ag/assemblees/nouveau") return "Nouvelle assemblée";
+  if (pathname === "/ag/resolutions") return "Résolutions";
+
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
+    return "Présences";
+  }
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/resolutions")) {
+    return "Résolutions";
+  }
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/votes")) {
+    return "Votes";
+  }
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/pv")) {
+    return "Procès-verbal";
+  }
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/modifier")) {
+    return "Modifier l’assemblée générale";
+  }
+  if (pathname.startsWith("/ag/assemblees/")) {
+    return "Détail de l’assemblée générale";
+  }
 
   // Facturation
-  if (pathname === "/billing") return "Facturation";
+  if (pathname === "/billing") return "Vue d’ensemble Facturation";
+  if (pathname === "/billing/factures") return "Factures";
+  if (pathname === "/billing/abonnement") return "Abonnement";
 
   // Plateforme
   if (pathname === "/platform-admin") return "Administration plateforme";
@@ -148,7 +177,7 @@ export function getPageSubtitle(pathname: string): string {
 
   // Comptabilité
   if (pathname === "/compta") {
-    return "Accédez rapidement aux principales fonctionnalités du module Comptabilité : imports bancaires, mouvements et statistiques.";
+    return "Suivez les flux financiers, les imports bancaires, les rapprochements et les principaux indicateurs comptables.";
   }
   if (pathname === "/compta/import") {
     return "Importez un relevé bancaire pour faciliter le traitement et le rapprochement des opérations.";
@@ -160,7 +189,7 @@ export function getPageSubtitle(pathname: string): string {
     return "Traitez les lignes importées, rapprochez-les ou marquez-les selon leur statut métier.";
   }
   if (pathname === "/compta/mouvements") {
-    return "Suivez les mouvements bancaires et les opérations enregistrées pour la copropriété active.";
+    return "Consultez les mouvements comptables, leur statut de rapprochement et l’activité enregistrée pour la copropriété active.";
   }
   if (pathname === "/compta/stats") {
     return "Analysez les principaux indicateurs comptables et la dynamique bancaire de la copropriété.";
@@ -168,7 +197,7 @@ export function getPageSubtitle(pathname: string): string {
 
   // Relances
   if (pathname === "/relances") {
-    return "Suivez les dossiers impayés, le niveau de relance et les régularisations depuis une vue d’ensemble dédiée.";
+    return "Supervisez les dossiers impayés, les relances engagées et les régularisations depuis une vue d’ensemble dédiée.";
   }
   if (pathname === "/relances/dossiers") {
     return "Consultez les dossiers impayés, leur niveau de relance et leur situation de règlement.";
@@ -183,7 +212,10 @@ export function getPageSubtitle(pathname: string): string {
     return "Consultez les avis de régularisation générés après paiement ou mise à jour de situation.";
   }
 
-  // RH
+  // Ressources humaines
+  if (pathname === "/rh") {
+    return "Pilotez les équipes, les contrats et l’organisation opérationnelle depuis le module Ressources humaines.";
+  }
   if (pathname === "/rh/employes") {
     return "Gérez les employés rattachés à cette copropriété.";
   }
@@ -215,6 +247,9 @@ export function getPageSubtitle(pathname: string): string {
   }
 
   // Travaux
+  if (pathname === "/travaux") {
+    return "Supervisez les dossiers de travaux, les budgets, les validations et l’avancement opérationnel.";
+  }
   if (pathname === "/travaux/dossiers") {
     return "Pilotez les dossiers de travaux, leur budget, leur résolution liée et leur niveau de verrouillage.";
   }
@@ -237,15 +272,18 @@ export function getPageSubtitle(pathname: string): string {
     return "Mettez à jour les informations de la fiche fournisseur sélectionnée.";
   }
 
-  // AG
+  // Assemblées générales
   if (pathname === "/ag") {
-    return "Suivez l’activité du module Assemblées générales depuis une vue d’ensemble claire et opérationnelle.";
+    return "Pilotez les assemblées générales, les présences, les résolutions, les votes et les procès-verbaux.";
   }
   if (pathname === "/ag/assemblees") {
     return "Consultez les assemblées, leur statut et les principales actions disponibles.";
   }
   if (pathname === "/ag/assemblees/nouveau") {
     return "Renseignez les informations nécessaires pour préparer une nouvelle assemblée générale.";
+  }
+  if (pathname === "/ag/resolutions") {
+    return "Consultez et pilotez les résolutions rattachées aux assemblées générales.";
   }
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
     return "Gérez les présences, les tantièmes associés et la participation des lots à l’assemblée.";
@@ -259,13 +297,22 @@ export function getPageSubtitle(pathname: string): string {
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/pv")) {
     return "Consultez le procès-verbal, son état d’archivage, de signature et de verrouillage.";
   }
+  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/modifier")) {
+    return "Mettez à jour les informations générales de l’assemblée sélectionnée.";
+  }
   if (pathname.startsWith("/ag/assemblees/")) {
     return "Consultez les informations générales de l’assemblée, son statut et les actions disponibles.";
   }
 
   // Facturation
   if (pathname === "/billing") {
-    return "Accédez à la vue d’ensemble du module Facturation pour suivre les éléments clés déjà disponibles.";
+    return "Suivez les éléments de facturation, les statuts d’abonnement et les informations économiques déjà disponibles.";
+  }
+  if (pathname === "/billing/factures") {
+    return "Consultez les factures émises et leur statut de traitement.";
+  }
+  if (pathname === "/billing/abonnement") {
+    return "Suivez le plan actif, les échéances et les informations de souscription.";
   }
 
   // Plateforme

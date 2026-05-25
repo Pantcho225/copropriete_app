@@ -4,8 +4,19 @@ import { API_BASE_URL, ENDPOINTS } from "../api/endpoints";
 import { authStore } from "./auth.store";
 import { useNavigate } from "react-router-dom";
 
+type ApiError = {
+  response?: {
+    data?: {
+      detail?: string;
+      message?: string;
+    };
+  };
+  message?: string;
+};
+
 export default function LoginPage() {
   const nav = useNavigate();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [coproId, setCoproId] = useState(authStore.getCoproId() ?? "");
@@ -19,11 +30,12 @@ export default function LoginPage() {
       const r = await axios.post(
         `${API_BASE_URL}${ENDPOINTS.token}`,
         { username, password },
-        { timeout: 20000 }
+        { timeout: 20000 },
       );
 
       const access = r.data?.access;
       const refresh = r.data?.refresh;
+
       if (!access || !refresh) {
         setError("Réponse JWT invalide.");
         return;
@@ -33,8 +45,15 @@ export default function LoginPage() {
       authStore.setCoproId(String(coproId));
 
       nav("/compta/import");
-    } catch (err: any) {
-      setError(err?.response?.data?.detail ?? "Login échoué.");
+    } catch (err: unknown) {
+      const error = err as ApiError;
+
+      setError(
+        error?.response?.data?.detail ||
+          error?.response?.data?.message ||
+          error?.message ||
+          "Login échoué.",
+      );
     }
   }
 
@@ -43,9 +62,24 @@ export default function LoginPage() {
       <h2>Connexion</h2>
 
       <form onSubmit={submit} style={{ display: "grid", gap: 10 }}>
-        <input placeholder="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-        <input placeholder="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <input placeholder="X-Copropriete-Id (ex: 11)" value={coproId} onChange={(e) => setCoproId(e.target.value)} />
+        <input
+          placeholder="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+
+        <input
+          placeholder="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <input
+          placeholder="X-Copropriete-Id (ex: 11)"
+          value={coproId}
+          onChange={(e) => setCoproId(e.target.value)}
+        />
 
         {error ? <div style={{ color: "tomato" }}>{error}</div> : null}
 

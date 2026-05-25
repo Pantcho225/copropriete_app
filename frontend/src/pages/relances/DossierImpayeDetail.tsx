@@ -1,11 +1,18 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { relancesAPI } from "../../api/relances";
-import { APP_TEXT } from "../../config/appText";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
 type PendingAction = "relance" | "avis" | null;
+type AccentKind = "neutral" | "success" | "warning" | "danger" | "info";
 
 type RelanceItem = {
   id: number;
@@ -73,34 +80,241 @@ const CANAL_OPTIONS = [
   { value: "COURRIER", label: "Courrier" },
 ] as const;
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: {
+      data?: {
+        detail?: string;
+        non_field_errors?: string[];
+        [key: string]: unknown;
+      };
+    };
+    message?: string;
+  };
+
+  const data = err?.response?.data;
+
+  if (data && typeof data === "object") {
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+
+    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+      return data.non_field_errors.join("\n");
+    }
+
+    try {
+      const entries = Object.entries(data);
+
+      if (entries.length > 0) {
+        return entries
+          .map(([key, value]) => {
+            const rendered = Array.isArray(value)
+              ? value.join(" / ")
+              : typeof value === "string"
+                ? value
+                : JSON.stringify(value);
+
+            return `${key}: ${rendered}`;
+          })
+          .join("\n");
+      }
+    } catch {
+      return err?.message || fallback;
+    }
+  }
+
+  return err?.message || fallback;
+}
+
+function getTone(kind: AccentKind) {
+  if (kind === "success") {
+    return {
+      softBg: "#ecfdf5",
+      border: "#86efac",
+      text: "#166534",
+      strongText: "#14532d",
+    };
+  }
+
+  if (kind === "warning") {
+    return {
+      softBg: "#fffbeb",
+      border: "#fcd34d",
+      text: "#92400e",
+      strongText: "#78350f",
+    };
+  }
+
+  if (kind === "danger") {
+    return {
+      softBg: "#fef2f2",
+      border: "#fca5a5",
+      text: "#991b1b",
+      strongText: "#7f1d1d",
+    };
+  }
+
+  if (kind === "info") {
+    return {
+      softBg: "#eff6ff",
+      border: "#93c5fd",
+      text: "#1d4ed8",
+      strongText: "#1e3a8a",
+    };
+  }
+
+  return {
+    softBg: "#f8fafc",
+    border: "#e2e8f0",
+    text: "#475569",
+    strongText: "#0f172a",
+  };
+}
+
+function toNumber(value?: number | string | null): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function formatMoneyFCFA(amount?: number | string | null): string {
+  if (amount == null || amount === "") return "—";
+
+  const value = toNumber(amount);
+
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "XOF",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${value} FCFA`;
+  }
+}
+
+function formatDateShort(iso?: string | null): string {
+  if (!iso) return "—";
+
+  const d = new Date(iso);
+
+  if (Number.isNaN(d.getTime())) return iso;
+
+  return d.toLocaleDateString("fr-FR");
+}
+
+function formatDateTimeShort(iso?: string | null): string {
+  if (!iso) return "—";
+
+  const d = new Date(iso);
+
+  if (Number.isNaN(d.getTime())) return iso;
+
+  return `${d.toLocaleDateString("fr-FR")} ${d.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function normalizeStatut(value?: string | null): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function getCanalLabel(canal?: string | null): string {
+  const normalized = String(canal ?? "").trim().toUpperCase();
+  const found = CANAL_OPTIONS.find((opt) => opt.value === normalized);
+
+  return found?.label || canal || "—";
+}
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
 
-function PageHeader(props: { title: string; subtitle?: string; actions?: ReactNode }) {
+function HeroHeader(props: {
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
-    <div style={pageHeader}>
-      <div style={{ display: "grid", gap: 6 }}>
-        <div style={pageEyebrow}>Relances</div>
-        <div style={pageTitle}>{props.title}</div>
-        {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+    <section style={heroCard}>
+      <div style={heroGlow} />
+
+      <div style={heroGrid}>
+        <div style={heroMainBlock}>
+          <div style={pageEyebrow}>Relances · Détail dossier</div>
+          <div style={pageTitle}>{props.title}</div>
+          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
+          {props.actions ? <div style={{ ...heroActions, marginTop: 18 }}>{props.actions}</div> : null}
+        </div>
+
+        {props.aside ? <div style={heroAsidePanel}>{props.aside}</div> : null}
       </div>
-      {props.actions ? <div style={pageHeaderActions}>{props.actions}</div> : null}
-    </div>
+    </section>
   );
 }
 
 function Card(props: { title: string; subtitle?: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <div style={card}>
+    <section style={card}>
       <div style={cardHeader}>
-        <div style={{ display: "grid", gap: 4 }}>
+        <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
           <div style={cardTitle}>{props.title}</div>
           {props.subtitle ? <div style={cardSubtitle}>{props.subtitle}</div> : null}
         </div>
-        {props.right}
+        {props.right ? <div>{props.right}</div> : null}
       </div>
       {props.children}
+    </section>
+  );
+}
+
+function KpiCard(props: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: AccentKind;
+}) {
+  const tone = getTone(props.accent ?? "neutral");
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        borderRadius: 20,
+        background: tone.softBg,
+        padding: 16,
+        minHeight: 108,
+        boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
+        minWidth: 0,
+      }}
+    >
+      <div style={kpiLabel}>{props.label}</div>
+
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 26,
+          fontWeight: 900,
+          color: tone.strongText,
+          lineHeight: 1.12,
+          letterSpacing: -0.3,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {props.value}
+      </div>
+
+      {props.hint ? (
+        <div style={{ marginTop: 8, fontSize: 12, color: tone.text, lineHeight: 1.5 }}>
+          {props.hint}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -121,9 +335,9 @@ function SmallButton(props: {
       }
     : props.primary
       ? {
-          border: "1px solid #c7d2fe",
-          background: "#eef2ff",
-          color: props.disabled ? "#818cf8" : "#3730a3",
+          border: "1px solid #93c5fd",
+          background: "#dbeafe",
+          color: props.disabled ? "#818cf8" : "#1e3a8a",
         }
       : {
           border: "1px solid #e5e7eb",
@@ -166,21 +380,7 @@ function Badge(props: { text: string; kind?: "success" | "warning" | "danger" | 
             : { background: "#f3f4f6", border: "#e5e7eb", color: "#374151" };
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "4px 10px",
-        borderRadius: 999,
-        border: `1px solid ${styles.border}`,
-        background: styles.background,
-        color: styles.color,
-        fontSize: 12,
-        fontWeight: 800,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{ ...badgeBase, ...styles, border: `1px solid ${styles.border}` }}>
       {props.text}
     </span>
   );
@@ -220,11 +420,7 @@ function KeyValueRow(props: { label: string; value: ReactNode }) {
   );
 }
 
-function Field(props: {
-  label: string;
-  children: ReactNode;
-  help?: string;
-}) {
+function Field(props: { label: string; children: ReactNode; help?: string }) {
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <label style={fieldLabel}>{props.label}</label>
@@ -267,46 +463,15 @@ function EmptyState(props: { title: string; description?: string }) {
   );
 }
 
-function formatMoneyFCFA(amount?: number | string | null): string {
-  if (amount == null || amount === "") return "—";
-  const value = Number(amount);
-  if (!Number.isFinite(value)) return String(amount);
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "XOF",
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `${value} FCFA`;
-  }
-}
-
-function formatDateShort(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("fr-FR");
-}
-
-function formatDateTimeShort(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${d.toLocaleDateString("fr-FR")} ${d.toLocaleTimeString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-}
-
-function normalizeStatut(value?: string | null): string {
-  return String(value ?? "").trim().toUpperCase();
-}
-
-function getCanalLabel(canal?: string | null): string {
-  const normalized = String(canal ?? "").trim().toUpperCase();
-  const found = CANAL_OPTIONS.find((opt) => opt.value === normalized);
-  return found?.label || canal || "—";
+function InfoStrip() {
+  return (
+    <div style={infoStrip}>
+      <div style={infoStripText}>
+        Cette vue centralise le suivi détaillé du dossier, les relances déjà envoyées, l’état de
+        régularisation et l’éventuel avis généré.
+      </div>
+    </div>
+  );
 }
 
 function getDossierBadge(statut?: string | null) {
@@ -329,6 +494,7 @@ function getRelanceBadge(statut?: string | null) {
     case "ANNULEE":
       return <Badge text="Annulée" kind="danger" />;
     case "ENVOYEE":
+    case "ENVOYE":
       return <Badge text="Envoyée" kind="info" />;
     default:
       return <Badge text={statut || "—"} kind="neutral" />;
@@ -350,7 +516,7 @@ function getAvisBadge(statut?: string | null) {
 
 export default function DossierImpayeDetail() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
 
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -376,79 +542,118 @@ export default function DossierImpayeDetail() {
   const [relanceFormError, setRelanceFormError] = useState<string | null>(null);
   const [avisFormError, setAvisFormError] = useState<string | null>(null);
 
-  async function load() {
-    if (!id) return;
+  const dossierId = useMemo(() => {
+    const parsed = Number(id);
+
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [id]);
+
+  const load = useCallback(async () => {
+    if (!dossierId) return;
 
     setState("loading");
     setError(null);
 
     try {
-      const data = (await relancesAPI.getDossier(Number(id))) as DossierItem;
+      const data = (await relancesAPI.getDossier(dossierId)) as DossierItem;
+
       setDossier(data);
       setState("success");
-    } catch (e: any) {
+    } catch (e) {
       setState("error");
-      setError(e?.response?.data?.detail || e?.message || APP_TEXT.errors.loadFailed);
+      setError(getErrorMessage(e, "Impossible de charger le dossier impayé."));
       setDossier(null);
     }
-  }
+  }, [dossierId]);
 
   useEffect(() => {
-    void load();
-  }, [id]);
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [load]);
 
   const canRelancer = useMemo(() => {
     if (!dossier) return false;
-    const reste = Number(dossier.reste_a_payer ?? 0);
-    return Number.isFinite(reste) && reste > 0 && !dossier.est_regularise;
+
+    const reste = toNumber(dossier.reste_a_payer);
+
+    return reste > 0 && !dossier.est_regularise;
   }, [dossier]);
 
   const canGenerateAvis = useMemo(() => {
     if (!dossier) return false;
-    const reste = Number(dossier.reste_a_payer ?? 0);
-    return dossier.est_regularise === true || (Number.isFinite(reste) && reste <= 0);
+
+    const reste = toNumber(dossier.reste_a_payer);
+
+    return dossier.est_regularise === true || reste <= 0;
   }, [dossier]);
 
-  function openRelanceModal() {
+  const kpis = useMemo(() => {
+    const reste = toNumber(dossier?.reste_a_payer);
+    const paye = toNumber(dossier?.montant_paye);
+    const niveau = toNumber(dossier?.niveau_relance);
+    const nbRelances = toNumber(dossier?.relances_count ?? dossier?.relances?.length ?? 0);
+
+    return {
+      reste,
+      paye,
+      niveau,
+      nbRelances,
+    };
+  }, [dossier]);
+
+  const goBackToDossiers = useCallback(() => {
+    navigate("/relances/dossiers");
+  }, [navigate]);
+
+  const openRelanceModal = useCallback(() => {
     if (!dossier) return;
 
     setRelanceForm({
       canal: "INTERNE",
       objet: `Relance ${dossier.appel_reference || dossier.reference_appel || ""}`.trim(),
       message: `Bonjour, un solde de ${formatMoneyFCFA(
-        dossier.reste_a_payer
+        dossier.reste_a_payer,
       )} reste dû pour ${dossier.appel_reference || dossier.reference_appel || "cet appel"}.`,
     });
+
     setRelanceFormError(null);
     setPendingAction(null);
     setIsRelanceModalOpen(true);
-  }
+  }, [dossier]);
 
-  function openAvisModal() {
+  const openAvisModal = useCallback(() => {
     setAvisForm({
       canal: "INTERNE",
       message: "Votre situation est régularisée. Merci.",
     });
+
     setAvisFormError(null);
     setPendingAction(null);
     setIsAvisModalOpen(true);
-  }
+  }, []);
 
-  function closeRelanceModal() {
+  const closeRelanceModal = useCallback(() => {
     if (busy === "relance") return;
+
     setIsRelanceModalOpen(false);
     setRelanceFormError(null);
     setPendingAction(null);
-  }
+  }, [busy]);
 
-  function closeAvisModal() {
+  const closeAvisModal = useCallback(() => {
     if (busy === "avis") return;
+
     setIsAvisModalOpen(false);
     setAvisFormError(null);
     setPendingAction(null);
-  }
+  }, [busy]);
 
-  function askConfirmRelance() {
+  const askConfirmRelance = useCallback(() => {
     const canal = relanceForm.canal.trim();
     const objet = relanceForm.objet.trim();
     const message = relanceForm.message.trim();
@@ -470,9 +675,9 @@ export default function DossierImpayeDetail() {
 
     setRelanceFormError(null);
     setPendingAction("relance");
-  }
+  }, [relanceForm]);
 
-  function askConfirmAvis() {
+  const askConfirmAvis = useCallback(() => {
     const canal = avisForm.canal.trim();
     const message = avisForm.message.trim();
 
@@ -488,9 +693,9 @@ export default function DossierImpayeDetail() {
 
     setAvisFormError(null);
     setPendingAction("avis");
-  }
+  }, [avisForm]);
 
-  async function submitRelance() {
+  const submitRelance = useCallback(async () => {
     if (!dossier) return;
 
     const canal = relanceForm.canal.trim();
@@ -507,21 +712,20 @@ export default function DossierImpayeDetail() {
         objet,
         message,
       });
+
       setIsRelanceModalOpen(false);
       setPendingAction(null);
-      setFlash({ kind: "success", text: APP_TEXT.success.relanceSent });
+      setFlash({ kind: "success", text: "La relance a bien été envoyée." });
       await load();
-    } catch (e: any) {
-      setRelanceFormError(
-        e?.response?.data?.detail || e?.message || APP_TEXT.errors.actionFailed
-      );
+    } catch (e) {
+      setRelanceFormError(getErrorMessage(e, "Impossible d’envoyer la relance."));
       setPendingAction(null);
     } finally {
       setBusy(null);
     }
-  }
+  }, [dossier, load, relanceForm]);
 
-  async function submitAvis() {
+  const submitAvis = useCallback(async () => {
     if (!dossier) return;
 
     const canal = avisForm.canal.trim();
@@ -536,21 +740,20 @@ export default function DossierImpayeDetail() {
         canal,
         message,
       });
+
       setIsAvisModalOpen(false);
       setPendingAction(null);
-      setFlash({ kind: "success", text: APP_TEXT.success.avisGenerated });
+      setFlash({ kind: "success", text: "L’avis de régularisation a bien été généré." });
       await load();
-    } catch (e: any) {
-      setAvisFormError(
-        e?.response?.data?.detail || e?.message || APP_TEXT.errors.actionFailed
-      );
+    } catch (e) {
+      setAvisFormError(getErrorMessage(e, "Impossible de générer l’avis."));
       setPendingAction(null);
     } finally {
       setBusy(null);
     }
-  }
+  }, [avisForm, dossier, load]);
 
-  if (!id) {
+  if (!dossierId) {
     return (
       <PageShell>
         <AlertBox kind="error">Identifiant de dossier introuvable.</AlertBox>
@@ -560,14 +763,12 @@ export default function DossierImpayeDetail() {
 
   return (
     <PageShell>
-      <PageHeader
-        title={dossier ? `Détail du dossier impayé #${dossier.id}` : "Détail du dossier impayé"}
-        subtitle="Consultez le dossier, son historique de relances et l’éventuel avis de régularisation."
+      <HeroHeader
+        title={dossier ? `Dossier impayé #${dossier.id}` : "Détail du dossier impayé"}
+        subtitle="Consultez le dossier, suivez son niveau de relance, vérifiez la régularisation et déclenchez les actions utiles depuis une vue plus claire et plus opérationnelle."
         actions={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/relances/dossiers")}>
-              Retour aux dossiers impayés
-            </SmallButton>
+            <SmallButton onClick={goBackToDossiers}>Retour aux dossiers impayés</SmallButton>
 
             <SmallButton
               onClick={openRelanceModal}
@@ -585,7 +786,25 @@ export default function DossierImpayeDetail() {
             </SmallButton>
           </div>
         }
+        aside={
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={heroAsideTitle}>Lecture métier</div>
+
+            <div style={heroAsideText}>
+              Cette fiche doit permettre de comprendre rapidement la situation réelle du dossier :
+              reste à payer, niveau de relance, régularisation et historique des actions déjà menées.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {dossier ? getDossierBadge(dossier.statut) : null}
+              <Badge text={`Niveau ${kpis.niveau}`} kind="warning" />
+              <Badge text={`${kpis.nbRelances} relance(s)`} kind="info" />
+            </div>
+          </div>
+        }
       />
+
+      <InfoStrip />
 
       {state === "error" && error ? (
         <AlertBox kind="error">
@@ -596,12 +815,39 @@ export default function DossierImpayeDetail() {
 
       {flash ? <AlertBox kind={flash.kind}>{flash.text}</AlertBox> : null}
 
+      <div className="relances-detail-kpi-grid" style={kpiGrid}>
+        <KpiCard
+          label="Reste à payer"
+          value={formatMoneyFCFA(kpis.reste)}
+          hint="Montant restant dû sur ce dossier."
+          accent="danger"
+        />
+        <KpiCard
+          label="Montant payé"
+          value={formatMoneyFCFA(kpis.paye)}
+          hint="Total déjà encaissé sur ce dossier."
+          accent="success"
+        />
+        <KpiCard
+          label="Niveau de relance"
+          value={`Niveau ${kpis.niveau}`}
+          hint="Niveau actuellement atteint dans le cycle de relance."
+          accent="warning"
+        />
+        <KpiCard
+          label="Relances enregistrées"
+          value={String(kpis.nbRelances)}
+          hint="Historique exploitable des relances déjà envoyées."
+          accent="info"
+        />
+      </div>
+
       <div className="relances-detail-grid" style={detailGrid}>
-        <Card title="Informations du dossier">
+        <Card title="Informations du dossier" subtitle="Lecture opérationnelle du dossier impayé.">
           {state === "loading" ? (
-            <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
+            <div style={simpleMutedText}>Chargement...</div>
           ) : !dossier ? (
-            <EmptyState title="Aucune donnée disponible" description={APP_TEXT.common.noData} />
+            <EmptyState title="Aucune donnée disponible" description="Aucune information n’est disponible pour ce dossier." />
           ) : (
             <>
               <KeyValueRow label="Lot" value={dossier.lot_numero || "—"} />
@@ -624,11 +870,11 @@ export default function DossierImpayeDetail() {
           )}
         </Card>
 
-        <Card title="Suivi de régularisation">
+        <Card title="Suivi de régularisation" subtitle="État de paiement final et éléments de suivi.">
           {state === "loading" ? (
-            <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
+            <div style={simpleMutedText}>Chargement...</div>
           ) : !dossier ? (
-            <EmptyState title="Aucune donnée disponible" description={APP_TEXT.common.noData} />
+            <EmptyState title="Aucune donnée disponible" description="Aucune information n’est disponible pour ce dossier." />
           ) : (
             <>
               <KeyValueRow
@@ -671,33 +917,32 @@ export default function DossierImpayeDetail() {
       <Card
         title="Historique des relances"
         subtitle="Consultez les relances déjà envoyées pour ce dossier impayé."
+        right={dossier?.relances?.length ? <Badge text={`${dossier.relances.length} entrée(s)`} kind="info" /> : undefined}
       >
         {state === "loading" ? (
-          <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
+          <div style={simpleMutedText}>Chargement...</div>
         ) : !dossier?.relances || dossier.relances.length === 0 ? (
-          <EmptyState title="Aucune relance enregistrée" description={APP_TEXT.emptyStates.noRelance} />
+          <EmptyState title="Aucune relance enregistrée" description="Aucune relance n’a encore été enregistrée pour ce dossier." />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {dossier.relances.map((r) => (
               <div key={r.id} style={rowCard}>
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Badge text={`Niveau ${r.niveau || 0}`} kind="warning" />
                     <Badge text={getCanalLabel(r.canal)} kind="info" />
                     {getRelanceBadge(r.statut)}
                   </div>
 
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#111827" }}>
-                    {r.objet || "Sans objet"}
-                  </div>
+                  <div style={rowTitle}>{r.objet || "Sans objet"}</div>
 
-                  <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>
-                    {r.message || "Aucun message"}
-                  </div>
+                  <div style={rowText}>{r.message || "Aucun message"}</div>
 
-                  <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
-                    Envoyée le {formatDateTimeShort(r.date_envoi)} • par {r.envoye_par_username || "—"} • montant{" "}
-                    {formatMoneyFCFA(r.montant_du_message)}
+                  <div style={dividerStyle} />
+
+                  <div style={rowMeta}>
+                    Envoyée le {formatDateTimeShort(r.date_envoi)} • par{" "}
+                    {r.envoye_par_username || "—"} • montant {formatMoneyFCFA(r.montant_du_message)}
                   </div>
                 </div>
               </div>
@@ -711,9 +956,9 @@ export default function DossierImpayeDetail() {
         subtitle="Consultez l’avis généré lorsque le dossier a été régularisé."
       >
         {state === "loading" ? (
-          <div style={simpleMutedText}>{APP_TEXT.common.loading}</div>
+          <div style={simpleMutedText}>Chargement...</div>
         ) : !dossier?.avis_regularisation ? (
-          <EmptyState title="Aucun avis disponible" description={APP_TEXT.emptyStates.noAvis} />
+          <EmptyState title="Aucun avis disponible" description="Aucun avis de régularisation n’a encore été généré pour ce dossier." />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <KeyValueRow label="Statut" value={getAvisBadge(dossier.avis_regularisation.statut)} />
@@ -783,7 +1028,7 @@ export default function DossierImpayeDetail() {
 
             <div style={modalActions}>
               <SmallButton onClick={closeRelanceModal} disabled={busy === "relance"}>
-                {APP_TEXT.common.cancel}
+                Annuler
               </SmallButton>
               <SmallButton onClick={askConfirmRelance} primary disabled={busy === "relance"}>
                 Continuer
@@ -828,7 +1073,7 @@ export default function DossierImpayeDetail() {
 
             <div style={modalActions}>
               <SmallButton onClick={closeAvisModal} disabled={busy === "avis"}>
-                {APP_TEXT.common.cancel}
+                Annuler
               </SmallButton>
               <SmallButton onClick={askConfirmAvis} primary disabled={busy === "avis"}>
                 Continuer
@@ -928,9 +1173,27 @@ export default function DossierImpayeDetail() {
           gap: 14px;
         }
 
+        .relances-detail-kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        @media (max-width: 1180px) {
+          .relances-detail-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+
         @media (max-width: 980px) {
           .relances-detail-grid {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 680px) {
+          .relances-detail-kpi-grid {
+            grid-template-columns: 1fr !important;
           }
         }
       `}</style>
@@ -941,14 +1204,78 @@ export default function DossierImpayeDetail() {
 const pageShell: CSSProperties = {
   display: "grid",
   gap: 18,
+  width: "100%",
+  minWidth: 0,
 };
 
-const pageHeader: CSSProperties = {
+const heroCard: CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.86) 100%)",
+  borderRadius: 28,
+  padding: "28px 30px",
+  color: "#ffffff",
+  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
+  position: "relative",
+  overflow: "hidden",
+  minWidth: 0,
+};
+
+const heroGlow: CSSProperties = {
+  position: "absolute",
+  inset: "auto -120px -140px auto",
+  width: 280,
+  height: 280,
+  borderRadius: "50%",
+  background: "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  pointerEvents: "none",
+};
+
+const heroGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1.18fr) minmax(260px, 0.82fr)",
+  gap: 18,
+  alignItems: "stretch",
+  minWidth: 0,
+};
+
+const heroMainBlock: CSSProperties = {
+  minWidth: 280,
+  position: "relative",
+  zIndex: 1,
+};
+
+const heroActions: CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
+  gap: 10,
   flexWrap: "wrap",
-  alignItems: "flex-end",
+  alignItems: "center",
+};
+
+const heroAsidePanel: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  padding: 16,
+  display: "grid",
+  gap: 10,
+  alignContent: "start",
+  minWidth: 0,
+};
+
+const heroAsideTitle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#ffffff",
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+};
+
+const heroAsideText: CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.84)",
 };
 
 const pageEyebrow: CSSProperties = {
@@ -956,36 +1283,59 @@ const pageEyebrow: CSSProperties = {
   fontWeight: 900,
   letterSpacing: 0.9,
   textTransform: "uppercase",
-  color: "#6b7280",
+  color: "rgba(255,255,255,0.72)",
+  marginBottom: 6,
 };
 
 const pageTitle: CSSProperties = {
   fontSize: 30,
   fontWeight: 900,
-  color: "#111827",
-  lineHeight: 1.1,
+  color: "#ffffff",
+  lineHeight: 1.08,
   letterSpacing: -0.5,
 };
 
 const pageSubtitle: CSSProperties = {
-  marginTop: 6,
-  color: "#6b7280",
+  marginTop: 8,
+  color: "rgba(255,255,255,0.84)",
   fontSize: 14,
-  lineHeight: 1.55,
+  lineHeight: 1.6,
   maxWidth: 920,
 };
 
-const pageHeaderActions: CSSProperties = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  alignItems: "center",
+const infoStrip: CSSProperties = {
+  border: "1px solid #bfdbfe",
+  background: "#eff6ff",
+  borderRadius: 18,
+  padding: "14px 16px",
+};
+
+const infoStripText: CSSProperties = {
+  fontSize: 13,
+  color: "#1d4ed8",
+  lineHeight: 1.6,
+  fontWeight: 600,
+};
+
+const kpiLabel: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: 0.35,
 };
 
 const detailGrid: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 14,
+  minWidth: 0,
+};
+
+const kpiGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 14,
+  minWidth: 0,
 };
 
 const card: CSSProperties = {
@@ -994,6 +1344,7 @@ const card: CSSProperties = {
   padding: 18,
   background: "#ffffff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
 };
 
 const cardHeader: CSSProperties = {
@@ -1003,6 +1354,7 @@ const cardHeader: CSSProperties = {
   flexWrap: "wrap",
   marginBottom: 14,
   alignItems: "center",
+  minWidth: 0,
 };
 
 const cardTitle: CSSProperties = {
@@ -1022,14 +1374,39 @@ const rowCard: CSSProperties = {
   borderRadius: 14,
   padding: 14,
   background: "#ffffff",
+  minWidth: 0,
+};
+
+const rowTitle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  color: "#111827",
+};
+
+const rowText: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.6,
+};
+
+const rowMeta: CSSProperties = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.45,
+};
+
+const dividerStyle: CSSProperties = {
+  height: 1,
+  background: "#eef2f7",
 };
 
 const keyValueRow: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "220px 1fr",
+  gridTemplateColumns: "220px minmax(0, 1fr)",
   gap: 12,
   padding: "10px 0",
   borderBottom: "1px solid #f3f4f6",
+  minWidth: 0,
 };
 
 const keyValueLabel: CSSProperties = {
@@ -1042,6 +1419,8 @@ const keyValueValue: CSSProperties = {
   fontSize: 14,
   color: "#111827",
   lineHeight: 1.55,
+  minWidth: 0,
+  overflowWrap: "anywhere",
 };
 
 const fieldLabel: CSSProperties = {
@@ -1129,6 +1508,17 @@ const modalActions: CSSProperties = {
   justifyContent: "flex-end",
   gap: 10,
   flexWrap: "wrap",
+};
+
+const badgeBase: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "4px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
 };
 
 const emptyState: CSSProperties = {
