@@ -46,11 +46,10 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Travaux",
     items: [
-      { label: "Vue d’ensemble", to: "/travaux" },
       { label: "Dossiers de travaux", to: "/travaux/dossiers" },
       { label: "Nouveau dossier de travaux", to: "/travaux/dossiers/nouveau" },
-      { label: "Fournisseurs", to: "/travaux/fournisseurs" },
-      { label: "Nouveau fournisseur", to: "/travaux/fournisseurs/nouveau" },
+      { label: "Prestataires", to: "/travaux/fournisseurs" },
+      { label: "Nouveau prestataire", to: "/travaux/fournisseurs/nouveau" },
     ],
   },
   {
@@ -119,7 +118,7 @@ export function getPageTitle(pathname: string): string {
   }
 
   // Travaux
-  if (pathname === "/travaux") return "Vue d’ensemble Travaux";
+  if (pathname === "/travaux") return "Dossiers de travaux";
   if (pathname === "/travaux/dossiers") return "Dossiers de travaux";
   if (pathname === "/travaux/dossiers/nouveau") return "Nouveau dossier de travaux";
   if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
@@ -128,10 +127,10 @@ export function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/travaux/dossiers/") && !pathname.endsWith("/modifier")) {
     return "Détail du dossier de travaux";
   }
-  if (pathname === "/travaux/fournisseurs") return "Fournisseurs";
-  if (pathname === "/travaux/fournisseurs/nouveau") return "Nouveau fournisseur";
+  if (pathname === "/travaux/fournisseurs") return "Prestataires";
+  if (pathname === "/travaux/fournisseurs/nouveau") return "Nouveau prestataire";
   if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
-    return "Modifier un fournisseur";
+    return "Modifier un prestataire";
   }
 
   // Assemblées générales
@@ -248,7 +247,7 @@ export function getPageSubtitle(pathname: string): string {
 
   // Travaux
   if (pathname === "/travaux") {
-    return "Supervisez les dossiers de travaux, les budgets, les validations et l’avancement opérationnel.";
+    return "Pilotez les dossiers de travaux, leur budget, leur résolution liée et leur niveau de verrouillage.";
   }
   if (pathname === "/travaux/dossiers") {
     return "Pilotez les dossiers de travaux, leur budget, leur résolution liée et leur niveau de verrouillage.";
@@ -263,13 +262,13 @@ export function getPageSubtitle(pathname: string): string {
     return "Consultez la fiche détaillée du dossier, sa situation budgétaire, la résolution liée et le niveau de verrouillage.";
   }
   if (pathname === "/travaux/fournisseurs") {
-    return "Consultez les fournisseurs enregistrés dans le module Travaux et maintenez leurs fiches.";
+    return "Consultez les prestataires enregistrés dans le module Travaux et maintenez leurs fiches.";
   }
   if (pathname === "/travaux/fournisseurs/nouveau") {
-    return "Renseignez les informations utiles pour enregistrer un nouveau fournisseur.";
+    return "Renseignez les informations utiles pour enregistrer un nouveau prestataire.";
   }
   if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
-    return "Mettez à jour les informations de la fiche fournisseur sélectionnée.";
+    return "Mettez à jour les informations de la fiche prestataire sélectionnée.";
   }
 
   // Assemblées générales

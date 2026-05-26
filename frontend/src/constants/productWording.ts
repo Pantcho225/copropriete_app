@@ -195,7 +195,7 @@ export const PRODUCT_WORDING = {
   travaux: {
     moduleTitle: "Travaux",
     foldersTitle: "Dossiers travaux",
-    suppliersTitle: "Fournisseurs",
+    suppliersTitle: "Prestataires",
     detailsTitle: "Détail du dossier",
   },
 

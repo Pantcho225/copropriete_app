@@ -35,7 +35,7 @@ export const APP_TEXT = {
     lots: "Lots",
 
     travauxFiles: "Dossiers de travaux",
-    travauxSuppliers: "Fournisseurs",
+    travauxSuppliers: "Prestataires",
 
     ag: "Assemblées générales",
     agResolutions: "Résolutions",
@@ -301,9 +301,9 @@ export const APP_TEXT = {
       filesTitle: "Dossiers de travaux",
       filesSubtitle:
         "Pilotez les dossiers de travaux, leur budget, leur statut et leur avancement.",
-      suppliersTitle: "Fournisseurs",
+      suppliersTitle: "Prestataires",
       suppliersSubtitle:
-        "Gérez les fournisseurs intervenant sur les dossiers de travaux.",
+        "Gérez les prestataires intervenant sur les dossiers de travaux.",
     },
 
     ag: {
@@ -391,7 +391,7 @@ export const APP_TEXT = {
       noEmployee: "Aucun employé disponible pour le moment.",
       noContract: "Aucun contrat disponible pour le moment.",
       noLot: "Aucun lot disponible pour le moment.",
-      noSupplier: "Aucun fournisseur disponible pour le moment.",
+      noSupplier: "Aucun prestataire disponible pour le moment.",
       noTravauxFile: "Aucun dossier de travaux disponible pour le moment.",
       noAssembly: "Aucune assemblée générale disponible pour le moment.",
       noResolution: "Aucune résolution disponible pour le moment.",
@@ -519,7 +519,7 @@ export const APP_TEXT = {
 
     travaux: {
       file: "Dossier de travaux",
-      supplier: "Fournisseur",
+      supplier: "Prestataire",
       estimatedBudget: "Budget estimé",
       approvedBudget: "Budget voté",
       referenceBudget: "Budget de référence",

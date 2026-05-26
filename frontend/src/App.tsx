@@ -21,14 +21,12 @@ import EmployeForm from "./pages/rh/EmployeForm";
 import RHContrats from "./pages/rh/RHContrats";
 import ContratForm from "./pages/rh/ContratForm";
 
-
 // Travaux
 import TravauxDossiers from "./pages/travaux/TravauxDossiers";
 import TravauxDossierForm from "./pages/travaux/TravauxDossierForm";
 import TravauxDossierDetail from "./pages/travaux/TravauxDossierDetail";
 import TravauxFournisseurs from "./pages/travaux/TravauxFournisseurs";
 import TravauxFournisseurForm from "./pages/travaux/TravauxFournisseurForm";
-
 
 // Assemblées générales
 import AGHome from "./pages/ag/AGHome";
@@ -81,7 +79,7 @@ export default function App() {
           {/* Comptabilité */}
           <Route path="compta">
             <Route index element={<ComptaHome />} />
-            <Route path="releves" element={<Navigate to="imports" replace />} />
+            <Route path="releves" element={<Navigate to="/compta/imports" replace />} />
             <Route path="import" element={<ImportCSV />} />
             <Route path="imports" element={<RelevesImports />} />
             <Route path="imports/:importId/lignes" element={<ReleveLignes />} />
@@ -91,14 +89,13 @@ export default function App() {
 
           {/* Ressources humaines */}
           <Route path="rh">
-            <Route index element={<Navigate to="employes" replace />} />
+            <Route index element={<RHHome />} />
             <Route path="employes" element={<RHEmployes />} />
             <Route path="employes/nouveau" element={<EmployeForm />} />
             <Route path="employes/:id/modifier" element={<EmployeForm />} />
             <Route path="contrats" element={<RHContrats />} />
             <Route path="contrats/nouveau" element={<ContratForm />} />
             <Route path="contrats/:id/modifier" element={<ContratForm />} />
-            <Route path="/rh" element={<RHHome />} />
           </Route>
 
           {/* Lots */}
@@ -110,7 +107,7 @@ export default function App() {
 
           {/* Travaux */}
           <Route path="travaux">
-            <Route index element={<Navigate to="dossiers" replace />} />
+            <Route index element={<Navigate to="/travaux/dossiers" replace />} />
             <Route path="dossiers" element={<TravauxDossiers />} />
             <Route path="dossiers/nouveau" element={<TravauxDossierForm />} />
             <Route path="dossiers/:id/modifier" element={<TravauxDossierForm />} />
