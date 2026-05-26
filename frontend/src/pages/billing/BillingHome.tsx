@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import type { CSSProperties, ReactNode } from "react";
 
+type StatTone = "blue" | "green" | "yellow" | "neutral";
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
 }
@@ -20,10 +22,10 @@ function SectionTitle(props: {
         alignItems: "flex-end",
       }}
     >
-      <div>
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 900,
             color: "#111827",
             lineHeight: 1.1,
@@ -48,7 +50,7 @@ function SectionTitle(props: {
         ) : null}
       </div>
 
-      {props.right}
+      {props.right ? <div>{props.right}</div> : null}
     </div>
   );
 }
@@ -57,9 +59,41 @@ function StatCard(props: {
   title: string;
   value: string;
   sub?: string;
+  tone?: StatTone;
 }) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<StatTone, { border: string; bg: string; accent: string }> = {
+    blue: {
+      border: "#bfdbfe",
+      bg: "#eff6ff",
+      accent: "#1d4ed8",
+    },
+    green: {
+      border: "#a7f3d0",
+      bg: "#ecfdf5",
+      accent: "#166534",
+    },
+    yellow: {
+      border: "#fde68a",
+      bg: "#fffbeb",
+      accent: "#92400e",
+    },
+    neutral: {
+      border: "#e5e7eb",
+      bg: "#fff",
+      accent: "#111827",
+    },
+  };
+
   return (
-    <div style={card}>
+    <div
+      style={{
+        ...card,
+        border: `1px solid ${toneMap[tone].border}`,
+        background: toneMap[tone].bg,
+      }}
+    >
       <div
         style={{
           fontSize: 13,
@@ -75,7 +109,7 @@ function StatCard(props: {
         style={{
           fontSize: 28,
           fontWeight: 900,
-          color: "#111827",
+          color: toneMap[tone].accent,
           lineHeight: 1.1,
         }}
       >
@@ -144,6 +178,7 @@ function Card(props: {
         <div style={{ fontSize: 16, fontWeight: 900, color: "#111827" }}>
           {props.title}
         </div>
+
         {props.right}
       </div>
 
@@ -168,6 +203,7 @@ function QuickActionCard(props: {
         background: "#ffffff",
         display: "grid",
         gap: 10,
+        minWidth: 0,
       }}
     >
       <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
@@ -202,7 +238,7 @@ function QuickActionCard(props: {
   );
 }
 
-function InfoBox(props: { children: ReactNode }) {
+function InfoBox(props: { title: string; children: ReactNode }) {
   return (
     <div
       style={{
@@ -213,7 +249,8 @@ function InfoBox(props: { children: ReactNode }) {
         color: "#1d4ed8",
       }}
     >
-      {props.children}
+      <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div>
+      <div style={{ fontSize: 13, lineHeight: 1.5 }}>{props.children}</div>
     </div>
   );
 }
@@ -224,12 +261,16 @@ export default function BillingHome() {
   return (
     <PageShell>
       <SectionTitle
-        title="Vue d’ensemble de la facturation"
-        subtitle="Accédez à l’entrée du module Facturation pour piloter les appels de fonds, les paiements et les indicateurs de suivi à mesure de l’enrichissement du produit."
+        title="Vue d’ensemble Facturation"
+        subtitle="Centralisez les factures, l’abonnement de la copropriété et les futurs indicateurs économiques du produit."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/")} primary>
-              Retour au tableau de bord
+            <SmallButton onClick={() => navigate("/billing/factures")}>
+              Voir les factures
+            </SmallButton>
+
+            <SmallButton onClick={() => navigate("/billing/abonnement")} primary>
+              Voir l’abonnement
             </SmallButton>
           </div>
         }
@@ -238,69 +279,80 @@ export default function BillingHome() {
       <div className="billing-home-stat-grid">
         <StatCard
           title="Module Facturation"
+          value="Actif"
+          sub="La section Facturation est accessible depuis la navigation principale."
+          tone="blue"
+        />
+
+        <StatCard
+          title="Factures"
           value="Disponible"
-          sub="Le module est accessible depuis cette vue d’ensemble."
+          sub="La sous-page Factures permet de préparer le suivi des documents émis."
+          tone="green"
         />
+
         <StatCard
-          title="Appels de fonds"
-          value="À structurer"
-          sub="Le pilotage détaillé peut être enrichi progressivement."
+          title="Abonnement"
+          value="Disponible"
+          sub="La sous-page Abonnement prépare le suivi du plan actif et des échéances."
+          tone="yellow"
         />
+
         <StatCard
-          title="Paiements"
-          value="À structurer"
-          sub="Le suivi détaillé des paiements peut être exposé ici."
-        />
-        <StatCard
-          title="Vision produit"
-          value="Active"
-          sub="La structure premium du module est désormais en place."
+          title="Vision SaaS"
+          value="Premium"
+          sub="Le module prépare la lecture économique nécessaire à une version commercialisable."
+          tone="neutral"
         />
       </div>
 
       <Card title="Accès rapides du module Facturation">
         <div className="billing-home-quick-grid">
           <QuickActionCard
-            title="Retour au tableau de bord"
-            text="Revenez à la vue d’ensemble transverse de la copropriété."
-            actionLabel="Ouvrir le tableau de bord"
-            onAction={() => navigate("/")}
+            title="Factures"
+            text="Consultez la page dédiée aux factures émises, aux statuts et aux prochaines évolutions de facturation."
+            actionLabel="Ouvrir les factures"
+            onAction={() => navigate("/billing/factures")}
           />
 
           <QuickActionCard
-            title="Module Comptabilité"
-            text="Accédez au module Comptabilité pour traiter les imports et les mouvements liés au suivi financier."
+            title="Abonnement"
+            text="Suivez le plan actif, les échéances et les informations de souscription de la copropriété."
+            actionLabel="Ouvrir l’abonnement"
+            onAction={() => navigate("/billing/abonnement")}
+          />
+
+          <QuickActionCard
+            title="Comptabilité"
+            text="Accédez aux mouvements, aux imports bancaires et aux rapprochements liés au suivi financier."
             actionLabel="Ouvrir Comptabilité"
             onAction={() => navigate("/compta")}
           />
 
           <QuickActionCard
-            title="Module Relances"
-            text="Accédez au module Relances pour suivre les dossiers impayés et les régularisations."
+            title="Relances"
+            text="Suivez les dossiers impayés, les relances envoyées et les avis de régularisation."
             actionLabel="Ouvrir Relances"
             onAction={() => navigate("/relances")}
-          />
-
-          <QuickActionCard
-            title="Consolidation future"
-            text="Les sous-pages détaillées du module Facturation pourront être branchées ici lorsqu’elles seront créées."
-            actionLabel="Structure prête"
-            disabled
           />
         </div>
       </Card>
 
-      <InfoBox>
-        <div style={{ fontWeight: 900, marginBottom: 4 }}>
-          Structure produit du module Facturation
+      <Card title="Lecture produit">
+        <div style={{ display: "grid", gap: 12 }}>
+          <InfoBox title="Rôle du module Facturation">
+            Cette section prépare la couche économique du logiciel : factures,
+            abonnement, échéances, statut de souscription et future supervision
+            commerciale de la plateforme.
+          </InfoBox>
+
+          <InfoBox title="Évolution prévue">
+            Les pages détaillées pourront ensuite être branchées sur le backend :
+            factures réelles, paiements d’abonnement, historique de souscription,
+            offres tarifaires et indicateurs de revenus.
+          </InfoBox>
         </div>
-        <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-          Cette page sert maintenant de vraie <strong>vue d’ensemble de la facturation</strong>.
-          Elle aligne le routage, le Sidebar et le Topbar, tout en préparant l’ajout futur
-          de sous-pages détaillées comme les appels de fonds, les paiements et les statistiques
-          de facturation.
-        </div>
-      </InfoBox>
+      </Card>
 
       <style>{`
         .billing-home-stat-grid {
@@ -342,4 +394,5 @@ const card: CSSProperties = {
   padding: 18,
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+  minWidth: 0,
 };

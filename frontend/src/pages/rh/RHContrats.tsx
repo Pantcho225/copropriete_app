@@ -7,7 +7,12 @@ import {
   type ReactNode,
 } from "react";
 import { Link } from "react-router-dom";
-import { activerContrat, cloturerContrat, getContrats, getEmployes } from "../../api/rh";
+import {
+  activerContrat,
+  cloturerContrat,
+  getContrats,
+  getEmployes,
+} from "../../api/rh";
 import type { ContratEmploye, ContratStatut, Employe } from "../../api/types";
 import {
   PRODUCT_WORDING,
@@ -22,6 +27,23 @@ type ConfirmAction = {
   contrat: ContratEmploye | null;
   action: "activer" | "cloturer" | null;
 };
+
+type ApiListResponse<T> =
+  | T[]
+  | {
+      results?: T[];
+      data?: T[];
+      items?: T[];
+      count?: number;
+    };
+
+function extractRows<T>(payload: ApiListResponse<T>): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.results)) return payload.results;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
 
 function fmtMoney(x?: number | null) {
   if (x === undefined || x === null) return "—";
@@ -45,17 +67,38 @@ function fmtDate(value?: string | null) {
 
 function getErrorMessage(e: unknown, fallback: string) {
   const err = e as {
-    response?: { data?: { detail?: string } & Record<string, unknown> };
+    response?: {
+      data?: {
+        detail?: string;
+        message?: string;
+        error?: string;
+        non_field_errors?: string[];
+      } & Record<string, unknown>;
+    };
     message?: string;
   };
 
-  const detail = err?.response?.data?.detail;
+  const data = err?.response?.data;
 
-  if (typeof detail === "string" && detail.trim()) return detail;
+  if (data) {
+    if (typeof data.detail === "string" && data.detail.trim()) {
+      return data.detail;
+    }
 
-  if (err?.response?.data) {
+    if (typeof data.message === "string" && data.message.trim()) {
+      return data.message;
+    }
+
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error;
+    }
+
+    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+      return data.non_field_errors.join("\n");
+    }
+
     try {
-      return JSON.stringify(err.response.data, null, 2);
+      return JSON.stringify(data, null, 2);
     } catch {
       return fallback;
     }
@@ -74,16 +117,22 @@ function humanizeRole(role?: string | null) {
 
   if (centralized !== normalized) return centralized;
 
-  const MAP: Record<string, string> = {
+  const map: Record<string, string> = {
     SYNDIC: "Syndic",
     EMPLOYE: "Employé",
+    GARDIEN: "Gardien",
+    AGENT_ENTRETIEN: "Agent d’entretien",
+    AGENT_NETTOYAGE: "Agent de nettoyage",
     ASSISTANT: "Assistant",
+    ASSISTANT_GESTION: "Assistant de gestion",
     COMPTABLE: "Comptable",
     TECHNICIEN: "Technicien",
     RESPONSABLE: "Responsable",
+    RESPONSABLE_SITE: "Responsable de site",
+    GESTIONNAIRE: "Gestionnaire",
   };
 
-  if (MAP[normalized]) return MAP[normalized];
+  if (map[normalized]) return map[normalized];
 
   return normalized
     .toLowerCase()
@@ -98,7 +147,7 @@ function humanizeContractType(type?: string | null) {
 
   if (!value) return PRODUCT_WORDING.common.notProvided;
 
-  const MAP: Record<string, string> = {
+  const map: Record<string, string> = {
     CDI: "CDI",
     CDD: "CDD",
     STAGE: "Stage",
@@ -108,7 +157,7 @@ function humanizeContractType(type?: string | null) {
     TEMPS_PLEIN: "Temps plein",
   };
 
-  if (MAP[value]) return MAP[value];
+  if (map[value]) return map[value];
 
   return value
     .toLowerCase()
@@ -128,8 +177,8 @@ function getStatutLabel(statut?: ContratStatut | string | null) {
   return s || PRODUCT_WORDING.common.notProvided;
 }
 
-function getStatutStyle(statut: ContratStatut): CSSProperties {
-  const s = String(statut).toUpperCase();
+function getStatutStyle(statut?: ContratStatut | string | null): CSSProperties {
+  const s = String(statut ?? "").toUpperCase();
 
   if (s === "ACTIF") {
     return {
@@ -157,8 +206,11 @@ function getStatutStyle(statut: ContratStatut): CSSProperties {
   };
 }
 
-function getCycleBadge(item: ContratEmploye): { label: string; style: CSSProperties } {
-  const statut = String(item.statut).toUpperCase();
+function getCycleBadge(item: ContratEmploye): {
+  label: string;
+  style: CSSProperties;
+} {
+  const statut = String(item.statut ?? "").toUpperCase();
   const today = new Date();
 
   today.setHours(0, 0, 0, 0);
@@ -166,8 +218,13 @@ function getCycleBadge(item: ContratEmploye): { label: string; style: CSSPropert
   const debut = item.date_debut ? new Date(item.date_debut) : null;
   const fin = item.date_fin ? new Date(item.date_fin) : null;
 
-  if (debut && !Number.isNaN(debut.getTime())) debut.setHours(0, 0, 0, 0);
-  if (fin && !Number.isNaN(fin.getTime())) fin.setHours(0, 0, 0, 0);
+  if (debut && !Number.isNaN(debut.getTime())) {
+    debut.setHours(0, 0, 0, 0);
+  }
+
+  if (fin && !Number.isNaN(fin.getTime())) {
+    fin.setHours(0, 0, 0, 0);
+  }
 
   if (statut === "TERMINE") {
     return {
@@ -232,7 +289,7 @@ function isFutureDate(dateStr?: string | null) {
 }
 
 function isContractActiveNow(item: ContratEmploye) {
-  const statut = String(item.statut).toUpperCase();
+  const statut = String(item.statut ?? "").toUpperCase();
 
   if (statut !== "ACTIF") return false;
 
@@ -262,12 +319,15 @@ function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div style={sectionTitleWrapper}>
       <div style={{ minWidth: 0 }}>
         <div style={sectionTitle}>{props.title}</div>
-
         {props.subtitle ? <div style={sectionSubtitle}>{props.subtitle}</div> : null}
       </div>
 
@@ -276,17 +336,61 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string }) {
+function StatCard(props: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  tone?: "blue" | "green" | "yellow" | "neutral";
+}) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<
+    NonNullable<typeof props.tone>,
+    { border: string; bg: string; accent: string }
+  > = {
+    blue: {
+      border: "#bfdbfe",
+      bg: "#eff6ff",
+      accent: "#1d4ed8",
+    },
+    green: {
+      border: "#a7f3d0",
+      bg: "#ecfdf5",
+      accent: "#166534",
+    },
+    yellow: {
+      border: "#fde68a",
+      bg: "#fffbeb",
+      accent: "#92400e",
+    },
+    neutral: {
+      border: "#e5e7eb",
+      bg: "#fff",
+      accent: "#111827",
+    },
+  };
+
   return (
-    <div style={statCard}>
+    <div
+      style={{
+        ...statCard,
+        border: `1px solid ${toneMap[tone].border}`,
+        background: toneMap[tone].bg,
+      }}
+    >
       <div style={statTitle}>{props.title}</div>
-      <div style={statValue}>{props.value}</div>
+      <div style={{ ...statValue, color: toneMap[tone].accent }}>
+        {props.value}
+      </div>
       {props.sub ? <div style={statSub}>{props.sub}</div> : null}
     </div>
   );
 }
 
-function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNode }) {
+function AlertBox(props: {
+  kind: "error" | "info" | "success";
+  children: ReactNode;
+}) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -330,8 +434,16 @@ function SmallButton(props: {
             : props.primary
               ? "1px solid #c7d2fe"
               : "1px solid #e5e7eb",
-          background: props.danger ? "#fef2f2" : props.primary ? "#eef2ff" : "#fff",
-          color: props.danger ? "#991b1b" : props.primary ? "#3730a3" : "#111827",
+          background: props.danger
+            ? "#fef2f2"
+            : props.primary
+              ? "#eef2ff"
+              : "#fff",
+          color: props.danger
+            ? "#991b1b"
+            : props.primary
+              ? "#3730a3"
+              : "#111827",
           borderRadius: 12,
           padding: "10px 14px",
           fontSize: 13,
@@ -358,8 +470,20 @@ function SmallButton(props: {
           : props.primary
             ? "1px solid #c7d2fe"
             : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.danger ? "#fef2f2" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.danger ? "#991b1b" : props.primary ? "#3730a3" : "#111827",
+        background: props.disabled
+          ? "#f9fafb"
+          : props.danger
+            ? "#fef2f2"
+            : props.primary
+              ? "#eef2ff"
+              : "#fff",
+        color: props.disabled
+          ? "#9ca3af"
+          : props.danger
+            ? "#991b1b"
+            : props.primary
+              ? "#3730a3"
+              : "#111827",
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -386,7 +510,10 @@ function ConfirmModal(props: {
   if (!props.open) return null;
 
   return (
-    <div style={modalOverlay} onClick={props.loading ? undefined : props.onClose}>
+    <div
+      style={modalOverlay}
+      onClick={props.loading ? undefined : props.onClose}
+    >
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
         <div style={modalTitle}>{props.title}</div>
         <div style={modalText}>{props.message}</div>
@@ -431,7 +558,12 @@ function ConfirmModal(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; actionTo?: string }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
     <div style={emptyBox}>
       <div style={emptyTitle}>{props.title}</div>
@@ -454,7 +586,9 @@ export default function RHContrats() {
   const [success, setSuccess] = useState<string | null>(null);
   const [rows, setRows] = useState<ContratEmploye[]>([]);
   const [employes, setEmployes] = useState<Employe[]>([]);
-  const [statutFilter, setStatutFilter] = useState<"TOUS" | ContratStatut>("TOUS");
+  const [statutFilter, setStatutFilter] = useState<"TOUS" | ContratStatut>(
+    "TOUS",
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -469,10 +603,13 @@ export default function RHContrats() {
     setError(null);
 
     try {
-      const [contratsData, employesData] = await Promise.all([getContrats(), getEmployes()]);
+      const [contratsData, employesData] = await Promise.all([
+        getContrats(),
+        getEmployes(),
+      ]);
 
-      setRows(Array.isArray(contratsData.results) ? contratsData.results : []);
-      setEmployes(Array.isArray(employesData.results) ? employesData.results : []);
+      setRows(extractRows(contratsData as ApiListResponse<ContratEmploye>));
+      setEmployes(extractRows(employesData as ApiListResponse<Employe>));
       setState("success");
     } catch (e: unknown) {
       setState("error");
@@ -483,13 +620,7 @@ export default function RHContrats() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchData();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
+    void fetchData();
   }, [fetchData]);
 
   const handleRefresh = useCallback(() => {
@@ -511,7 +642,9 @@ export default function RHContrats() {
       if (typeof employe === "number") {
         const emp = employesMap.get(employe);
 
-        if (emp) return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
+        if (emp) {
+          return `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim() || `Employé #${emp.id}`;
+        }
 
         return `Employé #${employe}`;
       }
@@ -541,7 +674,7 @@ export default function RHContrats() {
   );
 
   const openConfirmFor = useCallback((item: ContratEmploye) => {
-    const current = String(item.statut).toUpperCase();
+    const current = String(item.statut ?? "").toUpperCase();
     const isActif = current === "ACTIF";
 
     if (isActif && isFutureDate(item.date_debut)) {
@@ -582,9 +715,14 @@ export default function RHContrats() {
 
     try {
       const updated =
-        action === "cloturer" ? await cloturerContrat(item.id) : await activerContrat(item.id);
+        action === "cloturer"
+          ? await cloturerContrat(item.id)
+          : await activerContrat(item.id);
 
-      setRows((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
+      setRows((prev) =>
+        prev.map((row) => (row.id === item.id ? updated : row)),
+      );
+
       setSuccess(
         action === "cloturer"
           ? PRODUCT_WORDING.rh.contracts.closeSuccess
@@ -608,7 +746,9 @@ export default function RHContrats() {
 
     return rows.filter((item) => {
       const matchStatut =
-        statutFilter === "TOUS" ? true : String(item.statut).toUpperCase() === String(statutFilter);
+        statutFilter === "TOUS"
+          ? true
+          : String(item.statut ?? "").toUpperCase() === String(statutFilter);
 
       if (!matchStatut) return false;
       if (!q) return true;
@@ -634,16 +774,29 @@ export default function RHContrats() {
 
     return {
       total: filtered.length,
-      actifs: filtered.filter((x) => String(x.statut).toUpperCase() === "ACTIF").length,
-      termines: filtered.filter((x) => String(x.statut).toUpperCase() === "TERMINE").length,
-      brouillons: filtered.filter((x) => String(x.statut).toUpperCase() === "BROUILLON").length,
-      masseActive: contratsActifsReels.reduce((sum, x) => sum + Number(x.salaire_mensuel ?? 0), 0),
+      actifs: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "ACTIF",
+      ).length,
+      termines: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "TERMINE",
+      ).length,
+      brouillons: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "BROUILLON",
+      ).length,
+      masseActive: contratsActifsReels.reduce(
+        (sum, x) => sum + Number(x.salaire_mensuel ?? 0),
+        0,
+      ),
     };
   }, [filtered, rows]);
 
   const isLoading = state === "loading";
+  const isInitialError = state === "error" && rows.length === 0;
+
   const confirmLoading =
-    confirmAction.open && confirmAction.contrat ? busyId === confirmAction.contrat.id : false;
+    confirmAction.open && confirmAction.contrat
+      ? busyId === confirmAction.contrat.id
+      : false;
 
   const hasRows = rows.length > 0;
   const hasFilters = searchTerm.trim().length > 0 || statutFilter !== "TOUS";
@@ -652,9 +805,17 @@ export default function RHContrats() {
     <PageShell>
       <SectionTitle
         title={PRODUCT_WORDING.rh.contracts.listTitle}
-        subtitle="Suivez les contrats, leurs périodes d’activité et leur statut pour les employés de la copropriété."
+        subtitle="Suivez les contrats, leurs périodes d’activité, les statuts et les engagements financiers liés aux employés de la copropriété."
         right={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              minWidth: 0,
+            }}
+          >
+            <SmallButton to="/rh">Vue d’ensemble RH</SmallButton>
             <SmallButton to="/rh/employes">Voir les employés</SmallButton>
             <SmallButton to="/rh/contrats/nouveau" primary>
               {PRODUCT_WORDING.rh.contracts.createTitle}
@@ -668,14 +829,35 @@ export default function RHContrats() {
           title="Contrats visibles"
           value={stats.total}
           sub="Résultats affichés après filtres et recherche."
+          tone="blue"
         />
-        <StatCard title="En cours" value={stats.actifs} sub="Contrats visibles actuellement en cours." />
-        <StatCard title="Terminés" value={stats.termines} sub="Contrats visibles clôturés ou arrivés à terme." />
-        <StatCard title="Brouillons" value={stats.brouillons} sub="Contrats visibles encore en préparation." />
+
+        <StatCard
+          title="En cours"
+          value={stats.actifs}
+          sub="Contrats visibles actuellement actifs."
+          tone="green"
+        />
+
+        <StatCard
+          title="Terminés"
+          value={stats.termines}
+          sub="Contrats visibles clôturés ou arrivés à terme."
+          tone="neutral"
+        />
+
+        <StatCard
+          title="Brouillons"
+          value={stats.brouillons}
+          sub="Contrats visibles encore en préparation."
+          tone="yellow"
+        />
+
         <StatCard
           title="Masse salariale active"
           value={fmtMoney(stats.masseActive)}
           sub="Somme des contrats réellement en cours, indépendamment des filtres affichés."
+          tone="blue"
         />
       </div>
 
@@ -692,7 +874,9 @@ export default function RHContrats() {
         <div style={toolbarControls}>
           <select
             value={statutFilter}
-            onChange={(e) => setStatutFilter(e.target.value as "TOUS" | ContratStatut)}
+            onChange={(e) =>
+              setStatutFilter(e.target.value as "TOUS" | ContratStatut)
+            }
             style={selectInput}
           >
             <option value="TOUS">Tous les statuts</option>
@@ -715,9 +899,20 @@ export default function RHContrats() {
         </div>
 
         <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? "Chargement des contrats..." : `${filtered.length} contrat(s) affiché(s) sur ${rows.length}`}
+          {isLoading
+            ? "Chargement des contrats..."
+            : `${filtered.length} contrat(s) affiché(s) sur ${rows.length}`}
         </div>
       </div>
+
+      {isInitialError ? (
+        <EmptyState
+          title="Chargement impossible"
+          text="La liste des contrats n’a pas pu être récupérée. Vérifiez la connexion au backend, le token d’authentification et la copropriété active."
+          actionLabel="Réessayer"
+          actionTo="/rh/contrats"
+        />
+      ) : null}
 
       <div style={tableWrap}>
         <table style={tableStyle}>
@@ -740,14 +935,16 @@ export default function RHContrats() {
             {isLoading ? (
               <tr>
                 <td style={td} colSpan={10}>
-                  <span style={{ color: "#6b7280" }}>Chargement des contrats...</span>
+                  <span style={{ color: "#6b7280" }}>
+                    Chargement des contrats...
+                  </span>
                 </td>
               </tr>
             ) : null}
 
             {!isLoading &&
               filtered.map((item) => {
-                const current = String(item.statut).toUpperCase();
+                const current = String(item.statut ?? "").toUpperCase();
                 const isBusy = busyId === item.id;
                 const futureContract = isFutureDate(item.date_debut);
                 const cycleBadge = getCycleBadge(item);
@@ -769,7 +966,9 @@ export default function RHContrats() {
                     <td style={tdStrong}>{fmtMoney(item.salaire_mensuel)}</td>
 
                     <td style={td}>
-                      <span style={getStatutStyle(item.statut)}>{getStatutLabel(item.statut)}</span>
+                      <span style={getStatutStyle(item.statut)}>
+                        {getStatutLabel(item.statut)}
+                      </span>
                     </td>
 
                     <td style={td}>
@@ -777,8 +976,17 @@ export default function RHContrats() {
                     </td>
 
                     <td style={td}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Link to={`/rh/contrats/${item.id}/modifier`} style={primaryMiniLink}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <Link
+                          to={`/rh/contrats/${item.id}/modifier`}
+                          style={primaryMiniLink}
+                        >
                           {PRODUCT_WORDING.actions.edit}
                         </Link>
 

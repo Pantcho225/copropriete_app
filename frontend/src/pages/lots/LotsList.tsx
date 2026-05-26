@@ -14,6 +14,7 @@ type LoadState = "idle" | "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
 type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
 type ButtonVariant = "primary" | "secondary" | "danger";
+type StatTone = "blue" | "green" | "yellow" | "neutral";
 
 type LotItem = {
   id: number;
@@ -42,6 +43,10 @@ function isPaginatedResponse<T = unknown>(value: unknown): value is DRFPage<T> {
 function pickString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
   }
 
   return "";
@@ -56,28 +61,55 @@ function toNumber(value: unknown, fallback = 0): number {
 function formatSurface(value?: string): string {
   if (!value) return "—";
 
-  const n = Number(value);
+  const normalized = String(value).replace(",", ".").trim();
+  const n = Number(normalized);
 
   if (Number.isFinite(n)) return `${n.toLocaleString("fr-FR")} m²`;
 
   return value;
 }
 
-function normalizeTypeLot(value: string): string {
+function normalizeTypeLot(value?: string | null): string {
+  const key = String(value ?? "").trim().toUpperCase();
+
   const map: Record<string, string> = {
     APPARTEMENT: "Appartement",
     PARKING: "Parking",
     CAVE: "Cave",
     COMMERCE: "Commerce",
+    LOCAL_COMMERCIAL: "Local commercial",
+    BUREAU: "Bureau",
+    DEPOT: "Dépôt",
     AUTRE: "Autre",
   };
 
-  return map[value] || value || "—";
+  return map[key] || key || "—";
+}
+
+function getTypeBadgeKind(value?: string | null): BadgeKind {
+  const key = String(value ?? "").trim().toUpperCase();
+
+  if (key === "APPARTEMENT") return "success";
+  if (key === "PARKING") return "info";
+  if (key === "CAVE" || key === "DEPOT") return "warning";
+  if (key === "COMMERCE" || key === "LOCAL_COMMERCIAL" || key === "BUREAU") {
+    return "info";
+  }
+
+  return "neutral";
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
   const err = error as {
-    response?: { data?: { detail?: string; message?: string; [key: string]: unknown } };
+    response?: {
+      data?: {
+        detail?: string;
+        message?: string;
+        error?: string;
+        non_field_errors?: string[];
+        [key: string]: unknown;
+      };
+    };
     message?: string;
   };
 
@@ -85,6 +117,11 @@ function getErrorMessage(error: unknown, fallback: string) {
 
   if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
   if (typeof data?.message === "string" && data.message.trim()) return data.message;
+  if (typeof data?.error === "string" && data.error.trim()) return data.error;
+
+  if (Array.isArray(data?.non_field_errors) && data.non_field_errors.length) {
+    return data.non_field_errors.join("\n");
+  }
 
   if (data && typeof data === "object") {
     for (const value of Object.values(data)) {
@@ -102,16 +139,21 @@ function extractRows(data: unknown): LotItem[] {
 
     return {
       id: toNumber(row.id),
-      reference: pickString(row.reference),
-      type_lot: pickString(row.type_lot),
-      description: pickString(row.description),
-      surface: pickString(row.surface),
-      etage: pickString(row.etage),
+      reference: pickString(row.reference, row.numero, row.code, row.nom),
+      type_lot: pickString(row.type_lot, row.type, row.categorie),
+      description: pickString(row.description, row.libelle),
+      surface: pickString(row.surface, row.superficie),
+      etage: pickString(row.etage, row.niveau),
     };
   };
 
-  if (isPaginatedResponse(data)) return data.results.map(normalize).filter((x) => x.id > 0);
-  if (Array.isArray(data)) return data.map(normalize).filter((x) => x.id > 0);
+  if (isPaginatedResponse(data)) {
+    return data.results.map(normalize).filter((x) => x.id > 0);
+  }
+
+  if (Array.isArray(data)) {
+    return data.map(normalize).filter((x) => x.id > 0);
+  }
 
   if (isRecord(data)) {
     const candidates = [data.results, data.items, data.data];
@@ -130,7 +172,11 @@ function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div style={sectionTitleWrapper}>
       <div style={{ minWidth: 0 }}>
@@ -139,7 +185,7 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
         {props.subtitle ? <div style={sectionSubtitle}>{props.subtitle}</div> : null}
       </div>
 
-      {props.right ?? null}
+      {props.right ? <div style={{ minWidth: 0 }}>{props.right}</div> : null}
     </div>
   );
 }
@@ -163,7 +209,7 @@ function AlertBox(props: { kind: FlashKind; title?: string; children: ReactNode 
         minWidth: 0,
       }}
     >
-      {props.title ? <div style={{ fontWeight: 800, marginBottom: 4 }}>{props.title}</div> : null}
+      {props.title ? <div style={{ fontWeight: 900, marginBottom: 4 }}>{props.title}</div> : null}
       <div style={{ fontSize: 13, lineHeight: 1.5 }}>{props.children}</div>
     </div>
   );
@@ -278,13 +324,47 @@ function EmptyState(props: {
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string }) {
+function StatCard(props: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  tone?: StatTone;
+}) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<StatTone, { border: string; bg: string; accent: string }> = {
+    blue: {
+      border: "#bfdbfe",
+      bg: "#eff6ff",
+      accent: "#1d4ed8",
+    },
+    green: {
+      border: "#a7f3d0",
+      bg: "#ecfdf5",
+      accent: "#166534",
+    },
+    yellow: {
+      border: "#fde68a",
+      bg: "#fffbeb",
+      accent: "#92400e",
+    },
+    neutral: {
+      border: "#e5e7eb",
+      bg: "#fff",
+      accent: "#111827",
+    },
+  };
+
   return (
-    <div style={statCard}>
+    <div
+      style={{
+        ...statCard,
+        border: `1px solid ${toneMap[tone].border}`,
+        background: toneMap[tone].bg,
+      }}
+    >
       <div style={statTitle}>{props.title}</div>
-
-      <div style={statValue}>{props.value}</div>
-
+      <div style={{ ...statValue, color: toneMap[tone].accent }}>{props.value}</div>
       {props.sub ? <div style={statSub}>{props.sub}</div> : null}
     </div>
   );
@@ -313,14 +393,12 @@ export default function LotsList() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchLots();
-    }, 0);
+  const run = async () => {
+    await fetchLots();
+  };
 
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [fetchLots]);
+  void run();
+}, [fetchLots]);
 
   const handleRefresh = useCallback(() => {
     void fetchLots();
@@ -332,7 +410,15 @@ export default function LotsList() {
     if (!q) return rows;
 
     return rows.filter((item) =>
-      [item.reference, item.type_lot, item.description, item.etage]
+      [
+        item.id,
+        item.reference,
+        normalizeTypeLot(item.type_lot),
+        item.type_lot,
+        item.description,
+        item.surface,
+        item.etage,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(q),
@@ -342,9 +428,11 @@ export default function LotsList() {
   const stats = useMemo(() => {
     return {
       total: rows.length,
-      appartements: rows.filter((x) => x.type_lot === "APPARTEMENT").length,
-      parkings: rows.filter((x) => x.type_lot === "PARKING").length,
-      autres: rows.filter((x) => !["APPARTEMENT", "PARKING"].includes(x.type_lot)).length,
+      appartements: rows.filter((x) => String(x.type_lot).toUpperCase() === "APPARTEMENT").length,
+      parkings: rows.filter((x) => String(x.type_lot).toUpperCase() === "PARKING").length,
+      autres: rows.filter(
+        (x) => !["APPARTEMENT", "PARKING"].includes(String(x.type_lot).toUpperCase()),
+      ).length,
     };
   }, [rows]);
 
@@ -356,27 +444,48 @@ export default function LotsList() {
     <PageShell>
       <SectionTitle
         title="Lots"
-        subtitle="Gérez les lots de la copropriété active pour alimenter correctement les présences, les votes et les répartitions métier."
+        subtitle="Gérez les lots de la copropriété active afin de sécuriser les tantièmes, les présences, les votes et les répartitions métier."
         right={
-          <AppButton to="/lots/nouveau" variant="primary">
-            Nouveau lot
-          </AppButton>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <AppButton to="/lots/nouveau" variant="primary">
+              Nouveau lot
+            </AppButton>
+          </div>
         }
       />
 
       <div className="lots-stats-grid" style={statsGrid}>
-        <StatCard title="Lots" value={stats.total} sub="Nombre total de lots chargés." />
-        <StatCard title="Appartements" value={stats.appartements} sub="Lots de type appartement." />
-        <StatCard title="Parkings" value={stats.parkings} sub="Lots de type parking." />
+        <StatCard
+          title="Lots"
+          value={stats.total}
+          sub="Nombre total de lots chargés pour la copropriété active."
+          tone="blue"
+        />
+
+        <StatCard
+          title="Appartements"
+          value={stats.appartements}
+          sub="Lots principaux destinés à l’habitation."
+          tone="green"
+        />
+
+        <StatCard
+          title="Parkings"
+          value={stats.parkings}
+          sub="Emplacements de stationnement enregistrés."
+          tone="neutral"
+        />
+
         <StatCard
           title="Autres lots"
           value={stats.autres}
-          sub="Caves, commerces et autres catégories."
+          sub="Caves, commerces, bureaux et autres catégories."
+          tone="yellow"
         />
       </div>
 
       {state === "error" && error ? (
-        <AlertBox kind="error" title="Impossible de charger les lots.">
+        <AlertBox kind="error" title="Impossible de charger les lots">
           {error}
         </AlertBox>
       ) : null}
@@ -391,16 +500,31 @@ export default function LotsList() {
           />
 
           <div style={toolbarActions}>
-            <Badge kind="neutral">{filtered.length} lot(s) affiché(s)</Badge>
+            <Badge kind="neutral">
+              {isLoading
+                ? "Chargement..."
+                : `${filtered.length} lot(s) affiché(s) sur ${rows.length}`}
+            </Badge>
 
-            <button type="button" onClick={handleRefresh} style={secondaryButton}>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isLoading}
+              style={{
+                ...secondaryButton,
+                opacity: isLoading ? 0.7 : 1,
+                cursor: isLoading ? "not-allowed" : "pointer",
+              }}
+            >
               {isLoading ? "Actualisation..." : "Actualiser"}
             </button>
           </div>
         </div>
 
         {isLoading ? (
-          <div style={{ color: "#6b7280", fontSize: 14 }}>Chargement des lots...</div>
+          <div style={{ color: "#6b7280", fontSize: 14 }}>
+            Chargement des lots...
+          </div>
         ) : filtered.length === 0 ? (
           <EmptyState
             title={hasRows ? "Aucun résultat" : "Aucun lot enregistré"}
@@ -419,15 +543,19 @@ export default function LotsList() {
                 <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
                   <div style={rowHeader}>
                     <div style={lotTitle}>{item.reference || `Lot #${item.id}`}</div>
-                    <Badge kind="neutral">{normalizeTypeLot(item.type_lot)}</Badge>
+
+                    <Badge kind={getTypeBadgeKind(item.type_lot)}>
+                      {normalizeTypeLot(item.type_lot)}
+                    </Badge>
+
                     <Badge kind="info">{formatSurface(item.surface)}</Badge>
                   </div>
 
-                  <div style={{ fontSize: 13, color: "#374151" }}>
+                  <div style={rowMeta}>
                     <strong>Étage :</strong> {item.etage || "—"}
                   </div>
 
-                  <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+                  <div style={rowDescription}>
                     <strong>Description :</strong> {item.description || "—"}
                   </div>
                 </div>
@@ -444,9 +572,10 @@ export default function LotsList() {
       </div>
 
       {state === "success" && rows.length > 0 ? (
-        <AlertBox kind="info" title="Lecture métier du module">
-          Les lots constituent une base structurante pour les présences, les votes en assemblée
-          générale et les répartitions métier de la copropriété.
+        <AlertBox kind="info" title="Lecture métier du module Lots">
+          Les lots constituent une base structurante pour les copropriétaires,
+          les tantièmes, les présences, les votes en assemblée générale et les
+          répartitions de charges.
         </AlertBox>
       ) : null}
 
@@ -590,6 +719,17 @@ const lotTitle: CSSProperties = {
   overflowWrap: "anywhere",
 };
 
+const rowMeta: CSSProperties = {
+  fontSize: 13,
+  color: "#374151",
+};
+
+const rowDescription: CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  lineHeight: 1.5,
+};
+
 const input: CSSProperties = {
   minWidth: 280,
   width: "100%",
@@ -611,7 +751,6 @@ const secondaryButton: CSSProperties = {
   padding: "10px 14px",
   fontSize: 13,
   fontWeight: 800,
-  cursor: "pointer",
 };
 
 const emptyState: CSSProperties = {

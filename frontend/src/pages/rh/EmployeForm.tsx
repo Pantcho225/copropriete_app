@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createEmploye, getEmploye, updateEmploye } from "../../api/rh";
 import type { EmployePayload, EmployeStatut } from "../../api/types";
@@ -49,7 +56,11 @@ function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -72,8 +83,17 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
         >
           {props.title}
         </div>
+
         {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 860 }}>
+          <div
+            style={{
+              marginTop: 8,
+              color: "#6b7280",
+              fontSize: 14,
+              lineHeight: 1.5,
+              maxWidth: 860,
+            }}
+          >
             {props.subtitle}
           </div>
         ) : null}
@@ -84,7 +104,10 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNode }) {
+function AlertBox(props: {
+  kind: "error" | "info" | "success";
+  children: ReactNode;
+}) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -114,6 +137,8 @@ function getErrorMessage(e: unknown, fallback: string) {
     response?: {
       data?: {
         detail?: string;
+        message?: string;
+        error?: string;
         non_field_errors?: string[];
         [key: string]: unknown;
       };
@@ -128,11 +153,20 @@ function getErrorMessage(e: unknown, fallback: string) {
       return data.detail;
     }
 
+    if (typeof data.message === "string" && data.message.trim()) {
+      return data.message;
+    }
+
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error;
+    }
+
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
     }
 
     const fieldMessages: string[] = [];
+
     const labelMap: Record<string, string> = {
       nom: "Nom",
       prenoms: "Prénoms",
@@ -146,7 +180,14 @@ function getErrorMessage(e: unknown, fallback: string) {
     };
 
     for (const [key, value] of Object.entries(data)) {
-      if (key === "detail" || key === "non_field_errors") continue;
+      if (
+        key === "detail" ||
+        key === "message" ||
+        key === "error" ||
+        key === "non_field_errors"
+      ) {
+        continue;
+      }
 
       const label = labelMap[key] ?? key;
 
@@ -167,16 +208,29 @@ function getErrorMessage(e: unknown, fallback: string) {
 
 function normalizeDate(value?: string | null) {
   if (!value) return "";
+
   const s = String(value);
+
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
 function normalizeRole(value?: string | null) {
   const role = String(value ?? "").trim().toUpperCase();
+
   if (!role) return "";
 
   const exists = ROLE_OPTIONS.some((opt) => opt.value === role);
+
   return exists ? role : "AUTRE";
+}
+
+function normalizeStatut(value?: string | null): EmployeStatut {
+  const statut = String(value ?? "").trim().toUpperCase();
+
+  if (statut === "INACTIF") return "INACTIF";
+  if (statut === "SUSPENDU") return "SUSPENDU";
+
+  return "ACTIF";
 }
 
 function RequiredMark() {
@@ -210,6 +264,7 @@ export default function EmployeForm() {
 
       try {
         const data = await getEmploye(employeId);
+
         setValues({
           nom: data.nom ?? "",
           prenoms: data.prenoms ?? "",
@@ -218,10 +273,13 @@ export default function EmployeForm() {
           email: data.email ?? "",
           date_embauche: normalizeDate(data.date_embauche),
           salaire_base:
-            data.salaire_base !== null && data.salaire_base !== undefined ? String(data.salaire_base) : "",
-          statut: data.statut ?? "ACTIF",
+            data.salaire_base !== null && data.salaire_base !== undefined
+              ? String(data.salaire_base)
+              : "",
+          statut: normalizeStatut(data.statut),
           notes: data.notes ?? "",
         });
+
         setState("success");
       } catch (e) {
         setState("error");
@@ -233,15 +291,23 @@ export default function EmployeForm() {
   }, [isEdit, employeId]);
 
   const pageTitle = useMemo(
-    () => (isEdit ? PRODUCT_WORDING.rh.employees.editTitle : PRODUCT_WORDING.rh.employees.createTitle),
-    [isEdit]
+    () =>
+      isEdit
+        ? PRODUCT_WORDING.rh.employees.editTitle
+        : PRODUCT_WORDING.rh.employees.createTitle,
+    [isEdit],
   );
 
-  function updateField<K extends keyof FormValues>(field: K, value: FormValues[K]) {
+  function updateField<K extends keyof FormValues>(
+    field: K,
+    value: FormValues[K],
+  ) {
     setValues((prev) => ({ ...prev, [field]: value }));
   }
 
   function buildPayload(): EmployePayload {
+    const salaireBase = values.salaire_base.trim();
+
     return {
       nom: values.nom.trim(),
       prenoms: values.prenoms.trim(),
@@ -249,7 +315,7 @@ export default function EmployeForm() {
       telephone: values.telephone.trim() || null,
       email: values.email.trim() || null,
       date_embauche: values.date_embauche || null,
-      salaire_base: values.salaire_base.trim() ? Number(values.salaire_base) : null,
+      salaire_base: salaireBase ? Number(salaireBase) : null,
       statut: values.statut,
       notes: values.notes.trim() || null,
     };
@@ -264,13 +330,23 @@ export default function EmployeForm() {
     if (!payload.notes) return "Les notes sont obligatoires.";
 
     const validRoles = ROLE_OPTIONS.map((opt) => opt.value);
+
     if (!validRoles.includes(String(payload.role).toUpperCase())) {
       return "Veuillez sélectionner un rôle valide.";
     }
 
+    if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) {
+      return "Veuillez saisir une adresse e-mail valide.";
+    }
+
     if (payload.salaire_base !== null && payload.salaire_base !== undefined) {
-      if (Number.isNaN(payload.salaire_base)) return "Le salaire de base doit être un nombre valide.";
-      if (payload.salaire_base < 0) return "Le salaire de base ne peut pas être négatif.";
+      if (Number.isNaN(payload.salaire_base)) {
+        return "Le salaire de base doit être un nombre valide.";
+      }
+
+      if (payload.salaire_base < 0) {
+        return "Le salaire de base ne peut pas être négatif.";
+      }
     }
 
     return null;
@@ -278,6 +354,9 @@ export default function EmployeForm() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
+    if (saving) return;
+
     setError(null);
     setSuccess(null);
 
@@ -300,16 +379,11 @@ export default function EmployeForm() {
         setSuccess(PRODUCT_WORDING.rh.employees.createSuccess);
       }
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         navigate("/rh/employes");
       }, 500);
     } catch (e) {
-      setError(
-        getErrorMessage(
-          e,
-          isEdit ? PRODUCT_WORDING.rh.employees.saveError : PRODUCT_WORDING.rh.employees.saveError
-        )
-      );
+      setError(getErrorMessage(e, PRODUCT_WORDING.rh.employees.saveError));
     } finally {
       setSaving(false);
     }
@@ -321,19 +395,27 @@ export default function EmployeForm() {
         title={pageTitle}
         subtitle={
           isEdit
-            ? "Mettez à jour les informations de l’employé sélectionné."
-            : "Renseignez les informations nécessaires pour enregistrer un nouvel employé."
+            ? "Mettez à jour les informations administratives, contractuelles et opérationnelles de l’employé sélectionné."
+            : "Renseignez les informations nécessaires pour enregistrer un nouvel employé dans la copropriété active."
         }
         right={
-          <Link to="/rh/employes" style={ghostLink}>
-            Retour à la liste
-          </Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link to="/rh" style={ghostLink}>
+              Vue d’ensemble RH
+            </Link>
+
+            <Link to="/rh/employes" style={ghostLink}>
+              Retour à la liste
+            </Link>
+          </div>
         }
       />
 
       {state === "loading" ? (
         <div style={card}>
-          <div style={{ color: "#6b7280" }}>Chargement de la fiche employé...</div>
+          <div style={{ color: "#6b7280" }}>
+            Chargement de la fiche employé...
+          </div>
         </div>
       ) : null}
 
@@ -348,15 +430,28 @@ export default function EmployeForm() {
 
       {success ? (
         <AlertBox kind="success">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Opération réussie</div>
+          <div style={{ fontWeight: 900, marginBottom: 4 }}>
+            Opération réussie
+          </div>
           <div style={{ fontSize: 13 }}>{success}</div>
         </AlertBox>
       ) : null}
 
       {state !== "loading" && (
         <form onSubmit={handleSubmit} style={card}>
-          <div style={requiredInfo}>
-            Les champs marqués d’un <span style={requiredMark}>*</span> sont obligatoires.
+          <div style={formHeader}>
+            <div>
+              <div style={formTitle}>Informations de l’employé</div>
+              <div style={formSubtitle}>
+                Les informations saisies seront utilisées pour le suivi RH, les
+                contrats et les tableaux de bord de la copropriété.
+              </div>
+            </div>
+
+            <div style={requiredInfo}>
+              Les champs marqués d’un <span style={requiredMark}>*</span> sont
+              obligatoires.
+            </div>
           </div>
 
           <div style={grid2}>
@@ -369,6 +464,7 @@ export default function EmployeForm() {
                 onChange={(e) => updateField("nom", e.target.value)}
                 style={input}
                 placeholder="Ex. KOUADIO"
+                autoComplete="family-name"
               />
             </div>
 
@@ -381,6 +477,7 @@ export default function EmployeForm() {
                 onChange={(e) => updateField("prenoms", e.target.value)}
                 style={input}
                 placeholder="Ex. Yao Serge"
+                autoComplete="given-name"
               />
             </div>
 
@@ -400,14 +497,18 @@ export default function EmployeForm() {
                   </option>
                 ))}
               </select>
-              <FieldHint>Choisissez le rôle principal exercé au sein de la copropriété.</FieldHint>
+              <FieldHint>
+                Choisissez le rôle principal exercé au sein de la copropriété.
+              </FieldHint>
             </div>
 
             <div style={field}>
               <label style={label}>Statut</label>
               <select
                 value={values.statut}
-                onChange={(e) => updateField("statut", e.target.value as EmployeStatut)}
+                onChange={(e) =>
+                  updateField("statut", e.target.value as EmployeStatut)
+                }
                 style={input}
               >
                 {STATUT_OPTIONS.map((opt) => (
@@ -416,6 +517,10 @@ export default function EmployeForm() {
                   </option>
                 ))}
               </select>
+              <FieldHint>
+                Utilisez le statut pour distinguer les employés actifs,
+                suspendus ou sortis.
+              </FieldHint>
             </div>
 
             <div style={field}>
@@ -423,10 +528,12 @@ export default function EmployeForm() {
                 Téléphone <RequiredMark />
               </label>
               <input
+                type="tel"
                 value={values.telephone}
                 onChange={(e) => updateField("telephone", e.target.value)}
                 style={input}
                 placeholder="Ex. 0700000000"
+                autoComplete="tel"
               />
             </div>
 
@@ -435,10 +542,12 @@ export default function EmployeForm() {
                 E-mail <RequiredMark />
               </label>
               <input
+                type="email"
                 value={values.email}
                 onChange={(e) => updateField("email", e.target.value)}
                 style={input}
                 placeholder="Ex. employe@copro.local"
+                autoComplete="email"
               />
             </div>
 
@@ -450,6 +559,10 @@ export default function EmployeForm() {
                 onChange={(e) => updateField("date_embauche", e.target.value)}
                 style={input}
               />
+              <FieldHint>
+                Date d’entrée effective ou date de rattachement à la
+                copropriété.
+              </FieldHint>
             </div>
 
             <div style={field}>
@@ -475,9 +588,11 @@ export default function EmployeForm() {
               value={values.notes}
               onChange={(e) => updateField("notes", e.target.value)}
               style={textarea}
-              placeholder="Informations complémentaires..."
+              placeholder="Informations complémentaires, responsabilités particulières, observations internes..."
             />
-            <FieldHint>Ajoutez les informations utiles à la gestion de cet employé.</FieldHint>
+            <FieldHint>
+              Ajoutez les informations utiles à la gestion RH de cet employé.
+            </FieldHint>
           </div>
 
           <div style={actions}>
@@ -485,7 +600,15 @@ export default function EmployeForm() {
               {PRODUCT_WORDING.actions.cancel}
             </Link>
 
-            <button type="submit" disabled={saving} style={primaryButton}>
+            <button
+              type="submit"
+              disabled={saving}
+              style={{
+                ...primaryButton,
+                opacity: saving ? 0.7 : 1,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
               {saving
                 ? "Enregistrement..."
                 : isEdit
@@ -501,10 +624,36 @@ export default function EmployeForm() {
 
 const card: CSSProperties = {
   border: "1px solid #e5e7eb",
-  borderRadius: 20,
+  borderRadius: 22,
   padding: 18,
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+};
+
+const formHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+  alignItems: "flex-start",
+  marginBottom: 18,
+  paddingBottom: 16,
+  borderBottom: "1px solid #f3f4f6",
+};
+
+const formTitle: CSSProperties = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#111827",
+  letterSpacing: -0.2,
+};
+
+const formSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "#6b7280",
+  fontSize: 13,
+  lineHeight: 1.5,
+  maxWidth: 720,
 };
 
 const grid2: CSSProperties = {
@@ -538,7 +687,6 @@ const requiredMark: CSSProperties = {
 };
 
 const requiredInfo: CSSProperties = {
-  marginBottom: 16,
   padding: "10px 12px",
   borderRadius: 12,
   background: "#fff7ed",
@@ -581,7 +729,6 @@ const primaryButton: CSSProperties = {
   padding: "11px 16px",
   fontSize: 14,
   fontWeight: 800,
-  cursor: "pointer",
 };
 
 const secondaryLink: CSSProperties = {

@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
 import { activerEmploye, desactiverEmploye, getEmployes } from "../../api/rh";
 import type { Employe, EmployeStatut } from "../../api/types";
@@ -12,8 +18,26 @@ type ConfirmAction = {
   action: "activer" | "desactiver" | null;
 };
 
+type EmployesApiResponse =
+  | Employe[]
+  | {
+      results?: Employe[];
+      data?: Employe[];
+      items?: Employe[];
+      count?: number;
+    };
+
+function extractEmployes(payload: EmployesApiResponse): Employe[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.results)) return payload.results;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 function fmtMoney(x?: number | null) {
   if (x === undefined || x === null) return "—";
+
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "XOF",
@@ -23,26 +47,44 @@ function fmtMoney(x?: number | null) {
 
 function fmtDate(value?: string | null) {
   if (!value) return "—";
+
   const d = new Date(value);
+
   if (Number.isNaN(d.getTime())) return value;
+
   return d.toLocaleDateString("fr-FR");
 }
 
 function truncateText(value?: string | null, max = 42) {
   if (!value) return "—";
+
   const s = String(value).trim();
+
   if (s.length <= max) return s;
+
   return `${s.slice(0, max - 1)}…`;
 }
 
 function getErrorMessage(e: unknown, fallback: string) {
   const err = e as {
-    response?: { data?: { detail?: string } & Record<string, unknown> };
+    response?: {
+      data?: {
+        detail?: string;
+        message?: string;
+        error?: string;
+      } & Record<string, unknown>;
+    };
     message?: string;
   };
 
   const detail = err?.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
+
+  const message = err?.response?.data?.message;
+  if (typeof message === "string" && message.trim()) return message;
+
+  const error = err?.response?.data?.error;
+  if (typeof error === "string" && error.trim()) return error;
 
   if (err?.response?.data) {
     try {
@@ -57,6 +99,7 @@ function getErrorMessage(e: unknown, fallback: string) {
 
 function humanizeRole(role?: string | null) {
   const value = String(role ?? "").trim();
+
   if (!value) return PRODUCT_WORDING.common.notProvided;
 
   const normalized = value.toUpperCase();
@@ -64,16 +107,19 @@ function humanizeRole(role?: string | null) {
 
   if (centralized !== normalized) return centralized;
 
-  const FALLBACK_MAP: Record<string, string> = {
+  const fallbackMap: Record<string, string> = {
     SYNDIC: "Syndic",
     EMPLOYE: "Employé",
+    GARDIEN: "Gardien",
+    AGENT_ENTRETIEN: "Agent d’entretien",
     ASSISTANT: "Assistant",
     COMPTABLE: "Comptable",
     TECHNICIEN: "Technicien",
     RESPONSABLE: "Responsable",
+    GESTIONNAIRE: "Gestionnaire",
   };
 
-  if (FALLBACK_MAP[normalized]) return FALLBACK_MAP[normalized];
+  if (fallbackMap[normalized]) return fallbackMap[normalized];
 
   return normalized
     .toLowerCase()
@@ -93,8 +139,8 @@ function getStatutLabel(statut?: EmployeStatut | string | null) {
   return s || PRODUCT_WORDING.common.notProvided;
 }
 
-function getStatutStyle(statut: EmployeStatut): CSSProperties {
-  const s = String(statut).toUpperCase();
+function getStatutStyle(statut?: EmployeStatut | string | null): CSSProperties {
+  const s = String(statut ?? "").toUpperCase();
 
   if (s === "ACTIF") {
     return {
@@ -123,14 +169,18 @@ function getStatutStyle(statut: EmployeStatut): CSSProperties {
 }
 
 function isEmployeActiveNow(item: Employe) {
-  return String(item.statut).toUpperCase() === "ACTIF";
+  return String(item.statut ?? "").toUpperCase() === "ACTIF";
 }
 
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -155,7 +205,15 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
         </div>
 
         {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 860 }}>
+          <div
+            style={{
+              marginTop: 8,
+              color: "#6b7280",
+              fontSize: 14,
+              lineHeight: 1.5,
+              maxWidth: 860,
+            }}
+          >
             {props.subtitle}
           </div>
         ) : null}
@@ -166,29 +224,98 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string }) {
+function StatCard(props: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  tone?: "blue" | "green" | "yellow" | "red" | "neutral";
+}) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<
+    NonNullable<typeof props.tone>,
+    { border: string; bg: string; accent: string }
+  > = {
+    blue: {
+      border: "#bfdbfe",
+      bg: "#eff6ff",
+      accent: "#1d4ed8",
+    },
+    green: {
+      border: "#a7f3d0",
+      bg: "#ecfdf5",
+      accent: "#166534",
+    },
+    yellow: {
+      border: "#fde68a",
+      bg: "#fffbeb",
+      accent: "#92400e",
+    },
+    red: {
+      border: "#fecaca",
+      bg: "#fef2f2",
+      accent: "#991b1b",
+    },
+    neutral: {
+      border: "#e5e7eb",
+      bg: "#fff",
+      accent: "#111827",
+    },
+  };
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: `1px solid ${toneMap[tone].border}`,
         borderRadius: 20,
         padding: 16,
-        background: "#fff",
+        background: toneMap[tone].bg,
         boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>{props.title}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, color: "#111827", letterSpacing: -0.4, lineHeight: 1.1 }}>
+      <div
+        style={{
+          fontSize: 13,
+          color: "#6b7280",
+          fontWeight: 700,
+          marginBottom: 8,
+        }}
+      >
+        {props.title}
+      </div>
+
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 900,
+          color: toneMap[tone].accent,
+          letterSpacing: -0.4,
+          lineHeight: 1.1,
+        }}
+      >
         {props.value}
       </div>
+
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>{props.sub}</div>
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#6b7280",
+            lineHeight: 1.45,
+          }}
+        >
+          {props.sub}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function AlertBox(props: { kind: "error" | "info" | "success"; children: ReactNode }) {
+function AlertBox(props: {
+  kind: "error" | "info" | "success";
+  children: ReactNode;
+}) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -231,8 +358,16 @@ function SmallButton(props: {
             : props.primary
               ? "1px solid #c7d2fe"
               : "1px solid #e5e7eb",
-          background: props.danger ? "#fef2f2" : props.primary ? "#eef2ff" : "#fff",
-          color: props.danger ? "#991b1b" : props.primary ? "#3730a3" : "#111827",
+          background: props.danger
+            ? "#fef2f2"
+            : props.primary
+              ? "#eef2ff"
+              : "#fff",
+          color: props.danger
+            ? "#991b1b"
+            : props.primary
+              ? "#3730a3"
+              : "#111827",
           borderRadius: 12,
           padding: "10px 14px",
           fontSize: 13,
@@ -259,8 +394,20 @@ function SmallButton(props: {
           : props.primary
             ? "1px solid #c7d2fe"
             : "1px solid #e5e7eb",
-        background: props.disabled ? "#f9fafb" : props.danger ? "#fef2f2" : props.primary ? "#eef2ff" : "#fff",
-        color: props.disabled ? "#9ca3af" : props.danger ? "#991b1b" : props.primary ? "#3730a3" : "#111827",
+        background: props.disabled
+          ? "#f9fafb"
+          : props.danger
+            ? "#fef2f2"
+            : props.primary
+              ? "#eef2ff"
+              : "#fff",
+        color: props.disabled
+          ? "#9ca3af"
+          : props.danger
+            ? "#991b1b"
+            : props.primary
+              ? "#3730a3"
+              : "#111827",
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
@@ -287,7 +434,10 @@ function ConfirmModal(props: {
   if (!props.open) return null;
 
   return (
-    <div style={modalOverlay} onClick={props.loading ? undefined : props.onClose}>
+    <div
+      style={modalOverlay}
+      onClick={props.loading ? undefined : props.onClose}
+    >
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
         <div style={modalTitle}>{props.title}</div>
         <div style={modalText}>{props.message}</div>
@@ -332,7 +482,12 @@ function ConfirmModal(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; actionTo?: string }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
     <div style={emptyBox}>
       <div style={emptyTitle}>{props.title}</div>
@@ -357,7 +512,9 @@ export default function RHEmployes() {
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const [query, setQuery] = useState("");
-  const [statutFilter, setStatutFilter] = useState<"TOUS" | EmployeStatut>("TOUS");
+  const [statutFilter, setStatutFilter] = useState<"TOUS" | EmployeStatut>(
+    "TOUS",
+  );
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>({
     open: false,
@@ -370,8 +527,8 @@ export default function RHEmployes() {
     setError(null);
 
     try {
-      const data = await getEmployes();
-      setRows(Array.isArray(data.results) ? data.results : []);
+      const data = (await getEmployes()) as EmployesApiResponse;
+      setRows(extractEmployes(data));
       setState("success");
     } catch (e) {
       setState("error");
@@ -385,10 +542,11 @@ export default function RHEmployes() {
   }, []);
 
   function openConfirmFor(item: Employe) {
-    const current = String(item.statut).toUpperCase();
+    const current = String(item.statut ?? "").toUpperCase();
 
     setError(null);
     setSuccess(null);
+
     setConfirmAction({
       open: true,
       employe: item,
@@ -398,6 +556,7 @@ export default function RHEmployes() {
 
   function closeConfirmModal() {
     if (busyId !== null) return;
+
     setConfirmAction({
       open: false,
       employe: null,
@@ -416,13 +575,19 @@ export default function RHEmployes() {
     setSuccess(null);
 
     try {
-      const updated = action === "desactiver" ? await desactiverEmploye(item.id) : await activerEmploye(item.id);
+      const updated =
+        action === "desactiver"
+          ? await desactiverEmploye(item.id)
+          : await activerEmploye(item.id);
 
-      setRows((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
+      setRows((prev) =>
+        prev.map((row) => (row.id === item.id ? updated : row)),
+      );
+
       setSuccess(
         action === "desactiver"
           ? PRODUCT_WORDING.rh.employees.disableSuccess
-          : PRODUCT_WORDING.rh.employees.reactivateSuccess
+          : PRODUCT_WORDING.rh.employees.reactivateSuccess,
       );
 
       setConfirmAction({
@@ -441,7 +606,10 @@ export default function RHEmployes() {
     const q = query.trim().toLowerCase();
 
     return rows.filter((item) => {
-      const matchStatut = statutFilter === "TOUS" ? true : String(item.statut).toUpperCase() === String(statutFilter);
+      const matchStatut =
+        statutFilter === "TOUS"
+          ? true
+          : String(item.statut ?? "").toUpperCase() === String(statutFilter);
 
       const haystack = [
         item.nom,
@@ -467,16 +635,29 @@ export default function RHEmployes() {
 
     return {
       total: filtered.length,
-      actifs: filtered.filter((x) => String(x.statut).toUpperCase() === "ACTIF").length,
-      inactifs: filtered.filter((x) => String(x.statut).toUpperCase() === "INACTIF").length,
-      suspendus: filtered.filter((x) => String(x.statut).toUpperCase() === "SUSPENDU").length,
-      masseActive: employesActifsReels.reduce((sum, x) => sum + Number(x.salaire_base ?? 0), 0),
+      actifs: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "ACTIF",
+      ).length,
+      inactifs: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "INACTIF",
+      ).length,
+      suspendus: filtered.filter(
+        (x) => String(x.statut ?? "").toUpperCase() === "SUSPENDU",
+      ).length,
+      masseActive: employesActifsReels.reduce(
+        (sum, x) => sum + Number(x.salaire_base ?? 0),
+        0,
+      ),
     };
   }, [filtered, rows]);
 
   const isLoading = state === "loading";
+  const isInitialError = state === "error" && rows.length === 0;
+
   const confirmLoading =
-    confirmAction.open && confirmAction.employe ? busyId === confirmAction.employe.id : false;
+    confirmAction.open && confirmAction.employe
+      ? busyId === confirmAction.employe.id
+      : false;
 
   const hasRows = rows.length > 0;
   const hasFilters = query.trim().length > 0 || statutFilter !== "TOUS";
@@ -485,9 +666,10 @@ export default function RHEmployes() {
     <PageShell>
       <SectionTitle
         title={PRODUCT_WORDING.rh.employees.listTitle}
-        subtitle="Gérez les gardiens, agents d’entretien et autres employés rattachés à la copropriété."
+        subtitle="Gérez les gardiens, agents d’entretien et autres employés rattachés à la copropriété active."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <SmallButton to="/rh">Vue d’ensemble RH</SmallButton>
             <SmallButton to="/rh/contrats">Voir les contrats</SmallButton>
             <SmallButton to="/rh/employes/nouveau" primary>
               {PRODUCT_WORDING.rh.employees.createTitle}
@@ -504,14 +686,39 @@ export default function RHEmployes() {
           gap: 14,
         }}
       >
-        <StatCard title="Employés visibles" value={stats.total} sub="Résultats affichés après filtres et recherche." />
-        <StatCard title="Actifs" value={stats.actifs} sub="Employés visibles actuellement actifs." />
-        <StatCard title="Inactifs" value={stats.inactifs} sub="Employés visibles désactivés ou sortis." />
-        <StatCard title="Suspendus" value={stats.suspendus} sub="Employés visibles temporairement suspendus." />
+        <StatCard
+          title="Employés visibles"
+          value={stats.total}
+          sub="Résultats affichés après filtres et recherche."
+          tone="blue"
+        />
+
+        <StatCard
+          title="Actifs"
+          value={stats.actifs}
+          sub="Employés visibles actuellement actifs."
+          tone="green"
+        />
+
+        <StatCard
+          title="Inactifs"
+          value={stats.inactifs}
+          sub="Employés visibles désactivés ou sortis."
+          tone="neutral"
+        />
+
+        <StatCard
+          title="Suspendus"
+          value={stats.suspendus}
+          sub="Employés visibles temporairement suspendus."
+          tone="yellow"
+        />
+
         <StatCard
           title="Masse salariale active"
           value={fmtMoney(stats.masseActive)}
           sub="Somme des salaires des employés actifs, indépendamment des filtres affichés."
+          tone="blue"
         />
       </div>
 
@@ -533,7 +740,14 @@ export default function RHEmployes() {
           alignItems: "center",
         }}
       >
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -543,7 +757,9 @@ export default function RHEmployes() {
 
           <select
             value={statutFilter}
-            onChange={(e) => setStatutFilter(e.target.value as "TOUS" | EmployeStatut)}
+            onChange={(e) =>
+              setStatutFilter(e.target.value as "TOUS" | EmployeStatut)
+            }
             style={selectInput}
           >
             <option value="TOUS">Tous les statuts</option>
@@ -558,9 +774,20 @@ export default function RHEmployes() {
         </div>
 
         <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>
-          {isLoading ? "Chargement des employés..." : `${filtered.length} employé(s) affiché(s) sur ${rows.length}`}
+          {isLoading
+            ? "Chargement des employés..."
+            : `${filtered.length} employé(s) affiché(s) sur ${rows.length}`}
         </div>
       </div>
+
+      {isInitialError ? (
+        <EmptyState
+          title="Chargement impossible"
+          text="La liste des employés n’a pas pu être récupérée. Vérifiez la connexion au backend, le token d’authentification et la copropriété active."
+          actionLabel="Réessayer"
+          actionTo="/rh/employes"
+        />
+      ) : null}
 
       <div style={tableWrap}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -581,14 +808,16 @@ export default function RHEmployes() {
             {isLoading ? (
               <tr>
                 <td style={td} colSpan={8}>
-                  <span style={{ color: "#6b7280" }}>Chargement des employés...</span>
+                  <span style={{ color: "#6b7280" }}>
+                    Chargement des employés...
+                  </span>
                 </td>
               </tr>
             ) : null}
 
             {!isLoading &&
               filtered.map((item) => {
-                const current = String(item.statut).toUpperCase();
+                const current = String(item.statut ?? "").toUpperCase();
                 const isBusy = busyId === item.id;
 
                 return (
@@ -599,14 +828,33 @@ export default function RHEmployes() {
                       <div style={{ fontWeight: 800, color: "#111827" }}>
                         {item.nom} {item.prenoms}
                       </div>
+
+                      {item.email ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            color: "#6b7280",
+                            fontSize: 12,
+                          }}
+                        >
+                          {truncateText(item.email, 32)}
+                        </div>
+                      ) : null}
                     </td>
 
                     <td style={td}>{humanizeRole(item.role)}</td>
 
                     <td style={td}>
                       <div>{truncateText(item.telephone, 22)}</div>
-                      {item.email ? (
-                        <div style={{ marginTop: 4, color: "#6b7280", fontSize: 12 }}>
+
+                      {!item.telephone && item.email ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            color: "#6b7280",
+                            fontSize: 12,
+                          }}
+                        >
                           {truncateText(item.email, 26)}
                         </div>
                       ) : null}
@@ -616,12 +864,17 @@ export default function RHEmployes() {
                     <td style={tdStrong}>{fmtMoney(item.salaire_base)}</td>
 
                     <td style={td}>
-                      <span style={getStatutStyle(item.statut)}>{getStatutLabel(item.statut)}</span>
+                      <span style={getStatutStyle(item.statut)}>
+                        {getStatutLabel(item.statut)}
+                      </span>
                     </td>
 
                     <td style={td}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Link to={`/rh/employes/${item.id}/modifier`} style={primaryMiniLink}>
+                        <Link
+                          to={`/rh/employes/${item.id}/modifier`}
+                          style={primaryMiniLink}
+                        >
                           {PRODUCT_WORDING.actions.edit}
                         </Link>
 
@@ -682,7 +935,11 @@ export default function RHEmployes() {
 
       <ConfirmModal
         open={confirmAction.open}
-        title={confirmAction.action === "desactiver" ? "Confirmer la désactivation" : "Confirmer la réactivation"}
+        title={
+          confirmAction.action === "desactiver"
+            ? "Confirmer la désactivation"
+            : "Confirmer la réactivation"
+        }
         message={
           confirmAction.employe ? (
             <span>

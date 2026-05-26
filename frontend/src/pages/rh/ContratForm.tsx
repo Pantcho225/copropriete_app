@@ -7,8 +7,17 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { createContrat, getContrat, getEmployes, updateContrat } from "../../api/rh";
-import type { ContratEmployePayload, ContratStatut, Employe } from "../../api/types";
+import {
+  createContrat,
+  getContrat,
+  getEmployes,
+  updateContrat,
+} from "../../api/rh";
+import type {
+  ContratEmployePayload,
+  ContratStatut,
+  Employe,
+} from "../../api/types";
 import { PRODUCT_WORDING } from "../../constants/productWording";
 
 type LoadState = "idle" | "loading" | "success" | "error";
@@ -23,6 +32,15 @@ type FormValues = {
   notes: string;
 };
 
+type ApiListResponse<T> =
+  | T[]
+  | {
+      results?: T[];
+      data?: T[];
+      items?: T[];
+      count?: number;
+    };
+
 const INITIAL_VALUES: FormValues = {
   employe: "",
   type_contrat: "",
@@ -36,6 +54,9 @@ const INITIAL_VALUES: FormValues = {
 const TYPE_CONTRAT_OPTIONS = [
   { value: "CDI", label: "CDI" },
   { value: "CDD", label: "CDD" },
+  { value: "STAGE", label: "Stage" },
+  { value: "PRESTATION", label: "Prestation" },
+  { value: "INTERIM", label: "Intérim" },
 ];
 
 const STATUT_OPTIONS: Array<{ value: ContratStatut; label: string }> = [
@@ -44,11 +65,23 @@ const STATUT_OPTIONS: Array<{ value: ContratStatut; label: string }> = [
   { value: "BROUILLON", label: PRODUCT_WORDING.statuses.draft },
 ];
 
+function extractRows<T>(payload: ApiListResponse<T>): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.results)) return payload.results;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -71,8 +104,17 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
         >
           {props.title}
         </div>
+
         {props.subtitle ? (
-          <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14, lineHeight: 1.5, maxWidth: 860 }}>
+          <div
+            style={{
+              marginTop: 8,
+              color: "#6b7280",
+              fontSize: 14,
+              lineHeight: 1.5,
+              maxWidth: 860,
+            }}
+          >
             {props.subtitle}
           </div>
         ) : null}
@@ -83,7 +125,10 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function AlertBox(props: { kind: "error" | "success"; children: ReactNode }) {
+function AlertBox(props: {
+  kind: "error" | "success";
+  children: ReactNode;
+}) {
   const tone =
     props.kind === "error"
       ? { bg: "#fef2f2", border: "#fecaca", text: "#991b1b" }
@@ -111,6 +156,8 @@ function getErrorMessage(e: unknown, fallback: string) {
     response?: {
       data?: {
         detail?: string;
+        message?: string;
+        error?: string;
         non_field_errors?: string[];
         [key: string]: unknown;
       };
@@ -125,11 +172,20 @@ function getErrorMessage(e: unknown, fallback: string) {
       return data.detail;
     }
 
+    if (typeof data.message === "string" && data.message.trim()) {
+      return data.message;
+    }
+
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error;
+    }
+
     if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
       return data.non_field_errors.join("\n");
     }
 
     const fieldMessages: string[] = [];
+
     const labelMap: Record<string, string> = {
       employe: "Employé",
       type_contrat: "Type de contrat",
@@ -141,7 +197,14 @@ function getErrorMessage(e: unknown, fallback: string) {
     };
 
     for (const [key, value] of Object.entries(data)) {
-      if (key === "detail" || key === "non_field_errors") continue;
+      if (
+        key === "detail" ||
+        key === "message" ||
+        key === "error" ||
+        key === "non_field_errors"
+      ) {
+        continue;
+      }
 
       const label = labelMap[key] ?? key;
 
@@ -152,9 +215,7 @@ function getErrorMessage(e: unknown, fallback: string) {
       }
     }
 
-    if (fieldMessages.length) {
-      return fieldMessages.join("\n");
-    }
+    if (fieldMessages.length) return fieldMessages.join("\n");
   }
 
   return err?.message || fallback;
@@ -162,8 +223,35 @@ function getErrorMessage(e: unknown, fallback: string) {
 
 function normalizeDate(value?: string | null) {
   if (!value) return "";
+
   const s = String(value);
+
   return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function normalizeContratStatut(value?: string | null): ContratStatut {
+  const statut = String(value ?? "").trim().toUpperCase();
+
+  if (statut === "TERMINE") return "TERMINE";
+  if (statut === "BROUILLON") return "BROUILLON";
+
+  return "ACTIF";
+}
+
+function normalizeContratType(value?: string | null) {
+  const type = String(value ?? "").trim().toUpperCase();
+
+  if (!type) return "";
+
+  const exists = TYPE_CONTRAT_OPTIONS.some((opt) => opt.value === type);
+
+  return exists ? type : "";
+}
+
+function getEmployeOptionLabel(emp: Employe) {
+  const name = `${emp.nom ?? ""} ${emp.prenoms ?? ""}`.trim();
+
+  return name || `Employé #${emp.id}`;
 }
 
 function RequiredMark() {
@@ -198,26 +286,31 @@ export default function ContratForm() {
 
       try {
         const empData = await getEmployes();
+
         if (!isMounted) return;
 
-        setEmployes(Array.isArray(empData.results) ? empData.results : []);
+        setEmployes(extractRows(empData as ApiListResponse<Employe>));
 
         if (isEdit && contratId) {
           const contrat = await getContrat(contratId);
+
           if (!isMounted) return;
 
           setValues({
             employe: String(
-              typeof contrat.employe === "number" ? contrat.employe : contrat.employe?.id ?? ""
+              typeof contrat.employe === "number"
+                ? contrat.employe
+                : contrat.employe?.id ?? "",
             ),
-            type_contrat: contrat.type_contrat ?? "",
+            type_contrat: normalizeContratType(contrat.type_contrat),
             date_debut: normalizeDate(contrat.date_debut),
             date_fin: normalizeDate(contrat.date_fin),
             salaire_mensuel:
-              contrat.salaire_mensuel !== null && contrat.salaire_mensuel !== undefined
+              contrat.salaire_mensuel !== null &&
+              contrat.salaire_mensuel !== undefined
                 ? String(contrat.salaire_mensuel)
                 : "",
-            statut: contrat.statut ?? "ACTIF",
+            statut: normalizeContratStatut(contrat.statut),
             notes: contrat.notes ?? "",
           });
         }
@@ -225,6 +318,7 @@ export default function ContratForm() {
         if (isMounted) setState("success");
       } catch (e) {
         if (!isMounted) return;
+
         setState("error");
         setError(getErrorMessage(e, PRODUCT_WORDING.rh.contracts.loadError));
       }
@@ -238,23 +332,29 @@ export default function ContratForm() {
   }, [isEdit, contratId]);
 
   const pageTitle = useMemo(
-    () => (isEdit ? PRODUCT_WORDING.rh.contracts.editTitle : PRODUCT_WORDING.rh.contracts.createTitle),
-    [isEdit]
+    () =>
+      isEdit
+        ? PRODUCT_WORDING.rh.contracts.editTitle
+        : PRODUCT_WORDING.rh.contracts.createTitle,
+    [isEdit],
   );
 
-  function updateField<K extends keyof FormValues>(field: K, value: FormValues[K]) {
+  function updateField<K extends keyof FormValues>(
+    field: K,
+    value: FormValues[K],
+  ) {
     setValues((prev) => ({ ...prev, [field]: value }));
   }
 
   function buildPayload(): ContratEmployePayload {
+    const salaire = values.salaire_mensuel.trim().replace(",", ".");
+
     return {
       employe: Number(values.employe),
       type_contrat: values.type_contrat.trim().toUpperCase(),
       date_debut: values.date_debut,
       date_fin: values.date_fin || null,
-      salaire_mensuel: values.salaire_mensuel.trim()
-        ? Number(values.salaire_mensuel.replace(",", "."))
-        : null,
+      salaire_mensuel: salaire ? Number(salaire) : null,
       statut: values.statut,
       notes: values.notes.trim() || null,
     };
@@ -278,6 +378,7 @@ export default function ContratForm() {
     }
 
     const validTypes = TYPE_CONTRAT_OPTIONS.map((opt) => opt.value);
+
     if (!validTypes.includes(String(payload.type_contrat).toUpperCase())) {
       return "Veuillez sélectionner un type de contrat valide.";
     }
@@ -286,6 +387,7 @@ export default function ContratForm() {
       if (Number.isNaN(payload.salaire_mensuel)) {
         return "Le salaire mensuel doit être un nombre valide.";
       }
+
       if (payload.salaire_mensuel < 0) {
         return "Le salaire mensuel ne peut pas être négatif.";
       }
@@ -300,6 +402,9 @@ export default function ContratForm() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
+    if (saving) return;
+
     setError(null);
     setSuccess(null);
 
@@ -340,19 +445,27 @@ export default function ContratForm() {
         title={pageTitle}
         subtitle={
           isEdit
-            ? "Mettez à jour les informations du contrat sélectionné."
-            : "Renseignez les informations nécessaires pour enregistrer un nouveau contrat."
+            ? "Mettez à jour les informations administratives, financières et opérationnelles du contrat sélectionné."
+            : "Renseignez les informations nécessaires pour enregistrer un nouveau contrat lié à un employé."
         }
         right={
-          <Link to="/rh/contrats" style={ghostLink}>
-            Retour à la liste
-          </Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link to="/rh" style={ghostLink}>
+              Vue d’ensemble RH
+            </Link>
+
+            <Link to="/rh/contrats" style={ghostLink}>
+              Retour à la liste
+            </Link>
+          </div>
         }
       />
 
       {state === "loading" ? (
         <div style={card}>
-          <div style={{ color: "#6b7280" }}>Chargement du formulaire du contrat...</div>
+          <div style={{ color: "#6b7280" }}>
+            Chargement du formulaire du contrat...
+          </div>
         </div>
       ) : null}
 
@@ -367,15 +480,28 @@ export default function ContratForm() {
 
       {success ? (
         <AlertBox kind="success">
-          <div style={{ fontWeight: 900, marginBottom: 4 }}>Opération réussie</div>
+          <div style={{ fontWeight: 900, marginBottom: 4 }}>
+            Opération réussie
+          </div>
           <div style={{ fontSize: 13 }}>{success}</div>
         </AlertBox>
       ) : null}
 
       {state !== "loading" && (
         <form onSubmit={handleSubmit} style={card}>
-          <div style={requiredInfo}>
-            Les champs marqués d’un <span style={requiredMark}>*</span> sont obligatoires.
+          <div style={formHeader}>
+            <div>
+              <div style={formTitle}>Informations du contrat</div>
+              <div style={formSubtitle}>
+                Les informations saisies alimentent le suivi RH, les indicateurs
+                de contrats et la masse salariale active.
+              </div>
+            </div>
+
+            <div style={requiredInfo}>
+              Les champs marqués d’un <span style={requiredMark}>*</span> sont
+              obligatoires.
+            </div>
           </div>
 
           <div style={grid2}>
@@ -392,7 +518,7 @@ export default function ContratForm() {
                 <option value="">Sélectionner un employé</option>
                 {employes.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.nom} {emp.prenoms}
+                    {getEmployeOptionLabel(emp)}
                   </option>
                 ))}
               </select>
@@ -430,6 +556,7 @@ export default function ContratForm() {
                 style={input}
                 disabled={isBusy}
               />
+              <FieldHint>Date de prise d’effet du contrat.</FieldHint>
             </div>
 
             <div style={field}>
@@ -449,20 +576,23 @@ export default function ContratForm() {
               <input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={values.salaire_mensuel}
                 onChange={(e) => updateField("salaire_mensuel", e.target.value)}
                 style={input}
                 placeholder="Ex. 120000"
                 disabled={isBusy}
               />
+              <FieldHint>Montant mensuel de référence en FCFA.</FieldHint>
             </div>
 
             <div style={field}>
               <label style={label}>Statut</label>
               <select
                 value={values.statut}
-                onChange={(e) => updateField("statut", e.target.value as ContratStatut)}
+                onChange={(e) =>
+                  updateField("statut", e.target.value as ContratStatut)
+                }
                 style={input}
                 disabled={isBusy}
               >
@@ -472,6 +602,10 @@ export default function ContratForm() {
                   </option>
                 ))}
               </select>
+              <FieldHint>
+                Le statut permet de distinguer les contrats actifs, terminés ou
+                encore en préparation.
+              </FieldHint>
             </div>
           </div>
 
@@ -483,7 +617,7 @@ export default function ContratForm() {
               value={values.notes}
               onChange={(e) => updateField("notes", e.target.value)}
               style={textarea}
-              placeholder="Informations complémentaires..."
+              placeholder="Informations complémentaires, conditions particulières, observations internes..."
               disabled={isBusy}
             />
             <FieldHint>Ajoutez les précisions utiles à la gestion du contrat.</FieldHint>
@@ -501,7 +635,15 @@ export default function ContratForm() {
               {PRODUCT_WORDING.actions.cancel}
             </Link>
 
-            <button type="submit" disabled={isBusy} style={primaryButton}>
+            <button
+              type="submit"
+              disabled={isBusy}
+              style={{
+                ...primaryButton,
+                opacity: isBusy ? 0.7 : 1,
+                cursor: isBusy ? "not-allowed" : "pointer",
+              }}
+            >
               {saving
                 ? "Enregistrement..."
                 : isEdit
@@ -517,10 +659,36 @@ export default function ContratForm() {
 
 const card: CSSProperties = {
   border: "1px solid #e5e7eb",
-  borderRadius: 20,
+  borderRadius: 22,
   padding: 18,
   background: "#fff",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+};
+
+const formHeader: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+  alignItems: "flex-start",
+  marginBottom: 18,
+  paddingBottom: 16,
+  borderBottom: "1px solid #f3f4f6",
+};
+
+const formTitle: CSSProperties = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#111827",
+  letterSpacing: -0.2,
+};
+
+const formSubtitle: CSSProperties = {
+  marginTop: 6,
+  color: "#6b7280",
+  fontSize: 13,
+  lineHeight: 1.5,
+  maxWidth: 720,
 };
 
 const grid2: CSSProperties = {
@@ -554,7 +722,6 @@ const requiredMark: CSSProperties = {
 };
 
 const requiredInfo: CSSProperties = {
-  marginBottom: 16,
   padding: "10px 12px",
   borderRadius: 12,
   background: "#fff7ed",
@@ -597,7 +764,6 @@ const primaryButton: CSSProperties = {
   padding: "11px 16px",
   fontSize: 14,
   fontWeight: 800,
-  cursor: "pointer",
 };
 
 const secondaryLink: CSSProperties = {

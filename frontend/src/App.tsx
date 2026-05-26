@@ -15,10 +15,12 @@ import ComptaMouvements from "./pages/compta/ComptaMouvements";
 import ComptaStats from "./pages/compta/ComptaStats";
 
 // Ressources humaines
+import RHHome from "./pages/rh/RHHome";
 import RHEmployes from "./pages/rh/RHEmployes";
 import EmployeForm from "./pages/rh/EmployeForm";
 import RHContrats from "./pages/rh/RHContrats";
 import ContratForm from "./pages/rh/ContratForm";
+
 
 // Travaux
 import TravauxDossiers from "./pages/travaux/TravauxDossiers";
@@ -26,6 +28,7 @@ import TravauxDossierForm from "./pages/travaux/TravauxDossierForm";
 import TravauxDossierDetail from "./pages/travaux/TravauxDossierDetail";
 import TravauxFournisseurs from "./pages/travaux/TravauxFournisseurs";
 import TravauxFournisseurForm from "./pages/travaux/TravauxFournisseurForm";
+
 
 // Assemblées générales
 import AGHome from "./pages/ag/AGHome";
@@ -95,6 +98,7 @@ export default function App() {
             <Route path="contrats" element={<RHContrats />} />
             <Route path="contrats/nouveau" element={<ContratForm />} />
             <Route path="contrats/:id/modifier" element={<ContratForm />} />
+            <Route path="/rh" element={<RHHome />} />
           </Route>
 
           {/* Lots */}

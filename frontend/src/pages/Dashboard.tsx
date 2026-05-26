@@ -8,9 +8,9 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
-import { APP_TEXT } from "../constants/appText";
 
-type LoadState = "idle" | "loading" | "success" | "error";
+type LoadState = "loading" | "success" | "error";
+type ToneKind = "neutral" | "success" | "info" | "warning" | "danger";
 
 type AGStatus =
   | "BROUILLON"
@@ -19,8 +19,6 @@ type AGStatus =
   | "CLOTUREE"
   | "ANNULEE"
   | "ARCHIVEE";
-
-type ToneKind = "neutral" | "success" | "info" | "warning" | "danger";
 
 type MouvementItem = {
   id: number;
@@ -66,6 +64,7 @@ type DashboardData = {
     };
     comptes?: Array<{
       compte?: string;
+      nom?: string;
       solde?: number;
     }>;
     series?: SeriesPoint[];
@@ -107,6 +106,14 @@ type StatCardProps = {
   title: string;
   value: ReactNode;
   subtitle?: string;
+  tone?: ToneKind;
+};
+
+type QuickAction = {
+  title: string;
+  text: string;
+  label: string;
+  to: string;
   tone?: ToneKind;
 };
 
@@ -186,7 +193,7 @@ function formatDate(value?: string | null) {
 }
 
 function parseNumber(value?: number | string | null) {
-  if (typeof value === "number") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
 
   if (typeof value === "string") {
     const n = Number(value);
@@ -248,6 +255,44 @@ async function getFirstSuccessful<T>(urls: string[]): Promise<T> {
   throw lastError ?? new Error("Aucun endpoint compatible.");
 }
 
+function getAGStatusLabel(status?: AGStatus) {
+  switch (status) {
+    case "BROUILLON":
+      return "Brouillon";
+    case "CONVOQUEE":
+      return "Convoquée";
+    case "OUVERTE":
+      return "Ouverte";
+    case "CLOTUREE":
+      return "Clôturée";
+    case "ARCHIVEE":
+      return "Archivée";
+    case "ANNULEE":
+      return "Annulée";
+    default:
+      return "Statut inconnu";
+  }
+}
+
+function getAGBadgeStyle(status?: AGStatus): CSSProperties {
+  switch (status) {
+    case "OUVERTE":
+      return { ...badgeBase, background: "#eff6ff", color: "#1d4ed8" };
+    case "CLOTUREE":
+      return { ...badgeBase, background: "#ecfdf5", color: "#166534" };
+    case "ARCHIVEE":
+      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
+    case "BROUILLON":
+      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
+    case "CONVOQUEE":
+      return { ...badgeBase, background: "#fef3c7", color: "#92400e" };
+    case "ANNULEE":
+      return { ...badgeBase, background: "#fee2e2", color: "#991b1b" };
+    default:
+      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
+  }
+}
+
 function StatCard({ title, value, subtitle, tone = "neutral" }: StatCardProps) {
   const palette = getTone(tone);
 
@@ -259,11 +304,16 @@ function StatCard({ title, value, subtitle, tone = "neutral" }: StatCardProps) {
         border: `1px solid ${palette.border}`,
       }}
     >
-      <div style={{ color: palette.text, fontSize: 13, fontWeight: 700 }}>{title}</div>
+      <div style={{ color: palette.text, fontSize: 13, fontWeight: 800 }}>
+        {title}
+      </div>
+
       <div style={{ ...kpiValue, color: palette.strongText }}>{value}</div>
 
       {subtitle ? (
-        <div style={{ ...mutedText, marginTop: 8, color: palette.text }}>{subtitle}</div>
+        <div style={{ ...mutedText, marginTop: 8, color: palette.text }}>
+          {subtitle}
+        </div>
       ) : null}
     </div>
   );
@@ -286,10 +336,20 @@ function EmptyState({
         padding: 28,
       }}
     >
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>{title}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: "#111827" }}>
+        {title}
+      </div>
 
       {description ? (
-        <div style={{ ...mutedText, marginTop: 8, maxWidth: 520, marginInline: "auto" }}>
+        <div
+          style={{
+            ...mutedText,
+            marginTop: 8,
+            maxWidth: 560,
+            marginInline: "auto",
+            lineHeight: 1.6,
+          }}
+        >
           {description}
         </div>
       ) : null}
@@ -299,60 +359,80 @@ function EmptyState({
   );
 }
 
-function getAGBadgeStyle(status?: AGStatus): CSSProperties {
-  switch (status) {
-    case "OUVERTE":
-      return { ...badgeBase, background: "#eff6ff", color: "#1d4ed8" };
-    case "CLOTUREE":
-      return { ...badgeBase, background: "#ecfdf5", color: "#166534" };
-    case "ARCHIVEE":
-      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
-    case "BROUILLON":
-      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
-    case "CONVOQUEE":
-      return { ...badgeBase, background: "#fef3c7", color: "#92400e" };
-    case "ANNULEE":
-      return { ...badgeBase, background: "#fee2e2", color: "#991b1b" };
-    default:
-      return { ...badgeBase, background: "#f3f4f6", color: "#374151" };
-  }
+function SectionHeader(props: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div style={rowBetween}>
+      <div>
+        <h2 style={sectionTitle}>{props.title}</h2>
+        {props.subtitle ? <p style={sectionSubtle}>{props.subtitle}</p> : null}
+      </div>
+
+      {props.action}
+    </div>
+  );
 }
 
-function getAGStatusLabel(status?: AGStatus) {
-  switch (status) {
-    case "BROUILLON":
-      return APP_TEXT.statuses.ag.draft;
-    case "CONVOQUEE":
-      return APP_TEXT.statuses.ag.convened;
-    case "OUVERTE":
-      return APP_TEXT.statuses.ag.open;
-    case "CLOTUREE":
-      return APP_TEXT.statuses.ag.closed;
-    case "ARCHIVEE":
-      return "Archivée";
-    case "ANNULEE":
-      return APP_TEXT.statuses.common.cancelled;
-    default:
-      return APP_TEXT.feedback.error.default;
-  }
+function QuickActionCard({ title, text, label, to, tone = "neutral" }: QuickAction) {
+  const navigate = useNavigate();
+  const palette = getTone(tone);
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${palette.border}`,
+        borderRadius: 18,
+        padding: 16,
+        background: "#ffffff",
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+        {title}
+      </div>
+
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+        {text}
+      </div>
+
+      <div>
+        <button
+          type="button"
+          style={{
+            ...softButton,
+            background: palette.softBg,
+            color: palette.strongText,
+            border: `1px solid ${palette.border}`,
+          }}
+          onClick={() => navigate(to)}
+        >
+          {label}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const [state, setState] = useState<LoadState>("idle");
+  const [state, setState] = useState<LoadState>("loading");
   const [data, setData] = useState<DashboardData | null>(null);
 
-  const fetchDashboard = useCallback(async () => {
-    setState("loading");
+  const fetchDashboard = useCallback(async (showLoading = true) => {
+    if (showLoading) setState("loading");
 
     try {
       const [comptaRes, travauxRes, agRes, billingRes] = await Promise.allSettled([
         api.get("/api/compta/mouvements/dashboard/?series_days=30"),
         api.get("/api/travaux/dossiers/stats/"),
         getFirstSuccessful<DashboardData["ag"]>([
-          "/api/ag/assemblees/dashboard/",
           "/api/ag/ags/dashboard/",
+          "/api/ag/assemblees/dashboard/",
           "/api/ag/dashboard/",
         ]),
         api.get("/api/billing/dashboard/"),
@@ -404,82 +484,61 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchDashboard();
-    }, 0);
+  const timer = window.setTimeout(() => {
+    void fetchDashboard(false);
+  }, 0);
 
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [fetchDashboard]);
-
-  const comptaTotals = useMemo(() => {
-    return data?.compta?.totaux ?? {};
-  }, [data?.compta?.totaux]);
-
-  const comptaSeries = useMemo(() => {
-    return data?.compta?.series ?? [];
-  }, [data?.compta?.series]);
-
-  const mouvements = useMemo(() => {
-    return data?.compta?.derniers_mouvements ?? [];
-  }, [data?.compta?.derniers_mouvements]);
-
-  const travauxStats = useMemo(() => {
-    return data?.travaux ?? {};
-  }, [data?.travaux]);
-
-  const agStats = useMemo(() => {
-    return data?.ag ?? {};
-  }, [data?.ag]);
-
-  const billingStats = useMemo(() => {
-    return data?.billing ?? {};
-  }, [data?.billing]);
+  return () => {
+    window.clearTimeout(timer);
+  };
+}, [fetchDashboard]);
+  const comptaTotals = useMemo(() => data?.compta?.totaux ?? {}, [data?.compta?.totaux]);
+  const comptaSeries = useMemo(() => data?.compta?.series ?? [], [data?.compta?.series]);
+  const mouvements = useMemo(
+    () => data?.compta?.derniers_mouvements ?? [],
+    [data?.compta?.derniers_mouvements],
+  );
+  const travauxStats = useMemo(() => data?.travaux ?? {}, [data?.travaux]);
+  const agStats = useMemo(() => data?.ag ?? {}, [data?.ag]);
+  const billingStats = useMemo(() => data?.billing ?? {}, [data?.billing]);
 
   const dashboardCards = useMemo(
     () => [
       {
-        title: APP_TEXT.pages.dashboard.cards.comptaBalance,
+        title: "Solde comptable",
         value: formatMoney(comptaTotals.solde),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.comptaBalance,
-        tone: parseNumber(comptaTotals.solde) >= 0 ? ("success" as ToneKind) : ("danger" as ToneKind),
+        subtitle: "Solde global calculé depuis le tableau de bord comptable.",
+        tone: parseNumber(comptaTotals.solde) >= 0 ? "success" : "danger",
       },
       {
-        title: APP_TEXT.pages.dashboard.cards.unreconciledEntries,
+        title: "Écritures non rapprochées",
         value: parseNumber(comptaTotals.nb_non_rapproches ?? 0),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.unreconciledEntries,
-        tone:
-          parseNumber(comptaTotals.nb_non_rapproches ?? 0) > 0
-            ? ("warning" as ToneKind)
-            : ("success" as ToneKind),
+        subtitle: "Lignes bancaires ou mouvements restant à vérifier.",
+        tone: parseNumber(comptaTotals.nb_non_rapproches ?? 0) > 0 ? "warning" : "success",
       },
       {
-        title: APP_TEXT.pages.dashboard.cards.travauxFiles,
+        title: "Dossiers travaux",
         value: parseNumber(travauxStats.total ?? 0),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.travauxFiles,
-        tone: "neutral" as ToneKind,
+        subtitle: "Nombre de dossiers de travaux suivis dans l’application.",
+        tone: "info",
       },
       {
-        title: APP_TEXT.pages.dashboard.cards.assemblies,
+        title: "Assemblées générales",
         value: parseNumber(agStats.total ?? 0),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.assemblies,
-        tone: "info" as ToneKind,
+        subtitle: "Assemblées préparées, ouvertes, clôturées ou archivées.",
+        tone: "neutral",
       },
       {
-        title: APP_TEXT.pages.dashboard.cards.invoices,
+        title: "Factures",
         value: parseNumber(billingStats.total_factures ?? 0),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.invoices,
-        tone: "neutral" as ToneKind,
+        subtitle: "Factures disponibles dans le module Facturation.",
+        tone: "neutral",
       },
       {
-        title: APP_TEXT.pages.dashboard.cards.unpaidAmount,
+        title: "Montant impayé",
         value: formatMoney(billingStats.montant_impaye),
-        subtitle: APP_TEXT.pages.dashboard.cardsSubtitles.unpaidAmount,
-        tone:
-          parseNumber(billingStats.montant_impaye ?? 0) > 0
-            ? ("warning" as ToneKind)
-            : ("success" as ToneKind),
+        subtitle: "Montant non réglé côté facturation, si le module est branché.",
+        tone: parseNumber(billingStats.montant_impaye ?? 0) > 0 ? "warning" : "success",
       },
     ],
     [
@@ -506,12 +565,71 @@ export default function Dashboard() {
     };
   }, [comptaSeries]);
 
-  if (state === "loading" || state === "idle") {
+  const quickActions: QuickAction[] = [
+    {
+      title: "Comptabilité",
+      text: "Suivre les mouvements, les imports bancaires, les rapprochements et les indicateurs financiers.",
+      label: "Ouvrir Comptabilité",
+      to: "/compta",
+      tone: "success",
+    },
+    {
+      title: "Relances",
+      text: "Piloter les dossiers impayés, les relances envoyées et les avis de régularisation.",
+      label: "Ouvrir Relances",
+      to: "/relances",
+      tone: "warning",
+    },
+    {
+      title: "Assemblées générales",
+      text: "Gérer les présences, résolutions, votes, procès-verbaux et signatures.",
+      label: "Ouvrir AG",
+      to: "/ag",
+      tone: "info",
+    },
+    {
+      title: "Travaux",
+      text: "Suivre les dossiers de travaux, budgets, validations AG et prestataires.",
+      label: "Ouvrir Travaux",
+      to: "/travaux",
+      tone: "neutral",
+    },
+    {
+      title: "Ressources humaines",
+      text: "Consulter les employés, contrats et informations RH opérationnelles.",
+      label: "Ouvrir RH",
+      to: "/rh",
+      tone: "info",
+    },
+    {
+      title: "Lots",
+      text: "Gérer les lots de la copropriété, base des tantièmes, présences et votes.",
+      label: "Ouvrir Lots",
+      to: "/lots",
+      tone: "success",
+    },
+    {
+      title: "Facturation",
+      text: "Préparer les factures, l’abonnement et la future couche économique SaaS.",
+      label: "Ouvrir Facturation",
+      to: "/billing",
+      tone: "warning",
+    },
+    {
+      title: "Plateforme",
+      text: "Accéder au back-office Super Admin pour la supervision SaaS future.",
+      label: "Ouvrir Plateforme",
+      to: "/platform-admin",
+      tone: "neutral",
+    },
+  ];
+
+  if (state === "loading") {
     return (
       <div style={pageWrap}>
         <EmptyState
-          title={APP_TEXT.feedback.loading.default}
-          description={APP_TEXT.pages.dashboard.subtitle}
+          title="Chargement du tableau de bord"
+          description="Récupération des indicateurs disponibles pour la copropriété active."
         />
       </div>
     );
@@ -521,11 +639,11 @@ export default function Dashboard() {
     return (
       <div style={pageWrap}>
         <EmptyState
-          title={APP_TEXT.feedback.error.load}
-          description={APP_TEXT.feedback.error.default}
+          title="Chargement impossible"
+          description="Aucun indicateur global n’a pu être récupéré. Vérifiez le backend, le token et la copropriété active."
           action={
             <button type="button" style={primaryButton} onClick={() => void fetchDashboard()}>
-              {APP_TEXT.actions.retry}
+              Réessayer
             </button>
           }
         />
@@ -546,18 +664,19 @@ export default function Dashboard() {
                 marginBottom: 14,
               }}
             >
-              {APP_TEXT.pages.dashboard.heroBadge}
+              Vue d’ensemble produit
             </div>
 
             <h1
               style={{
                 margin: 0,
-                fontSize: 30,
+                fontSize: 32,
                 lineHeight: 1.15,
-                fontWeight: 800,
+                fontWeight: 900,
               }}
             >
-              {APP_TEXT.pages.dashboard.title}
+              Pilotez votre copropriété depuis un cockpit clair, centralisé et
+              commercialisable.
             </h1>
 
             <p
@@ -568,17 +687,19 @@ export default function Dashboard() {
                 lineHeight: 1.6,
               }}
             >
-              {APP_TEXT.pages.dashboard.subtitle}
+              Retrouvez les indicateurs comptables, travaux, assemblées,
+              facturation et les accès rapides vers les modules consolidés :
+              RH, Lots, Facturation et Super Admin.
             </p>
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button type="button" style={softButton} onClick={() => void fetchDashboard()}>
-              {APP_TEXT.actions.refresh}
+              Actualiser
             </button>
 
             <button type="button" style={primaryButton} onClick={() => navigate("/compta")}>
-              {APP_TEXT.actions.viewDetails}
+              Voir Comptabilité
             </button>
           </div>
         </div>
@@ -592,42 +713,60 @@ export default function Dashboard() {
               title={item.title}
               value={item.value}
               subtitle={item.subtitle}
-              tone={item.tone}
+              tone={item.tone as ToneKind}
             />
           ))}
         </div>
       </section>
 
+      <section>
+        <div style={cardStyle}>
+          <SectionHeader
+            title="Accès rapides"
+            subtitle="Ouvrez rapidement les modules principaux de l’application."
+          />
+
+          <div className="dashboard-quick-grid" style={quickGrid}>
+            {quickActions.map((item) => (
+              <QuickActionCard key={item.to} {...item} />
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="dashboard-grid-large" style={sectionGridTwo}>
         <div style={cardStyle}>
-          <div style={rowBetween}>
-            <div>
-              <h2 style={sectionTitle}>{APP_TEXT.pages.dashboard.blocks.comptaTrendTitle}</h2>
-              <p style={sectionSubtle}>{APP_TEXT.pages.dashboard.blocks.comptaTrendSubtitle}</p>
-            </div>
-          </div>
+          <SectionHeader
+            title="Synthèse comptable"
+            subtitle="Lecture consolidée des crédits, débits et solde net sur la période disponible."
+            action={
+              <button type="button" style={softButton} onClick={() => navigate("/compta/stats")}>
+                Voir les statistiques
+              </button>
+            }
+          />
 
           {!seriesSummary ? (
             <div style={{ marginTop: 16 }}>
               <EmptyState
-                title={APP_TEXT.feedback.empty.default}
-                description={APP_TEXT.pages.dashboard.blocks.comptaTrendEmptyDescription}
+                title="Aucune série disponible"
+                description="Les indicateurs comptables seront affichés dès que les séries seront disponibles."
               />
             </div>
           ) : (
             <div style={{ ...gridCards, marginTop: 18 }}>
               <StatCard
-                title={APP_TEXT.pages.dashboard.blocks.cumulativeCredits}
+                title="Crédits cumulés"
                 value={formatMoney(seriesSummary.credits)}
                 tone="success"
               />
               <StatCard
-                title={APP_TEXT.pages.dashboard.blocks.cumulativeDebits}
+                title="Débits cumulés"
                 value={formatMoney(seriesSummary.debits)}
                 tone="danger"
               />
               <StatCard
-                title={APP_TEXT.pages.dashboard.blocks.cumulativeNet}
+                title="Net cumulé"
                 value={formatMoney(seriesSummary.cumulNet)}
                 tone={seriesSummary.cumulNet >= 0 ? "info" : "danger"}
               />
@@ -636,35 +775,34 @@ export default function Dashboard() {
         </div>
 
         <div style={cardStyle}>
-          <div style={rowBetween}>
-            <div>
-              <h2 style={sectionTitle}>{APP_TEXT.pages.dashboard.blocks.travauxTitle}</h2>
-              <p style={sectionSubtle}>{APP_TEXT.pages.dashboard.blocks.travauxSubtitle}</p>
-            </div>
-
-            <button type="button" style={softButton} onClick={() => navigate("/travaux")}>
-              {APP_TEXT.actions.viewDetails}
-            </button>
-          </div>
+          <SectionHeader
+            title="Travaux"
+            subtitle="Dossiers, validations, paiements et reste à payer."
+            action={
+              <button type="button" style={softButton} onClick={() => navigate("/travaux")}>
+                Voir Travaux
+              </button>
+            }
+          />
 
           <div style={{ ...listStyle, marginTop: 18 }}>
             <div style={{ ...listItemStyle, background: "#ecfdf5", border: "1px solid #86efac" }}>
-              <span>{APP_TEXT.pages.dashboard.blocks.validatedFiles}</span>
+              <span>Dossiers validés</span>
               <strong style={{ color: "#14532d" }}>{parseNumber(travauxStats.valides ?? 0)}</strong>
             </div>
 
             <div style={{ ...listItemStyle, background: "#eff6ff", border: "1px solid #93c5fd" }}>
-              <span>{APP_TEXT.pages.dashboard.blocks.closedFiles}</span>
+              <span>Dossiers clôturés</span>
               <strong style={{ color: "#1e3a8a" }}>{parseNumber(travauxStats.clotures ?? 0)}</strong>
             </div>
 
             <div style={{ ...listItemStyle, background: "#ecfdf5", border: "1px solid #86efac" }}>
-              <span>{APP_TEXT.pages.dashboard.blocks.paidTotal}</span>
+              <span>Total payé</span>
               <strong style={{ color: "#14532d" }}>{formatMoney(travauxStats.total_paye)}</strong>
             </div>
 
             <div style={{ ...listItemStyle, background: "#fffbeb", border: "1px solid #fcd34d" }}>
-              <span>{APP_TEXT.pages.dashboard.blocks.remainingToPay}</span>
+              <span>Reste à payer</span>
               <strong style={{ color: "#78350f" }}>{formatMoney(travauxStats.reste_a_payer)}</strong>
             </div>
           </div>
@@ -673,22 +811,21 @@ export default function Dashboard() {
 
       <section className="dashboard-grid-equal" style={sectionGridEqual}>
         <div style={cardStyle}>
-          <div style={rowBetween}>
-            <div>
-              <h2 style={sectionTitle}>{APP_TEXT.pages.dashboard.blocks.recentActivityTitle}</h2>
-              <p style={sectionSubtle}>{APP_TEXT.pages.dashboard.blocks.recentActivitySubtitle}</p>
-            </div>
-
-            <button type="button" style={softButton} onClick={() => navigate("/compta/mouvements")}>
-              {APP_TEXT.actions.viewDetails}
-            </button>
-          </div>
+          <SectionHeader
+            title="Activité comptable récente"
+            subtitle="Derniers mouvements chargés depuis le module Comptabilité."
+            action={
+              <button type="button" style={softButton} onClick={() => navigate("/compta/mouvements")}>
+                Voir les mouvements
+              </button>
+            }
+          />
 
           {!mouvements.length ? (
             <div style={{ marginTop: 18 }}>
               <EmptyState
-                title={APP_TEXT.pages.dashboard.blocks.recentActivityEmptyTitle}
-                description={APP_TEXT.pages.dashboard.blocks.recentActivityEmptyDescription}
+                title="Aucun mouvement récent"
+                description="Les derniers mouvements apparaîtront ici après import ou saisie comptable."
               />
             </div>
           ) : (
@@ -709,7 +846,7 @@ export default function Dashboard() {
                     <div style={{ minWidth: 0 }}>
                       <div
                         style={{
-                          fontWeight: 700,
+                          fontWeight: 800,
                           color: "#111827",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -721,9 +858,7 @@ export default function Dashboard() {
 
                       <div style={{ ...mutedText, marginTop: 4 }}>
                         {formatDate(item.date_operation)}
-                        {isReconciled
-                          ? ` • ${APP_TEXT.statuses.compta.reconciled}`
-                          : ` • ${APP_TEXT.statuses.compta.unreconciled}`}
+                        {isReconciled ? " • Rapproché" : " • Non rapproché"}
                       </div>
                     </div>
 
@@ -735,14 +870,12 @@ export default function Dashboard() {
                           color: isReconciled ? "#166534" : "#92400e",
                         }}
                       >
-                        {isReconciled
-                          ? APP_TEXT.statuses.compta.reconciled
-                          : APP_TEXT.statuses.compta.unreconciled}
+                        {isReconciled ? "Rapproché" : "À traiter"}
                       </span>
 
                       <div
                         style={{
-                          fontWeight: 800,
+                          fontWeight: 900,
                           color: isCredit ? "#166534" : "#991b1b",
                           whiteSpace: "nowrap",
                         }}
@@ -758,22 +891,21 @@ export default function Dashboard() {
         </div>
 
         <div style={cardStyle}>
-          <div style={rowBetween}>
-            <div>
-              <h2 style={sectionTitle}>{APP_TEXT.pages.dashboard.blocks.agTitle}</h2>
-              <p style={sectionSubtle}>{APP_TEXT.pages.dashboard.blocks.agSubtitle}</p>
-            </div>
-
-            <button type="button" style={softButton} onClick={() => navigate("/ag")}>
-              {APP_TEXT.actions.viewDetails}
-            </button>
-          </div>
+          <SectionHeader
+            title="Assemblées générales"
+            subtitle="Dernières assemblées disponibles et état du procès-verbal."
+            action={
+              <button type="button" style={softButton} onClick={() => navigate("/ag")}>
+                Voir AG
+              </button>
+            }
+          />
 
           {!agStats.recentes?.length ? (
             <div style={{ marginTop: 18 }}>
               <EmptyState
-                title={APP_TEXT.feedback.empty.default}
-                description={APP_TEXT.pages.dashboard.blocks.agEmptyDescription}
+                title="Aucune assemblée récente"
+                description="Les assemblées récentes apparaîtront ici dès que le dashboard AG sera disponible."
               />
             </div>
           ) : (
@@ -783,7 +915,7 @@ export default function Dashboard() {
                   <div style={{ minWidth: 0 }}>
                     <div
                       style={{
-                        fontWeight: 700,
+                        fontWeight: 800,
                         color: "#111827",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -804,15 +936,15 @@ export default function Dashboard() {
 
                     {ag.pv_locked ? (
                       <span style={{ ...badgeBase, background: "#ede9fe", color: "#6d28d9" }}>
-                        {APP_TEXT.pages.dashboard.pv.locked}
+                        PV verrouillé
                       </span>
                     ) : ag.pv_signe ? (
                       <span style={{ ...badgeBase, background: "#e0f2fe", color: "#0369a1" }}>
-                        {APP_TEXT.pages.dashboard.pv.signed}
+                        PV signé
                       </span>
                     ) : ag.pv_genere ? (
                       <span style={{ ...badgeBase, background: "#fef3c7", color: "#92400e" }}>
-                        {APP_TEXT.pages.dashboard.pv.generated}
+                        PV généré
                       </span>
                     ) : null}
                   </div>
@@ -825,35 +957,34 @@ export default function Dashboard() {
 
       <section>
         <div style={cardStyle}>
-          <div style={rowBetween}>
-            <div>
-              <h2 style={sectionTitle}>{APP_TEXT.pages.dashboard.blocks.billingTitle}</h2>
-              <p style={sectionSubtle}>{APP_TEXT.pages.dashboard.blocks.billingSubtitle}</p>
-            </div>
-
-            <button type="button" style={softButton} onClick={() => navigate("/billing")}>
-              {APP_TEXT.actions.viewDetails}
-            </button>
-          </div>
+          <SectionHeader
+            title="Facturation et vision SaaS"
+            subtitle="Lecture provisoire des indicateurs de facturation, abonnement et supervision plateforme."
+            action={
+              <button type="button" style={softButton} onClick={() => navigate("/billing")}>
+                Voir Facturation
+              </button>
+            }
+          />
 
           <div style={{ ...gridCards, marginTop: 18 }}>
             <StatCard
-              title={APP_TEXT.pages.dashboard.blocks.totalAmount}
+              title="Montant facturé"
               value={formatMoney(billingStats.montant_total)}
               tone="neutral"
             />
             <StatCard
-              title={APP_TEXT.pages.dashboard.blocks.paidAmount}
+              title="Montant payé"
               value={formatMoney(billingStats.montant_paye)}
               tone="success"
             />
             <StatCard
-              title={APP_TEXT.pages.dashboard.blocks.unpaidAmount}
+              title="Montant impayé"
               value={formatMoney(billingStats.montant_impaye)}
               tone={parseNumber(billingStats.montant_impaye ?? 0) > 0 ? "warning" : "success"}
             />
             <StatCard
-              title={APP_TEXT.pages.dashboard.blocks.overdueInvoices}
+              title="Factures en retard"
               value={parseNumber(billingStats.en_retard ?? 0)}
               tone={parseNumber(billingStats.en_retard ?? 0) > 0 ? "danger" : "success"}
             />
@@ -865,6 +996,18 @@ export default function Dashboard() {
         @media (max-width: 1100px) {
           .dashboard-grid-large,
           .dashboard-grid-equal {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .dashboard-quick-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+
+        @media (max-width: 680px) {
+          .dashboard-quick-grid {
             grid-template-columns: 1fr !important;
           }
         }
@@ -895,6 +1038,13 @@ const gridCards: CSSProperties = {
   gap: 16,
 };
 
+const quickGrid: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 12,
+  marginTop: 18,
+};
+
 const sectionGridTwo: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 0.9fr)",
@@ -913,11 +1063,12 @@ const cardStyle: CSSProperties = {
   borderRadius: 20,
   padding: 18,
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.06)",
+  minWidth: 0,
 };
 
 const sectionTitle: CSSProperties = {
   fontSize: 18,
-  fontWeight: 700,
+  fontWeight: 900,
   color: "#111827",
   margin: 0,
 };
@@ -926,6 +1077,7 @@ const sectionSubtle: CSSProperties = {
   margin: "6px 0 0",
   color: "#6b7280",
   fontSize: 14,
+  lineHeight: 1.5,
 };
 
 const rowBetween: CSSProperties = {
@@ -938,7 +1090,7 @@ const rowBetween: CSSProperties = {
 
 const kpiValue: CSSProperties = {
   fontSize: 28,
-  fontWeight: 800,
+  fontWeight: 900,
   marginTop: 8,
 };
 
@@ -954,7 +1106,7 @@ const badgeBase: CSSProperties = {
   padding: "6px 10px",
   borderRadius: 999,
   fontSize: 12,
-  fontWeight: 700,
+  fontWeight: 800,
 };
 
 const buttonBase: CSSProperties = {
@@ -962,7 +1114,7 @@ const buttonBase: CSSProperties = {
   borderRadius: 12,
   padding: "10px 14px",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
   fontSize: 14,
 };
 

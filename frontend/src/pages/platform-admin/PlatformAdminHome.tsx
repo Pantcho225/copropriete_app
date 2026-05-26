@@ -1,11 +1,17 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
+type StatTone = "blue" | "green" | "yellow" | "neutral";
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={{ display: "grid", gap: 16 }}>{children}</div>;
 }
 
-function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function SectionTitle(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -16,7 +22,7 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
         flexWrap: "wrap",
       }}
     >
-      <div>
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
             fontSize: 30,
@@ -49,7 +55,12 @@ function SectionTitle(props: { title: string; subtitle?: string; right?: ReactNo
   );
 }
 
-function Card(props: { title: string; children: ReactNode; right?: ReactNode; minHeight?: number }) {
+function Card(props: {
+  title: string;
+  children: ReactNode;
+  right?: ReactNode;
+  minHeight?: number;
+}) {
   return (
     <div
       style={{
@@ -59,6 +70,7 @@ function Card(props: { title: string; children: ReactNode; right?: ReactNode; mi
         background: "#ffffff",
         boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
         minHeight: props.minHeight,
+        minWidth: 0,
       }}
     >
       <div
@@ -71,42 +83,93 @@ function Card(props: { title: string; children: ReactNode; right?: ReactNode; mi
           marginBottom: 14,
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>{props.title}</div>
+        <div style={{ fontSize: 15, fontWeight: 900, color: "#111827" }}>
+          {props.title}
+        </div>
+
         {props.right ? props.right : null}
       </div>
+
       {props.children}
     </div>
   );
 }
 
-function StatCard(props: { title: string; value: string; sub?: string }) {
+function StatCard(props: {
+  title: string;
+  value: string;
+  sub?: string;
+  tone?: StatTone;
+}) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<StatTone, { border: string; bg: string; accent: string }> = {
+    blue: {
+      border: "#bfdbfe",
+      bg: "#eff6ff",
+      accent: "#1d4ed8",
+    },
+    green: {
+      border: "#a7f3d0",
+      bg: "#ecfdf5",
+      accent: "#166534",
+    },
+    yellow: {
+      border: "#fde68a",
+      bg: "#fffbeb",
+      accent: "#92400e",
+    },
+    neutral: {
+      border: "#e5e7eb",
+      bg: "#ffffff",
+      accent: "#111827",
+    },
+  };
+
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
+        border: `1px solid ${toneMap[tone].border}`,
         borderRadius: 20,
         padding: 18,
-        background: "#ffffff",
+        background: toneMap[tone].bg,
         boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
         minHeight: 112,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 700 }}>
+      <div
+        style={{
+          fontSize: 13,
+          color: "#6b7280",
+          marginBottom: 10,
+          fontWeight: 700,
+        }}
+      >
         {props.title}
       </div>
+
       <div
         style={{
           fontSize: 28,
           fontWeight: 900,
           letterSpacing: -0.5,
-          color: "#111827",
+          color: toneMap[tone].accent,
           lineHeight: 1.1,
         }}
       >
         {props.value}
       </div>
+
       {props.sub ? (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#6b7280",
+            lineHeight: 1.45,
+          }}
+        >
           {props.sub}
         </div>
       ) : null}
@@ -142,7 +205,12 @@ function SmallButton(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <div
       style={{
@@ -152,10 +220,21 @@ function EmptyState(props: { title: string; text: string; actionLabel?: string; 
         background: "#f9fafb",
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 800, color: "#111827", marginBottom: 6 }}>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 800,
+          color: "#111827",
+          marginBottom: 6,
+        }}
+      >
         {props.title}
       </div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+        {props.text}
+      </div>
+
       {props.actionLabel && props.onAction ? (
         <div style={{ marginTop: 12 }}>
           <SmallButton onClick={props.onAction} primary>
@@ -182,10 +261,17 @@ function QuickActionCard(props: {
         background: "#ffffff",
         display: "grid",
         gap: 10,
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>{props.title}</div>
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>{props.text}</div>
+      <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+        {props.title}
+      </div>
+
+      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+        {props.text}
+      </div>
+
       <div>
         <SmallButton onClick={props.onAction} primary>
           {props.actionLabel}
@@ -195,7 +281,38 @@ function QuickActionCard(props: {
   );
 }
 
-function Badge(props: { text: string }) {
+function Badge(props: {
+  text: string;
+  tone?: "neutral" | "blue" | "green" | "yellow";
+}) {
+  const tone = props.tone ?? "neutral";
+
+  const toneMap: Record<
+    NonNullable<typeof props.tone>,
+    { background: string; border: string; color: string }
+  > = {
+    neutral: {
+      background: "#f3f4f6",
+      border: "#e5e7eb",
+      color: "#374151",
+    },
+    blue: {
+      background: "#eff6ff",
+      border: "#bfdbfe",
+      color: "#1d4ed8",
+    },
+    green: {
+      background: "#ecfdf5",
+      border: "#a7f3d0",
+      color: "#166534",
+    },
+    yellow: {
+      background: "#fffbeb",
+      border: "#fde68a",
+      color: "#92400e",
+    },
+  };
+
   return (
     <span
       style={{
@@ -206,14 +323,23 @@ function Badge(props: { text: string }) {
         borderRadius: 999,
         fontSize: 12,
         fontWeight: 700,
-        border: "1px solid #e5e7eb",
-        background: "#f3f4f6",
-        color: "#374151",
+        border: `1px solid ${toneMap[tone].border}`,
+        background: toneMap[tone].background,
+        color: toneMap[tone].color,
         whiteSpace: "nowrap",
       }}
     >
       {props.text}
     </span>
+  );
+}
+
+function InfoBox(props: { title: string; children: ReactNode }) {
+  return (
+    <div style={infoBox}>
+      <div style={infoTitle}>{props.title}</div>
+      <div style={infoText}>{props.children}</div>
+    </div>
   );
 }
 
@@ -224,10 +350,13 @@ export default function PlatformAdminHome() {
     <PageShell>
       <SectionTitle
         title="Administration plateforme"
-        subtitle="Supervisez la plateforme, les copropriétés, les accès principaux et les futurs rôles Super Admin depuis une interface React dédiée à l’exploitation produit."
+        subtitle="Supervisez les copropriétés, les accès principaux, les affectations de rôles et les futurs indicateurs SaaS depuis une interface React dédiée au Super Admin."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <SmallButton onClick={() => navigate("/")}>Retour au tableau de bord</SmallButton>
+            <SmallButton onClick={() => navigate("/")}>
+              Retour au tableau de bord
+            </SmallButton>
+
             <SmallButton onClick={() => navigate("/platform-admin")} primary>
               Rafraîchir la vue
             </SmallButton>
@@ -239,50 +368,66 @@ export default function PlatformAdminHome() {
         <StatCard
           title="Copropriétés"
           value="—"
-          sub="Le nombre de copropriétés supervisées apparaîtra ici après branchement."
+          sub="Nombre de copropriétés supervisées par la plateforme."
+          tone="blue"
         />
+
         <StatCard
-          title="Administrateurs affectés"
+          title="Rôles principaux"
           value="—"
-          sub="Les rôles principaux gérés au niveau plateforme seront consolidés ici."
+          sub="Administrateurs, syndics et gestionnaires affectés."
+          tone="green"
         />
+
         <StatCard
-          title="Modules supervisés"
-          value="—"
-          sub="Cette carte permettra de suivre l’exposition fonctionnelle globale."
+          title="Supervision"
+          value="Prévue"
+          sub="Base fonctionnelle destinée au pilotage global du SaaS."
+          tone="yellow"
         />
+
         <StatCard
-          title="Actions plateforme"
-          value="—"
-          sub="Les opérations de supervision et d’affectation seront visibles dans cet espace."
+          title="Exploitation"
+          value="React"
+          sub="L’exploitation normale ne dépendra pas du Django Admin."
+          tone="neutral"
         />
       </div>
 
       <div className="platform-main-grid">
-        <Card title="Vue produit du module" right={<Badge text="Module branché" />} minHeight={250}>
+        <Card
+          title="Vision produit du module"
+          right={<Badge text="Back-office Super Admin" tone="blue" />}
+          minHeight={250}
+        >
           <div style={{ display: "grid", gap: 14 }}>
             <div style={paragraph}>
-              L’administration plateforme doit vivre côté frontend React et non dépendre du Django
-              Admin pour l’exploitation normale. Cette page constitue le point d’entrée officiel
-              du futur back-office Super Admin.
+              L’administration plateforme doit devenir le point d’entrée officiel
+              du Super Admin pour piloter le logiciel en mode SaaS. Le Django
+              Admin doit rester un outil technique de secours, pas l’interface
+              d’exploitation normale.
             </div>
 
-            <div style={paragraph}>À terme, ce module doit permettre de :</div>
+            <div style={paragraph}>À terme, ce module devra permettre de :</div>
 
             <div style={bulletList}>
-              <div style={bulletItem}>• créer et superviser les copropriétés</div>
-              <div style={bulletItem}>• affecter les rôles principaux</div>
-              <div style={bulletItem}>• suivre l’activité globale de la plateforme</div>
-              <div style={bulletItem}>• offrir une base premium d’exploitation SaaS</div>
-              <div style={bulletItem}>• éviter la dépendance au Django Admin en usage courant</div>
+              <div style={bulletItem}>• créer et consulter les copropriétés clientes</div>
+              <div style={bulletItem}>• affecter les administrateurs, syndics et gestionnaires</div>
+              <div style={bulletItem}>• superviser l’activité globale de la plateforme</div>
+              <div style={bulletItem}>• suivre les statuts d’abonnement et de facturation</div>
+              <div style={bulletItem}>• préparer l’exploitation commerciale du produit</div>
             </div>
           </div>
         </Card>
 
-        <Card title="État actuel" minHeight={250} right={<Badge text="Pré-intégration UI OK" />}>
+        <Card
+          title="État actuel"
+          minHeight={250}
+          right={<Badge text="Pré-intégration UI OK" tone="green" />}
+        >
           <EmptyState
-            title="Back-office à construire"
-            text="Le module est maintenant visible dans la navigation principale et le tableau de bord. La prochaine étape consiste à raccorder les écrans métier de supervision plateforme."
+            title="Back-office métier à construire"
+            text="Le module est visible dans la navigation principale. La prochaine étape consistera à créer les écrans réels : copropriétés, affectations de rôles, supervision plateforme et indicateurs SaaS."
             actionLabel="Retour au tableau de bord"
             onAction={() => navigate("/")}
           />
@@ -292,29 +437,51 @@ export default function PlatformAdminHome() {
       <Card title="Accès rapides Administration plateforme" minHeight={120}>
         <div className="platform-quick-grid">
           <QuickActionCard
-            title="Revenir au tableau de bord"
+            title="Tableau de bord"
             text="Accédez rapidement à la vue de pilotage globale de la copropriété active."
             actionLabel="Ouvrir le tableau de bord"
             onAction={() => navigate("/")}
           />
+
           <QuickActionCard
-            title="Voir les travaux"
-            text="Consultez le module Travaux tel qu’il apparaît actuellement dans le produit."
-            actionLabel="Ouvrir Travaux"
-            onAction={() => navigate("/travaux/dossiers")}
-          />
-          <QuickActionCard
-            title="Voir les RH"
-            text="Consultez les écrans RH consolidés pendant la phase de cohérence produit."
-            actionLabel="Ouvrir RH"
-            onAction={() => navigate("/rh/employes")}
-          />
-          <QuickActionCard
-            title="Voir la facturation"
-            text="Passez rapidement au module Facturation pour garder une vue transverse."
+            title="Facturation"
+            text="Consultez la couche économique déjà préparée pour les factures et les abonnements."
             actionLabel="Ouvrir Facturation"
             onAction={() => navigate("/billing")}
           />
+
+          <QuickActionCard
+            title="Ressources humaines"
+            text="Consultez les écrans RH consolidés pendant la phase de cohérence produit."
+            actionLabel="Ouvrir RH"
+            onAction={() => navigate("/rh")}
+          />
+
+          <QuickActionCard
+            title="Lots"
+            text="Consultez le référentiel des lots, utile pour la cohérence métier transverse."
+            actionLabel="Ouvrir Lots"
+            onAction={() => navigate("/lots")}
+          />
+        </div>
+      </Card>
+
+      <Card title="Prochaine structuration métier" minHeight={120}>
+        <div className="platform-info-grid">
+          <InfoBox title="Copropriétés">
+            Création, consultation, édition et supervision des copropriétés
+            clientes directement depuis le frontend React.
+          </InfoBox>
+
+          <InfoBox title="Affectations">
+            Affectation des rôles principaux : administrateur de copropriété,
+            syndic, gestionnaire ou responsable local.
+          </InfoBox>
+
+          <InfoBox title="Supervision SaaS">
+            Suivi global des modules, de la facturation, des accès et des
+            indicateurs d’exploitation plateforme.
+          </InfoBox>
         </div>
       </Card>
 
@@ -337,9 +504,19 @@ export default function PlatformAdminHome() {
           gap: 12px;
         }
 
+        .platform-info-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+        }
+
         @media (max-width: 1280px) {
           .platform-quick-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .platform-info-grid {
+            grid-template-columns: 1fr;
           }
         }
 
@@ -381,5 +558,25 @@ const bulletList: CSSProperties = {
 const bulletItem: CSSProperties = {
   fontSize: 14,
   color: "#374151",
+  lineHeight: 1.55,
+};
+
+const infoBox: CSSProperties = {
+  padding: 14,
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+};
+
+const infoTitle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#111827",
+  marginBottom: 6,
+};
+
+const infoText: CSSProperties = {
+  fontSize: 13,
+  color: "#64748b",
   lineHeight: 1.55,
 };
