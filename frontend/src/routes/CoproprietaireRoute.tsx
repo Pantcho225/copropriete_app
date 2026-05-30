@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 
 import { getAuthMe, type AuthMeResponse } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
-
-type ProtectedRouteProps = {
-  children?: ReactNode;
-};
 
 type RouteState = {
   loading: boolean;
@@ -14,7 +10,7 @@ type RouteState = {
   error: string | null;
 };
 
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+export default function CoproprietaireRoute() {
   const access = useAuthStore((state) => state.access);
 
   const [state, setState] = useState<RouteState>({
@@ -47,14 +43,14 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
           error: null,
         });
       } catch (error) {
-        console.error("Erreur ProtectedRoute /api/auth/me/", error);
+        console.error("Erreur chargement /api/auth/me/", error);
 
         if (!mounted) return;
 
         setState({
           loading: false,
           me: null,
-          error: "Session invalide ou profil introuvable.",
+          error: "Impossible de vérifier votre profil.",
         });
       }
     }
@@ -66,19 +62,13 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     };
   }, [access]);
 
-  const hasAdminAccess = useMemo(() => {
+  const isCoproprietaire = useMemo(() => {
     if (!state.me) return false;
 
-    const roles = state.me.roles ?? [];
-
-    const isOnlyCoproprietaire =
-      roles.length > 0 && roles.every((role) => role === "COPROPRIETAIRE");
-
     return (
-      state.me.is_admin === true ||
-      state.me.is_superuser === true ||
-      state.me.user.is_staff === true ||
-      !isOnlyCoproprietaire
+      state.me.is_coproprietaire === true ||
+      state.me.roles.includes("COPROPRIETAIRE") ||
+      state.me.memberships.some((membership) => membership.role === "COPROPRIETAIRE")
     );
   }, [state.me]);
 
@@ -91,9 +81,9 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       <div style={styles.page}>
         <div style={styles.card}>
           <div style={styles.spinner} />
-          <p style={styles.title}>Vérification de votre session...</p>
+          <p style={styles.title}>Vérification de votre espace...</p>
           <p style={styles.text}>
-            Nous contrôlons vos droits d’accès avant d’ouvrir l’espace administrateur.
+            Nous contrôlons vos droits d’accès avant d’ouvrir l’espace copropriétaire.
           </p>
         </div>
       </div>
@@ -101,18 +91,35 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (state.error || !state.me) {
-    return <Navigate to="/login" replace />;
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <p style={styles.title}>Accès impossible</p>
+          <p style={styles.text}>{state.error ?? "Profil introuvable."}</p>
+        </div>
+      </div>
+    );
   }
 
   if (state.me.must_change_password) {
     return <Navigate to="/change-password" replace />;
   }
 
-  if (!hasAdminAccess) {
-    return <Navigate to="/coproprietaire" replace />;
+  if (!isCoproprietaire) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <p style={styles.title}>Espace réservé aux copropriétaires</p>
+          <p style={styles.text}>
+            Votre compte ne possède pas le rôle COPROPRIETAIRE. Connectez-vous avec un compte
+            copropriétaire valide.
+          </p>
+        </div>
+      </div>
+    );
   }
 
-  return children ? <>{children}</> : <Outlet />;
+  return <Outlet />;
 }
 
 const styles: Record<string, CSSProperties> = {

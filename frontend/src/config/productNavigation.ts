@@ -1,3 +1,5 @@
+// frontend/src/config/productNavigation.ts
+
 export type NavItem = {
   label: string;
   to: string;
@@ -72,7 +74,20 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Plateforme",
     items: [
-      { label: "Administration plateforme", to: "/platform-admin" },
+      { label: "Vue d’ensemble", to: "/platform-admin" },
+      { label: "Copropriétés", to: "/platform-admin/coproprietes" },
+      {
+        label: "Nouvelle copropriété",
+        to: "/platform-admin/coproprietes/nouveau",
+      },
+      {
+        label: "Utilisateurs & rôles",
+        to: "/platform-admin/utilisateurs-roles",
+      },
+      {
+        label: "Référentiel copropriété",
+        to: "/platform-admin/referentiel-copropriete",
+      },
     ],
   },
 ];
@@ -93,7 +108,9 @@ export function getPageTitle(pathname: string): string {
   // Relances
   if (pathname === "/relances") return "Vue d’ensemble Relances";
   if (pathname === "/relances/dossiers") return "Dossiers impayés";
-  if (pathname.startsWith("/relances/dossiers/")) return "Détail du dossier impayé";
+  if (pathname.startsWith("/relances/dossiers/")) {
+    return "Détail du dossier impayé";
+  }
   if (pathname === "/relances/historique") return "Historique des relances";
   if (pathname === "/relances/avis") return "Avis de régularisation";
 
@@ -120,16 +137,29 @@ export function getPageTitle(pathname: string): string {
   // Travaux
   if (pathname === "/travaux") return "Dossiers de travaux";
   if (pathname === "/travaux/dossiers") return "Dossiers de travaux";
-  if (pathname === "/travaux/dossiers/nouveau") return "Nouveau dossier de travaux";
-  if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
+  if (pathname === "/travaux/dossiers/nouveau") {
+    return "Nouveau dossier de travaux";
+  }
+  if (
+    pathname.startsWith("/travaux/dossiers/") &&
+    pathname.endsWith("/modifier")
+  ) {
     return "Modifier le dossier de travaux";
   }
-  if (pathname.startsWith("/travaux/dossiers/") && !pathname.endsWith("/modifier")) {
+  if (
+    pathname.startsWith("/travaux/dossiers/") &&
+    !pathname.endsWith("/modifier")
+  ) {
     return "Détail du dossier de travaux";
   }
   if (pathname === "/travaux/fournisseurs") return "Prestataires";
-  if (pathname === "/travaux/fournisseurs/nouveau") return "Nouveau prestataire";
-  if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
+  if (pathname === "/travaux/fournisseurs/nouveau") {
+    return "Nouveau prestataire";
+  }
+  if (
+    pathname.startsWith("/travaux/fournisseurs/") &&
+    pathname.endsWith("/modifier")
+  ) {
     return "Modifier un prestataire";
   }
 
@@ -142,7 +172,10 @@ export function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
     return "Présences";
   }
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/resolutions")) {
+  if (
+    pathname.startsWith("/ag/assemblees/") &&
+    pathname.endsWith("/resolutions")
+  ) {
     return "Résolutions";
   }
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/votes")) {
@@ -163,8 +196,44 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/billing/factures") return "Factures";
   if (pathname === "/billing/abonnement") return "Abonnement";
 
-  // Plateforme
-  if (pathname === "/platform-admin") return "Administration plateforme";
+  // Plateforme / Super Admin
+  if (pathname === "/platform-admin") {
+    return "Vue d’ensemble Plateforme";
+  }
+  if (pathname === "/platform-admin/coproprietes") {
+    return "Copropriétés";
+  }
+  if (pathname === "/platform-admin/coproprietes/nouveau") {
+    return "Nouvelle copropriété";
+  }
+  if (
+    pathname.startsWith("/platform-admin/coproprietes/") &&
+    pathname.endsWith("/modifier")
+  ) {
+    return "Modifier la copropriété";
+  }
+  if (
+    pathname.startsWith("/platform-admin/coproprietes/") &&
+    !pathname.endsWith("/modifier") &&
+    !pathname.endsWith("/nouveau")
+  ) {
+    return "Détail de la copropriété";
+  }
+  if (pathname === "/platform-admin/utilisateurs-roles") {
+    return "Utilisateurs & rôles";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete") {
+    return "Référentiel copropriété";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
+    return "Copropriétaires";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/lots") {
+    return "Lots du référentiel";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/tantiemes") {
+    return "Tantièmes";
+  }
 
   return "Espace de gestion";
 }
@@ -255,10 +324,16 @@ export function getPageSubtitle(pathname: string): string {
   if (pathname === "/travaux/dossiers/nouveau") {
     return "Renseignez les informations nécessaires pour enregistrer un nouveau dossier de travaux.";
   }
-  if (pathname.startsWith("/travaux/dossiers/") && pathname.endsWith("/modifier")) {
+  if (
+    pathname.startsWith("/travaux/dossiers/") &&
+    pathname.endsWith("/modifier")
+  ) {
     return "Mettez à jour les informations générales du dossier sélectionné.";
   }
-  if (pathname.startsWith("/travaux/dossiers/") && !pathname.endsWith("/modifier")) {
+  if (
+    pathname.startsWith("/travaux/dossiers/") &&
+    !pathname.endsWith("/modifier")
+  ) {
     return "Consultez la fiche détaillée du dossier, sa situation budgétaire, la résolution liée et le niveau de verrouillage.";
   }
   if (pathname === "/travaux/fournisseurs") {
@@ -267,7 +342,10 @@ export function getPageSubtitle(pathname: string): string {
   if (pathname === "/travaux/fournisseurs/nouveau") {
     return "Renseignez les informations utiles pour enregistrer un nouveau prestataire.";
   }
-  if (pathname.startsWith("/travaux/fournisseurs/") && pathname.endsWith("/modifier")) {
+  if (
+    pathname.startsWith("/travaux/fournisseurs/") &&
+    pathname.endsWith("/modifier")
+  ) {
     return "Mettez à jour les informations de la fiche prestataire sélectionnée.";
   }
 
@@ -287,7 +365,10 @@ export function getPageSubtitle(pathname: string): string {
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
     return "Gérez les présences, les tantièmes associés et la participation des lots à l’assemblée.";
   }
-  if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/resolutions")) {
+  if (
+    pathname.startsWith("/ag/assemblees/") &&
+    pathname.endsWith("/resolutions")
+  ) {
     return "Consultez et pilotez les résolutions rattachées à cette assemblée générale.";
   }
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/votes")) {
@@ -314,9 +395,43 @@ export function getPageSubtitle(pathname: string): string {
     return "Suivez le plan actif, les échéances et les informations de souscription.";
   }
 
-  // Plateforme
+  // Plateforme / Super Admin
   if (pathname === "/platform-admin") {
-    return "Supervisez la plateforme, les copropriétés et les rôles principaux depuis l’espace d’administration.";
+    return "Supervisez la plateforme, les copropriétés, les accès et les principaux éléments de pilotage SaaS.";
+  }
+  if (pathname === "/platform-admin/coproprietes") {
+    return "Créez, consultez et administrez les copropriétés gérées par la plateforme.";
+  }
+  if (pathname === "/platform-admin/coproprietes/nouveau") {
+    return "Renseignez les informations nécessaires pour créer une nouvelle copropriété depuis l’Admin React.";
+  }
+  if (
+    pathname.startsWith("/platform-admin/coproprietes/") &&
+    pathname.endsWith("/modifier")
+  ) {
+    return "Mettez à jour les informations générales, le statut et les coordonnées de la copropriété sélectionnée.";
+  }
+  if (
+    pathname.startsWith("/platform-admin/coproprietes/") &&
+    !pathname.endsWith("/modifier") &&
+    !pathname.endsWith("/nouveau")
+  ) {
+    return "Consultez la fiche de la copropriété, ses informations principales et les accès vers son référentiel.";
+  }
+  if (pathname === "/platform-admin/utilisateurs-roles") {
+    return "Gérez les rattachements utilisateurs, les rôles locaux et les accès aux copropriétés.";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete") {
+    return "Pilotez le référentiel métier : copropriétaires, lots, tantièmes et affectations nécessaires aux modules opérationnels.";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
+    return "Créez et maintenez les copropriétaires rattachés à la copropriété active.";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/lots") {
+    return "Créez et maintenez les lots de référence, leurs caractéristiques et leur rattachement à la copropriété.";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/tantiemes") {
+    return "Paramétrez les catégories et valeurs de tantièmes utilisées pour les répartitions, les votes et les appels de fonds.";
   }
 
   return "Interface de gestion de la copropriété.";

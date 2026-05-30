@@ -1,6 +1,7 @@
 # apps/ag/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .coproprietaire_views import CoproprietaireAssembleesAPIView
 
 from .views import (
     AssembleeGeneraleViewSet,
@@ -35,4 +36,9 @@ router.register(r"votes", VoteViewSet, basename="vote")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+    "coproprietaire/assemblees/",
+    CoproprietaireAssembleesAPIView.as_view(),
+    name="coproprietaire-assemblees",
+),
 ]

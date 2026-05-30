@@ -1,4 +1,4 @@
-// src/api/endpoints.ts
+// frontend/src/api/endpoints.ts
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8002";
@@ -10,6 +10,58 @@ export const ENDPOINTS = {
   login: "/api/auth/login/",
   token: "/api/auth/login/",
   refresh: "/api/auth/refresh/",
+
+  // =========================
+  // CORE / COPROPRIÉTÉS
+  // =========================
+  mesCoproprietes: "/api/core/mes-coproprietes/",
+
+  coproprietes: "/api/core/coproprietes/",
+  coproprieteDetail: (id: number | string) => `/api/core/coproprietes/${id}/`,
+  coproprieteSuspendre: (id: number | string) =>
+    `/api/core/coproprietes/${id}/suspendre/`,
+  coproprieteReactiver: (id: number | string) =>
+    `/api/core/coproprietes/${id}/reactiver/`,
+  coproprieteArchiver: (id: number | string) =>
+    `/api/core/coproprietes/${id}/archiver/`,
+  coproprieteMembres: (id: number | string) =>
+    `/api/core/coproprietes/${id}/membres/`,
+
+  // =========================
+  // CORE / MEMBRES & RÔLES
+  // =========================
+  membres: "/api/core/membres/",
+  membreDetail: (id: number | string) => `/api/core/membres/${id}/`,
+  membreActiver: (id: number | string) => `/api/core/membres/${id}/activer/`,
+  membreDesactiver: (id: number | string) =>
+    `/api/core/membres/${id}/desactiver/`,
+
+  // Ancien alias si un composant existant l'utilise encore.
+  coproMembres: "/api/core/membres/",
+
+  // =========================
+  // OWNERS / COPROPRIÉTAIRES
+  // =========================
+  coproprietaires: "/api/owners/coproprietaires/",
+  coproprietaireDetail: (id: number | string) =>
+    `/api/owners/coproprietaires/${id}/`,
+  coproprietaireActiver: (id: number | string) =>
+    `/api/owners/coproprietaires/${id}/activer/`,
+  coproprietaireDesactiver: (id: number | string) =>
+    `/api/owners/coproprietaires/${id}/desactiver/`,
+  coproprietaireLots: (id: number | string) =>
+    `/api/owners/coproprietaires/${id}/lots/`,
+
+  // =========================
+  // OWNERS / AFFECTATIONS LOTS ↔ COPROPRIÉTAIRES
+  // =========================
+  proprietairesLots: "/api/owners/proprietaires-lots/",
+  proprietaireLotDetail: (id: number | string) =>
+    `/api/owners/proprietaires-lots/${id}/`,
+  proprietaireLotCloturer: (id: number | string) =>
+    `/api/owners/proprietaires-lots/${id}/cloturer/`,
+  proprietaireLotRouvrir: (id: number | string) =>
+    `/api/owners/proprietaires-lots/${id}/rouvrir/`,
 
   // =========================
   // COMPTA — Imports / relevés
@@ -83,21 +135,43 @@ export const ENDPOINTS = {
   rhContrats: "/api/rh/contrats/",
   rhContratDetail: (id: number | string) => `/api/rh/contrats/${id}/`,
   rhContratActiver: (id: number | string) => `/api/rh/contrats/${id}/activer/`,
-  rhContratCloturer: (id: number | string) => `/api/rh/contrats/${id}/cloturer/`,
+  rhContratCloturer: (id: number | string) =>
+    `/api/rh/contrats/${id}/cloturer/`,
 
   // =========================
   // LOTS
   // =========================
   lots: "/api/lots/",
+  lotsStats: "/api/lots/stats/",
   lotDetail: (id: number | string) => `/api/lots/${id}/`,
+  lotActiver: (id: number | string) => `/api/lots/${id}/activer/`,
+  lotDesactiver: (id: number | string) => `/api/lots/${id}/desactiver/`,
+  lotTantiemesByLot: (id: number | string) => `/api/lots/${id}/tantiemes/`,
+  lotProprietaires: (id: number | string) => `/api/lots/${id}/proprietaires/`,
+
+  // =========================
+  // TANTIÈMES
+  // =========================
   tantiemeCategories: "/api/tantieme-categories/",
+  tantiemeCategorieDetail: (id: number | string) =>
+    `/api/tantieme-categories/${id}/`,
+  tantiemeCategorieActiver: (id: number | string) =>
+    `/api/tantieme-categories/${id}/activer/`,
+  tantiemeCategorieDesactiver: (id: number | string) =>
+    `/api/tantieme-categories/${id}/desactiver/`,
+  tantiemeCategorieLots: (id: number | string) =>
+    `/api/tantieme-categories/${id}/lots/`,
+
   lotTantiemes: "/api/lot-tantiemes/",
+  lotTantiemesStats: "/api/lot-tantiemes/stats/",
+  lotTantiemeDetail: (id: number | string) => `/api/lot-tantiemes/${id}/`,
 
   // =========================
   // TRAVAUX
   // =========================
   travauxDossiers: "/api/travaux/dossiers/",
-  travauxDossierDetail: (id: number | string) => `/api/travaux/dossiers/${id}/`,
+  travauxDossierDetail: (id: number | string) =>
+    `/api/travaux/dossiers/${id}/`,
   travauxDossiersStats: "/api/travaux/dossiers/stats/",
   travauxFournisseurs: "/api/travaux/fournisseurs/",
   travauxFournisseurDetail: (id: number | string) =>
@@ -141,7 +215,66 @@ export const ENDPOINTS = {
   billingDashboard: "/api/billing/dashboard/",
 
   // =========================
-  // PLATFORM
+  // PLATFORM / SUPER ADMIN
   // =========================
   platformAdminHome: "/api/platform-admin/",
+
+  platform: {
+    overview: "/api/platform-admin/",
+
+    coproprietes: "/api/core/coproprietes/",
+    coproprieteDetail: (id: number | string) => `/api/core/coproprietes/${id}/`,
+    coproprieteSuspendre: (id: number | string) =>
+      `/api/core/coproprietes/${id}/suspendre/`,
+    coproprieteReactiver: (id: number | string) =>
+      `/api/core/coproprietes/${id}/reactiver/`,
+    coproprieteArchiver: (id: number | string) =>
+      `/api/core/coproprietes/${id}/archiver/`,
+    coproprieteMembres: (id: number | string) =>
+      `/api/core/coproprietes/${id}/membres/`,
+
+    membres: "/api/core/membres/",
+    membreDetail: (id: number | string) => `/api/core/membres/${id}/`,
+    membreActiver: (id: number | string) => `/api/core/membres/${id}/activer/`,
+    membreDesactiver: (id: number | string) =>
+      `/api/core/membres/${id}/desactiver/`,
+
+    coproprietaires: "/api/owners/coproprietaires/",
+    coproprietaireDetail: (id: number | string) =>
+      `/api/owners/coproprietaires/${id}/`,
+    coproprietaireActiver: (id: number | string) =>
+      `/api/owners/coproprietaires/${id}/activer/`,
+    coproprietaireDesactiver: (id: number | string) =>
+      `/api/owners/coproprietaires/${id}/desactiver/`,
+    coproprietaireLots: (id: number | string) =>
+      `/api/owners/coproprietaires/${id}/lots/`,
+
+    lots: "/api/lots/",
+    lotsStats: "/api/lots/stats/",
+    lotDetail: (id: number | string) => `/api/lots/${id}/`,
+    lotActiver: (id: number | string) => `/api/lots/${id}/activer/`,
+    lotDesactiver: (id: number | string) => `/api/lots/${id}/desactiver/`,
+    lotTantiemesByLot: (id: number | string) => `/api/lots/${id}/tantiemes/`,
+    lotProprietaires: (id: number | string) =>
+      `/api/lots/${id}/proprietaires/`,
+
+    tantiemeCategories: "/api/tantieme-categories/",
+    tantiemeCategorieDetail: (id: number | string) =>
+      `/api/tantieme-categories/${id}/`,
+    tantiemeCategorieActiver: (id: number | string) =>
+      `/api/tantieme-categories/${id}/activer/`,
+    tantiemeCategorieDesactiver: (id: number | string) =>
+      `/api/tantieme-categories/${id}/desactiver/`,
+
+    lotTantiemes: "/api/lot-tantiemes/",
+    lotTantiemesStats: "/api/lot-tantiemes/stats/",
+
+    proprietairesLots: "/api/owners/proprietaires-lots/",
+    proprietaireLotDetail: (id: number | string) =>
+      `/api/owners/proprietaires-lots/${id}/`,
+    proprietaireLotCloturer: (id: number | string) =>
+      `/api/owners/proprietaires-lots/${id}/cloturer/`,
+    proprietaireLotRouvrir: (id: number | string) =>
+      `/api/owners/proprietaires-lots/${id}/rouvrir/`,
+  },
 } as const;

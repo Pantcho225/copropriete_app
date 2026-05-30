@@ -1,3 +1,4 @@
+// frontend/src/App.tsx
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
@@ -21,6 +22,10 @@ import EmployeForm from "./pages/rh/EmployeForm";
 import RHContrats from "./pages/rh/RHContrats";
 import ContratForm from "./pages/rh/ContratForm";
 
+// Lots
+import LotsList from "./pages/lots/LotsList";
+import LotForm from "./pages/lots/LotForm";
+
 // Travaux
 import TravauxDossiers from "./pages/travaux/TravauxDossiers";
 import TravauxDossierForm from "./pages/travaux/TravauxDossierForm";
@@ -38,24 +43,39 @@ import AGPV from "./pages/ag/AGPV";
 import AGPresences from "./pages/ag/AGPresences";
 import AGVotes from "./pages/ag/AGVotes";
 
-// Facturation
-import BillingHome from "./pages/billing/BillingHome";
-import BillingFactures from "./pages/billing/BillingFactures";
-import BillingAbonnement from "./pages/billing/BillingAbonnement";
-
-// Plateforme
-import PlatformAdminHome from "./pages/platform-admin/PlatformAdminHome";
-
-// Lots
-import LotsList from "./pages/lots/LotsList";
-import LotForm from "./pages/lots/LotForm";
-
 // Relances
 import RelancesDashboard from "./pages/relances/RelancesDashboard";
 import DossiersImpayesList from "./pages/relances/DossiersImpayesList";
 import DossierImpayeDetail from "./pages/relances/DossierImpayeDetail";
 import RelancesHistorique from "./pages/relances/RelancesHistorique";
 import AvisRegularisationList from "./pages/relances/AvisRegularisationList";
+
+// Facturation
+import BillingHome from "./pages/billing/BillingHome";
+import BillingFactures from "./pages/billing/BillingFactures";
+import BillingAbonnement from "./pages/billing/BillingAbonnement";
+
+// Plateforme / Super Admin
+import PlatformAdminHome from "./pages/platform-admin/PlatformAdminHome";
+import ReferentielCopropriete from "./pages/platform-admin/ReferentielCopropriete";
+import PlatformCoproprietesList from "./pages/platform-admin/PlatformCoproprietesList";
+import PlatformCoproprieteForm from "./pages/platform-admin/PlatformCoproprieteForm";
+import PlatformCoproprieteDetail from "./pages/platform-admin/PlatformCoproprieteDetail";
+import PlatformCoproprietaires from "./pages/platform-admin/PlatformCoproprietaires";
+import PlatformLots from "./pages/platform-admin/PlatformLots";
+import PlatformTantiemes from "./pages/platform-admin/PlatformTantiemes";
+import PlatformUsersRoles from "./pages/platform-admin/PlatformUsersRoles";
+
+// Espace copropriétaire
+import CoproprietaireLayout from "./layout/CoproprietaireLayout";
+import CoproprietaireDashboard from "./pages/coproprietaire/CoproprietaireDashboard";
+import CoproprietaireMesLots from "./pages/coproprietaire/CoproprietaireMesLots";
+import CoproprietaireAppels from "./pages/coproprietaire/CoproprietaireAppels";
+import CoproprietairePaiements from "./pages/coproprietaire/CoproprietairePaiements";
+import CoproprietaireRelances from "./pages/coproprietaire/CoproprietaireRelances";
+import CoproprietaireDocuments from "./pages/coproprietaire/CoproprietaireDocuments";
+import CoproprietaireAssemblees from "./pages/coproprietaire/CoproprietaireAssemblees";
+import CoproprietaireRoute from "./routes/CoproprietaireRoute";
 
 export default function App() {
   return (
@@ -64,7 +84,26 @@ export default function App() {
         {/* Authentification */}
         <Route path="/login" element={<Login />} />
 
-        {/* Application protégée */}
+        {/* Espace copropriétaire séparé */}
+        <Route element={<CoproprietaireRoute />}>
+          <Route path="/coproprietaire" element={<CoproprietaireLayout />}>
+            <Route index element={<CoproprietaireDashboard />} />
+            <Route
+              path="tableau-de-bord"
+              element={<CoproprietaireDashboard />}
+            />
+            <Route path="mes-lots" element={<CoproprietaireMesLots />} />
+            <Route path="appels" element={<CoproprietaireAppels />} />
+            <Route path="paiements" element={<CoproprietairePaiements />} />
+            <Route path="relances" element={<CoproprietaireRelances />} />
+            <Route path="documents" element={<CoproprietaireDocuments />} />
+
+            {/* Assemblées générales copropriétaire */}
+            <Route path="ag" element={<CoproprietaireAssemblees />} />
+          </Route>
+        </Route>
+
+        {/* Application admin protégée */}
         <Route
           path="/"
           element={
@@ -79,7 +118,10 @@ export default function App() {
           {/* Comptabilité */}
           <Route path="compta">
             <Route index element={<ComptaHome />} />
-            <Route path="releves" element={<Navigate to="/compta/imports" replace />} />
+            <Route
+              path="releves"
+              element={<Navigate to="/compta/imports" replace />}
+            />
             <Route path="import" element={<ImportCSV />} />
             <Route path="imports" element={<RelevesImports />} />
             <Route path="imports/:importId/lignes" element={<ReleveLignes />} />
@@ -98,7 +140,7 @@ export default function App() {
             <Route path="contrats/:id/modifier" element={<ContratForm />} />
           </Route>
 
-          {/* Lots */}
+          {/* Lots opérationnels */}
           <Route path="lots">
             <Route index element={<LotsList />} />
             <Route path="nouveau" element={<LotForm />} />
@@ -110,14 +152,23 @@ export default function App() {
             <Route index element={<Navigate to="/travaux/dossiers" replace />} />
             <Route path="dossiers" element={<TravauxDossiers />} />
             <Route path="dossiers/nouveau" element={<TravauxDossierForm />} />
-            <Route path="dossiers/:id/modifier" element={<TravauxDossierForm />} />
+            <Route
+              path="dossiers/:id/modifier"
+              element={<TravauxDossierForm />}
+            />
             <Route path="dossiers/:id" element={<TravauxDossierDetail />} />
             <Route path="fournisseurs" element={<TravauxFournisseurs />} />
-            <Route path="fournisseurs/nouveau" element={<TravauxFournisseurForm />} />
-            <Route path="fournisseurs/:id/modifier" element={<TravauxFournisseurForm />} />
+            <Route
+              path="fournisseurs/nouveau"
+              element={<TravauxFournisseurForm />}
+            />
+            <Route
+              path="fournisseurs/:id/modifier"
+              element={<TravauxFournisseurForm />}
+            />
           </Route>
 
-          {/* Assemblées générales */}
+          {/* Assemblées générales admin */}
           <Route path="ag">
             <Route index element={<AGHome />} />
 
@@ -133,7 +184,10 @@ export default function App() {
             <Route path="assemblees/:id/pv" element={<AGPV />} />
 
             {/* Résolutions */}
-            <Route path="assemblees/:id/resolutions" element={<AGResolutions />} />
+            <Route
+              path="assemblees/:id/resolutions"
+              element={<AGResolutions />}
+            />
             <Route path="resolutions" element={<AGResolutions />} />
 
             {/* Compatibilité ancienne route */}
@@ -156,9 +210,45 @@ export default function App() {
             <Route path="abonnement" element={<BillingAbonnement />} />
           </Route>
 
-          {/* Plateforme */}
+          {/* Plateforme / Super Admin */}
           <Route path="platform-admin">
             <Route index element={<PlatformAdminHome />} />
+
+            {/* Copropriétés */}
+            <Route path="coproprietes" element={<PlatformCoproprietesList />} />
+            <Route
+              path="coproprietes/nouveau"
+              element={<PlatformCoproprieteForm />}
+            />
+            <Route
+              path="coproprietes/:id"
+              element={<PlatformCoproprieteDetail />}
+            />
+            <Route
+              path="coproprietes/:id/modifier"
+              element={<PlatformCoproprieteForm />}
+            />
+
+            {/* Utilisateurs & rôles */}
+            <Route path="utilisateurs-roles" element={<PlatformUsersRoles />} />
+
+            {/* Référentiel copropriété */}
+            <Route
+              path="referentiel-copropriete"
+              element={<ReferentielCopropriete />}
+            />
+            <Route
+              path="referentiel-copropriete/coproprietaires"
+              element={<PlatformCoproprietaires />}
+            />
+            <Route
+              path="referentiel-copropriete/lots"
+              element={<PlatformLots />}
+            />
+            <Route
+              path="referentiel-copropriete/tantiemes"
+              element={<PlatformTantiemes />}
+            />
           </Route>
         </Route>
 

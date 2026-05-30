@@ -1,8 +1,8 @@
-// src/api/axios.ts
+// frontend/src/api/axios.ts
 import axios, { AxiosError } from "axios";
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
-import { API_BASE_URL } from "../config";
-import { ENDPOINTS } from "./endpoints";
+
+import { API_BASE_URL, ENDPOINTS } from "./endpoints";
 import { useAuthStore } from "../store/authStore";
 
 type RefreshResponse = {
@@ -15,63 +15,84 @@ type RetriableConfig = AxiosRequestConfig & {
   _retry?: boolean;
 };
 
-// ---------------------------
-// Helpers: baseURL robuste
-// ---------------------------
+// ===========================
+// Helpers — baseURL robuste
+// ===========================
 function normalizeBaseUrl(url: string) {
-  let u = String(url ?? "").trim().replace(/\/+$/, "");
-  u = u.replace(/\/api$/i, "");
-  return u;
+  let value = String(url ?? "").trim().replace(/\/+$/, "");
+  value = value.replace(/\/api$/i, "");
+  return value;
 }
+
 const BASE = normalizeBaseUrl(API_BASE_URL);
 
-function withLeadingSlash(p: string) {
-  return p.startsWith("/") ? p : `/${p}`;
+function withLeadingSlash(path: string) {
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 function isAuthEndpoint(url?: string) {
   if (!url) return false;
+
   const login = withLeadingSlash(ENDPOINTS.login);
   const refresh = withLeadingSlash(ENDPOINTS.refresh);
+
   return url.includes(login) || url.includes(refresh);
 }
 
+// ===========================
+// Helpers — stockage auth
+// ===========================
 function getStoredAccess(): string | null {
-  const st = useAuthStore.getState();
+  const state = useAuthStore.getState();
+
   const candidates = [
-    st.access,
+    state.access,
     localStorage.getItem("access"),
     localStorage.getItem("accessToken"),
     localStorage.getItem("token"),
   ];
 
-  for (const v of candidates) {
-    const s = String(v ?? "").trim();
-    if (s) return s;
+  for (const value of candidates) {
+    const token = String(value ?? "").trim();
+    if (token) return token;
   }
+
   return null;
 }
 
 function getStoredRefresh(): string | null {
-  const st = useAuthStore.getState();
+  const state = useAuthStore.getState();
+
   const candidates = [
-    st.refresh,
+    state.refresh,
     localStorage.getItem("refresh"),
     localStorage.getItem("refreshToken"),
   ];
 
-  for (const v of candidates) {
-    const s = String(v ?? "").trim();
-    if (s) return s;
+  for (const value of candidates) {
+    const token = String(value ?? "").trim();
+    if (token) return token;
   }
+
   return null;
 }
 
 function getCoproIdHeaderValue(): string | null {
-  const st = useAuthStore.getState();
-  const copro = st.coproprieteId ?? localStorage.getItem("coproprieteId");
-  const v = String(copro ?? "").trim();
-  return v ? v : null;
+  const state = useAuthStore.getState();
+
+  const candidates = [
+    state.coproprieteId,
+    localStorage.getItem("coproprieteId"),
+    localStorage.getItem("copropriete_id"),
+    localStorage.getItem("activeCoproprieteId"),
+  ];
+
+  for (const value of candidates) {
+    const coproprieteId = String(value ?? "").trim();
+    if (coproprieteId) return coproprieteId;
+  }
+
+  return null;
 }
 
 function persistTokens(access: string, refresh?: string | null) {
@@ -85,7 +106,7 @@ function persistTokens(access: string, refresh?: string | null) {
       localStorage.setItem("refreshToken", refresh);
     }
   } catch {
-    //
+    // localStorage indisponible ou bloqué.
   }
 }
 
@@ -97,29 +118,62 @@ function clearPersistedTokens() {
     localStorage.removeItem("refresh");
     localStorage.removeItem("refreshToken");
   } catch {
-    //
+    // localStorage indisponible ou bloqué.
   }
 }
 
-// ---------------------------
+function updateAuthStoreTokens(access: string, refresh?: string | null) {
+  const state = useAuthStore.getState();
+
+  const safeRefresh = String(
+    refresh ??
+      localStorage.getItem("refresh") ??
+      localStorage.getItem("refreshToken") ??
+      "",
+  ).trim();
+
+  if (typeof state.setAuth === "function") {
+    state.setAuth({
+      access,
+      refresh: safeRefresh,
+    });
+  }
+}
+
+function logoutSafely() {
+  const state = useAuthStore.getState();
+
+  clearPersistedTokens();
+
+  if (typeof state.logout === "function") {
+    state.logout();
+  }
+}
+
+// ===========================
 // Axios instance
-// ---------------------------
+// ===========================
 const api = axios.create({
   baseURL: BASE,
   timeout: 30000,
 });
 
-// ---------------------------
-// Request: headers (Bearer + copro)
-// ---------------------------
+// ===========================
+// Request interceptor
+// Bearer + X-Copropriete-Id
+// ===========================
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const access = getStoredAccess();
-  const copro = getCoproIdHeaderValue();
+  const coproprieteId = getCoproIdHeaderValue();
 
   config.headers = config.headers ?? {};
   config.headers.Accept = "application/json";
 
-  if (!config.headers["Content-Type"] && config.data && !(config.data instanceof FormData)) {
+  if (
+    !config.headers["Content-Type"] &&
+    config.data &&
+    !(config.data instanceof FormData)
+  ) {
     config.headers["Content-Type"] = "application/json";
   }
 
@@ -127,30 +181,35 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers.Authorization = `Bearer ${access}`;
   }
 
-  if (copro) {
-    config.headers["X-Copropriete-Id"] = copro;
+  if (coproprieteId) {
+    config.headers["X-Copropriete-Id"] = coproprieteId;
   }
 
   return config;
 });
 
-// ---------------------------
-// Response: refresh automatique sur 401
-// ---------------------------
+// ===========================
+// Response interceptor
+// Refresh automatique sur 401
+// ===========================
 let isRefreshing = false;
 let queue: Array<(token: string | null) => void> = [];
 
-function enqueue(cb: (token: string | null) => void) {
-  queue.push(cb);
+function enqueue(callback: (token: string | null) => void) {
+  queue.push(callback);
 }
 
 function flush(token: string | null) {
-  for (const cb of queue) cb(token);
+  for (const callback of queue) {
+    callback(token);
+  }
+
   queue = [];
 }
 
 api.interceptors.response.use(
   (response) => response,
+
   async (error: AxiosError) => {
     const original = error.config as RetriableConfig | undefined;
     const status = error.response?.status;
@@ -160,19 +219,15 @@ api.interceptors.response.use(
     }
 
     if (isAuthEndpoint(original.url)) {
-      const st = useAuthStore.getState();
-      clearPersistedTokens();
-      st.logout?.();
+      logoutSafely();
       return Promise.reject(error);
     }
 
-    const st = useAuthStore.getState();
     const refresh = getStoredRefresh();
-    const copro = getCoproIdHeaderValue();
+    const coproprieteId = getCoproIdHeaderValue();
 
     if (!refresh) {
-      clearPersistedTokens();
-      st.logout?.();
+      logoutSafely();
       return Promise.reject(error);
     }
 
@@ -187,10 +242,12 @@ api.interceptors.response.use(
           }
 
           original.headers = original.headers ?? {};
-          (original.headers as Record<string, string>).Authorization = `Bearer ${newAccess}`;
+          (original.headers as Record<string, string>).Authorization =
+            `Bearer ${newAccess}`;
 
-          if (copro) {
-            (original.headers as Record<string, string>)["X-Copropriete-Id"] = copro;
+          if (coproprieteId) {
+            (original.headers as Record<string, string>)["X-Copropriete-Id"] =
+              coproprieteId;
           }
 
           resolve(api(original));
@@ -206,51 +263,53 @@ api.interceptors.response.use(
         "Content-Type": "application/json",
       };
 
-      if (copro) {
-        refreshHeaders["X-Copropriete-Id"] = copro;
+      if (coproprieteId) {
+        refreshHeaders["X-Copropriete-Id"] = coproprieteId;
       }
 
-      const res = await axios.post<RefreshResponse>(
+      const response = await axios.post<RefreshResponse>(
         `${BASE}${withLeadingSlash(ENDPOINTS.refresh)}`,
         { refresh },
         {
           headers: refreshHeaders,
           timeout: 30000,
-        }
+        },
       );
 
-      const newAccess = String(res.data?.access ?? res.data?.token ?? "").trim();
-      const newRefresh = String(res.data?.refresh ?? refresh ?? "").trim();
+      const newAccess = String(
+        response.data?.access ?? response.data?.token ?? "",
+      ).trim();
+
+      const newRefresh = String(response.data?.refresh ?? refresh ?? "").trim();
 
       if (!newAccess) {
-        throw new Error("Refresh did not return an access token.");
+        throw new Error(
+          "Le refresh token n'a pas retourné de nouveau access token.",
+        );
       }
 
-      st.setAuth?.({
-        access: newAccess,
-        refresh: newRefresh || refresh,
-      });
-
+      updateAuthStoreTokens(newAccess, newRefresh || refresh);
       persistTokens(newAccess, newRefresh || refresh);
       flush(newAccess);
 
       original.headers = original.headers ?? {};
-      (original.headers as Record<string, string>).Authorization = `Bearer ${newAccess}`;
+      (original.headers as Record<string, string>).Authorization =
+        `Bearer ${newAccess}`;
 
-      if (copro) {
-        (original.headers as Record<string, string>)["X-Copropriete-Id"] = copro;
+      if (coproprieteId) {
+        (original.headers as Record<string, string>)["X-Copropriete-Id"] =
+          coproprieteId;
       }
 
       return api(original);
     } catch (refreshError) {
       flush(null);
-      clearPersistedTokens();
-      st.logout?.();
+      logoutSafely();
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
     }
-  }
+  },
 );
 
 export default api;
