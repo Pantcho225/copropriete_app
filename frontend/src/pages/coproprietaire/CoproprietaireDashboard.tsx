@@ -2,11 +2,29 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 
 import { getAuthMe, type AuthMeResponse } from "../../api/auth";
+import {
+  getAppelsCoproprietaire,
+  getDocumentsCoproprietaire,
+  getMesLotsCoproprietaire,
+  getPaiementsCoproprietaire,
+  getRelancesCoproprietaire,
+  type CoproprietaireAppelsResponse,
+  type CoproprietaireDocumentsResponse,
+  type CoproprietaireMesLotsResponse,
+  type CoproprietairePaiementsResponse,
+  type CoproprietaireRelancesResponse,
+} from "../../api/coproprietaire";
 
 type DashboardState = {
   loading: boolean;
   me: AuthMeResponse | null;
+  lots: CoproprietaireMesLotsResponse | null;
+  appels: CoproprietaireAppelsResponse | null;
+  paiements: CoproprietairePaiementsResponse | null;
+  relances: CoproprietaireRelancesResponse | null;
+  documents: CoproprietaireDocumentsResponse | null;
   error: string | null;
+  businessWarning: string | null;
 };
 
 type Tone = "blue" | "green" | "amber" | "slate" | "indigo" | "rose";
@@ -64,39 +82,124 @@ const QUICK_ACTIONS: QuickAction[] = [
   },
 ];
 
+const initialState: DashboardState = {
+  loading: true,
+  me: null,
+  lots: null,
+  appels: null,
+  paiements: null,
+  relances: null,
+  documents: null,
+  error: null,
+  businessWarning: null,
+};
+
+const parseAmount = (value: string | number | null | undefined) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return 0;
+  }
+
+  const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatMoney = (value: string | number | null | undefined) => {
+  const amount = parseAmount(value);
+
+  return `${new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 0,
+  }).format(Math.max(0, Math.round(amount)))} FCFA`;
+};
+
+const getTimeFromDate = (value: string | null | undefined) => {
+  if (!value) {
+    return 0;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const formatDate = (value: string | null | undefined) => {
+  const time = getTimeFromDate(value);
+
+  if (!time) {
+    return "Date non renseignée";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(time));
+};
+
+const fulfilledValue = <T,>(result: PromiseSettledResult<T>): T | null => {
+  return result.status === "fulfilled" ? result.value : null;
+};
+
 export default function CoproprietaireDashboard() {
-  const [state, setState] = useState<DashboardState>({
-    loading: true,
-    me: null,
-    error: null,
-  });
+  const [state, setState] = useState<DashboardState>(initialState);
 
   useEffect(() => {
     let mounted = true;
 
     async function load() {
-      try {
-        const me = await getAuthMe();
+      const [
+        meResult,
+        lotsResult,
+        appelsResult,
+        paiementsResult,
+        relancesResult,
+        documentsResult,
+      ] = await Promise.allSettled([
+        getAuthMe(),
+        getMesLotsCoproprietaire(),
+        getAppelsCoproprietaire(),
+        getPaiementsCoproprietaire(),
+        getRelancesCoproprietaire(),
+        getDocumentsCoproprietaire(),
+      ] as const);
 
-        if (!mounted) return;
+      if (!mounted) return;
 
+      if (meResult.status === "rejected") {
         setState({
+          ...initialState,
           loading: false,
-          me,
-          error: null,
-        });
-      } catch {
-        if (!mounted) return;
-
-        setState({
-          loading: false,
-          me: null,
           error: "Impossible de charger votre espace copropriétaire.",
         });
+        return;
       }
+
+      const businessHasError = [
+        lotsResult,
+        appelsResult,
+        paiementsResult,
+        relancesResult,
+        documentsResult,
+      ].some((result) => result.status === "rejected");
+
+      setState({
+        loading: false,
+        me: meResult.value,
+        lots: fulfilledValue(lotsResult),
+        appels: fulfilledValue(appelsResult),
+        paiements: fulfilledValue(paiementsResult),
+        relances: fulfilledValue(relancesResult),
+        documents: fulfilledValue(documentsResult),
+        error: null,
+        businessWarning: businessHasError
+          ? "Certaines données métier n’ont pas pu être chargées. Les informations disponibles sont affichées."
+          : null,
+      });
     }
 
-    load();
+    void load();
 
     return () => {
       mounted = false;
@@ -110,6 +213,80 @@ export default function CoproprietaireDashboard() {
       ) ?? null
     );
   }, [state.me]);
+
+  const summary = useMemo(() => {
+    const lotsCount = state.lots?.count ?? state.lots?.lots.length ?? 0;
+
+    const appelsCount =
+      state.appels?.stats.nb_appels ?? state.appels?.count ?? state.appels?.appels.length ?? 0;
+
+    const totalDu = parseAmount(state.appels?.stats.total_du);
+    const totalPayeAppels = parseAmount(state.appels?.stats.total_paye);
+    const resteAPayer = parseAmount(state.appels?.stats.reste_a_payer);
+
+    const paiementsCount =
+      state.paiements?.stats.nb_paiements ??
+      state.paiements?.count ??
+      state.paiements?.paiements.length ??
+      0;
+
+    const totalPayePaiements = parseAmount(state.paiements?.stats.total_paye);
+
+    const relancesCount =
+      state.relances?.stats.nb_relances ??
+      state.relances?.count ??
+      state.relances?.relances.length ??
+      0;
+
+    const dossiersImpayeCount =
+      state.relances?.stats.nb_dossiers ?? state.relances?.dossiers.length ?? 0;
+
+    const nbEnRetard =
+      state.relances?.stats.nb_en_retard ?? state.appels?.stats.nb_en_retard ?? 0;
+
+    const documentsCount =
+      state.documents?.stats.total ??
+      state.documents?.count ??
+      state.documents?.documents.length ??
+      0;
+
+    return {
+      lotsCount,
+      appelsCount,
+      totalDu,
+      totalPaye: totalPayePaiements || totalPayeAppels,
+      resteAPayer,
+      paiementsCount,
+      relancesCount,
+      dossiersImpayeCount,
+      nbEnRetard,
+      documentsCount,
+    };
+  }, [state.appels, state.documents, state.lots, state.paiements, state.relances]);
+
+  const latestPaiements = useMemo(() => {
+    return [...(state.paiements?.paiements ?? [])]
+      .sort(
+        (a, b) =>
+          getTimeFromDate(b.date_paiement) - getTimeFromDate(a.date_paiement),
+      )
+      .slice(0, 2);
+  }, [state.paiements]);
+
+  const latestDocuments = useMemo(() => {
+    return [...(state.documents?.documents ?? [])]
+      .sort(
+        (a, b) =>
+          getTimeFromDate(b.date_document) - getTimeFromDate(a.date_document),
+      )
+      .slice(0, 2);
+  }, [state.documents]);
+
+  const latestRelances = useMemo(() => {
+    return [...(state.relances?.relances ?? [])]
+      .sort((a, b) => getTimeFromDate(b.created_at) - getTimeFromDate(a.created_at))
+      .slice(0, 1);
+  }, [state.relances]);
 
   if (state.loading) {
     return (
@@ -136,11 +313,27 @@ export default function CoproprietaireDashboard() {
     [state.me.user.first_name, state.me.user.last_name].filter(Boolean).join(" ") ||
     state.me.user.username;
 
-  const coproName = mainMembership?.copropriete.nom ?? "Copropriété non définie";
+  const coproName =
+    mainMembership?.copropriete.nom ??
+    state.lots?.lots[0]?.copropriete?.nom ??
+    "Copropriété non définie";
+
   const membershipStatus = mainMembership?.is_active ? "Actif" : "À vérifier";
+
+  const situationLabel =
+    summary.resteAPayer > 0 ? "À régulariser" : "À jour";
+
+  const situationTone: Tone = summary.resteAPayer > 0 ? "amber" : "green";
 
   return (
     <div style={styles.stack}>
+      {state.businessWarning && (
+        <div style={styles.alertWarning}>
+          <strong>Chargement partiel</strong>
+          <p style={styles.alertText}>{state.businessWarning}</p>
+        </div>
+      )}
+
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.heroBadge}>Portail personnel</div>
@@ -156,6 +349,7 @@ export default function CoproprietaireDashboard() {
             <span style={styles.metaPill}>Copropriété : {coproName}</span>
             <span style={styles.metaPill}>Profil : Copropriétaire</span>
             <span style={styles.metaPill}>Statut : {membershipStatus}</span>
+            <span style={styles.metaPill}>Situation : {situationLabel}</span>
           </div>
         </div>
 
@@ -171,27 +365,27 @@ export default function CoproprietaireDashboard() {
 
       <section style={styles.statsGrid}>
         <InfoCard
-          label="Compte"
-          value="Sécurisé"
-          description="Session copropriétaire active"
-          tone="green"
-        />
-        <InfoCard
-          label="Copropriété"
-          value={coproName}
-          description="Résidence rattachée à votre profil"
+          label="Lots"
+          value={String(summary.lotsCount)}
+          description="Lots actifs rattachés à votre compte"
           tone="blue"
         />
         <InfoCard
-          label="Rôle"
-          value="Copropriétaire"
-          description="Accès personnel séparé de l’administration"
-          tone="indigo"
+          label="Reste à payer"
+          value={formatMoney(summary.resteAPayer)}
+          description={`${summary.nbEnRetard} élément(s) en retard détecté(s)`}
+          tone={situationTone}
         />
         <InfoCard
-          label="Données"
-          value="Filtrées"
-          description="Lots, charges et documents personnels"
+          label="Total payé"
+          value={formatMoney(summary.totalPaye)}
+          description={`${summary.paiementsCount} paiement(s) enregistré(s)`}
+          tone="green"
+        />
+        <InfoCard
+          label="Documents"
+          value={String(summary.documentsCount)}
+          description="Documents personnels disponibles"
           tone="slate"
         />
       </section>
@@ -207,10 +401,98 @@ export default function CoproprietaireDashboard() {
             <span style={styles.sectionPill}>6 modules disponibles</span>
           </div>
 
+          <div style={styles.summaryGrid}>
+            <SummaryCard
+              label="Appels"
+              value={String(summary.appelsCount)}
+              description={`Total appelé : ${formatMoney(summary.totalDu)}`}
+              tone="amber"
+            />
+            <SummaryCard
+              label="Relances"
+              value={String(summary.relancesCount)}
+              description={`${summary.dossiersImpayeCount} dossier(s) impayé(s)`}
+              tone={summary.relancesCount > 0 ? "rose" : "green"}
+            />
+            <SummaryCard
+              label="Situation"
+              value={situationLabel}
+              description={
+                summary.resteAPayer > 0
+                  ? `${formatMoney(summary.resteAPayer)} restant à payer`
+                  : "Aucun reste à payer détecté"
+              }
+              tone={situationTone}
+            />
+          </div>
+
           <div style={styles.actionsGrid}>
             {QUICK_ACTIONS.map((action) => (
               <ActionCard key={action.path} action={action} />
             ))}
+          </div>
+
+          <div style={styles.activityBlock}>
+            <div>
+              <p style={styles.sectionEyebrow}>Activité récente</p>
+              <h3 style={styles.sectionTitle}>Derniers mouvements visibles</h3>
+            </div>
+
+            <div style={styles.activityGrid}>
+              <div style={styles.activityList}>
+                <p style={styles.activityGroupTitle}>Paiements</p>
+                {latestPaiements.length === 0 ? (
+                  <p style={styles.emptyText}>Aucun paiement récent.</p>
+                ) : (
+                  latestPaiements.map((paiement) => (
+                    <ActivityItem
+                      key={paiement.id}
+                      title={paiement.appel_libelle || "Paiement"}
+                      meta={`${formatMoney(paiement.montant)} · ${formatDate(
+                        paiement.date_paiement,
+                      )}`}
+                      tone="green"
+                    />
+                  ))
+                )}
+              </div>
+
+              <div style={styles.activityList}>
+                <p style={styles.activityGroupTitle}>Documents</p>
+                {latestDocuments.length === 0 ? (
+                  <p style={styles.emptyText}>Aucun document récent.</p>
+                ) : (
+                  latestDocuments.map((document) => (
+                    <ActivityItem
+                      key={document.id}
+                      title={document.titre || document.filename || "Document"}
+                      meta={`${document.categorie || "Document"} · ${formatDate(
+                        document.date_document,
+                      )}`}
+                      tone="blue"
+                    />
+                  ))
+                )}
+              </div>
+
+              <div style={styles.activityList}>
+                <p style={styles.activityGroupTitle}>Relances</p>
+                {latestRelances.length === 0 ? (
+                  <p style={styles.emptyText}>Aucune relance active.</p>
+                ) : (
+                  latestRelances.map((relance) => (
+                    <ActivityItem
+                      key={relance.id}
+                      title={relance.objet || relance.appel_libelle || "Relance"}
+                      meta={`${relance.statut_label || relance.statut} · ${formatDate(
+                        relance.created_at,
+                      )}`}
+                      tone="rose"
+                    />
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -227,11 +509,31 @@ export default function CoproprietaireDashboard() {
 
             <div style={styles.statusList}>
               <StatusLine label="Authentification" status="Validé" tone="green" />
-              <StatusLine label="Mes lots" status="Disponible" tone="green" />
-              <StatusLine label="Appels de charges" status="Disponible" tone="green" />
-              <StatusLine label="Paiements" status="Disponible" tone="green" />
-              <StatusLine label="Relances" status="Disponible" tone="green" />
-              <StatusLine label="Documents" status="Disponible" tone="green" />
+              <StatusLine
+                label="Mes lots"
+                status={`${summary.lotsCount} lot(s)`}
+                tone={summary.lotsCount > 0 ? "green" : "amber"}
+              />
+              <StatusLine
+                label="Appels de charges"
+                status={`${summary.appelsCount} appel(s)`}
+                tone={summary.nbEnRetard > 0 ? "amber" : "green"}
+              />
+              <StatusLine
+                label="Paiements"
+                status={`${summary.paiementsCount} paiement(s)`}
+                tone="green"
+              />
+              <StatusLine
+                label="Relances"
+                status={`${summary.relancesCount} relance(s)`}
+                tone={summary.relancesCount > 0 ? "rose" : "green"}
+              />
+              <StatusLine
+                label="Documents"
+                status={`${summary.documentsCount} document(s)`}
+                tone="green"
+              />
               <StatusLine label="Assemblées générales" status="Disponible" tone="green" />
             </div>
           </div>
@@ -273,6 +575,36 @@ function InfoCard({
       <p style={styles.infoLabel}>{label}</p>
       <p style={{ ...styles.infoValue, color: toneStyle.color }}>{value}</p>
       <p style={styles.infoDescription}>{description}</p>
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  description,
+  tone,
+}: {
+  label: string;
+  value: string;
+  description: string;
+  tone: Tone;
+}) {
+  const toneStyle = tones[tone];
+
+  return (
+    <div
+      style={{
+        ...styles.summaryCard,
+        borderColor: toneStyle.border,
+        background: toneStyle.softBackground,
+      }}
+    >
+      <p style={styles.summaryLabel}>{label}</p>
+      <strong style={{ ...styles.summaryValue, color: toneStyle.color }}>
+        {value}
+      </strong>
+      <span style={styles.summaryDescription}>{description}</span>
     </div>
   );
 }
@@ -332,6 +664,36 @@ function StatusLine({
       >
         {status}
       </strong>
+    </div>
+  );
+}
+
+function ActivityItem({
+  title,
+  meta,
+  tone,
+}: {
+  title: string;
+  meta: string;
+  tone: Tone;
+}) {
+  const toneStyle = tones[tone];
+
+  return (
+    <div style={styles.activityItem}>
+      <span
+        style={{
+          ...styles.activityDot,
+          background: toneStyle.iconBackground,
+          color: toneStyle.color,
+        }}
+      >
+        •
+      </span>
+      <span>
+        <strong style={styles.activityTitle}>{title}</strong>
+        <span style={styles.activityMeta}>{meta}</span>
+      </span>
     </div>
   );
 }
@@ -582,6 +944,45 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 900,
   },
 
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 12,
+    marginTop: 20,
+  },
+
+  summaryCard: {
+    border: "1px solid",
+    borderRadius: 22,
+    padding: 15,
+  },
+
+  summaryLabel: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 950,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+  },
+
+  summaryValue: {
+    display: "block",
+    marginTop: 8,
+    fontSize: 19,
+    lineHeight: 1.15,
+    fontWeight: 950,
+  },
+
+  summaryDescription: {
+    display: "block",
+    marginTop: 7,
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.45,
+    fontWeight: 650,
+  },
+
   actionsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -638,6 +1039,78 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 20,
     fontWeight: 950,
     flexShrink: 0,
+  },
+
+  activityBlock: {
+    marginTop: 22,
+    borderTop: "1px solid #e2e8f0",
+    paddingTop: 20,
+  },
+
+  activityGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 12,
+    marginTop: 16,
+  },
+
+  activityList: {
+    borderRadius: 22,
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    padding: 14,
+    minHeight: 126,
+  },
+
+  activityGroupTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  activityItem: {
+    display: "flex",
+    gap: 9,
+    marginTop: 12,
+    alignItems: "flex-start",
+  },
+
+  activityDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 20,
+    lineHeight: 1,
+    flexShrink: 0,
+  },
+
+  activityTitle: {
+    display: "block",
+    color: "#0f172a",
+    fontSize: 12.5,
+    lineHeight: 1.35,
+    fontWeight: 900,
+  },
+
+  activityMeta: {
+    display: "block",
+    marginTop: 3,
+    color: "#64748b",
+    fontSize: 11.5,
+    lineHeight: 1.35,
+    fontWeight: 650,
+  },
+
+  emptyText: {
+    margin: "12px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.5,
+    fontWeight: 650,
   },
 
   sidePanel: {
@@ -717,6 +1190,15 @@ const styles: Record<string, CSSProperties> = {
     color: "#be123c",
     padding: 22,
     boxShadow: "0 18px 44px rgba(190,18,60,0.08)",
+  },
+
+  alertWarning: {
+    borderRadius: 24,
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    color: "#92400e",
+    padding: 18,
+    boxShadow: "0 16px 44px rgba(217,119,6,0.08)",
   },
 
   alertText: {
