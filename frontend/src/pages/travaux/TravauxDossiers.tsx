@@ -30,6 +30,7 @@ type DossierView = {
   titre: string;
   description: string;
   fournisseurLabel: string;
+  fournisseurSource: "direct" | "paiements" | "suivi";
   statut: string;
   budget: number | null;
   createdAt?: string | null;
@@ -200,26 +201,102 @@ function getStatutKind(statut?: unknown): BadgeKind {
   return "neutral";
 }
 
-function extractFournisseurLabel(raw: TravauxRawItem) {
-  const fournisseur = raw.fournisseur;
+function extractFournisseurName(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
 
-  if (fournisseur && typeof fournisseur === "object") {
-    const obj = fournisseur as Record<string, unknown>;
-    const nom = obj.nom ?? obj.raison_sociale ?? obj.libelle ?? obj.name;
+  if (typeof value === "string") return cleanText(value);
 
-    if (typeof nom === "string" && nom.trim()) return nom.trim();
-    if (typeof obj.id === "number") return `Prestataire #${obj.id}`;
+  if (typeof value === "number") return `Prestataire #${value}`;
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const name =
+      cleanText(obj.nom) ??
+      cleanText(obj.raison_sociale) ??
+      cleanText(obj.libelle) ??
+      cleanText(obj.name) ??
+      cleanText(obj.fournisseur_nom) ??
+      cleanText(obj.prestataire_nom);
+
+    if (name) return name;
+
+    const id = toNumberOrNull(obj.id ?? obj.pk ?? obj.fournisseur_id ?? obj.prestataire_id);
+    if (id !== null) return `Prestataire #${id}`;
   }
 
-  const direct = raw.fournisseur_nom ?? raw.fournisseur_label ?? raw.nom_fournisseur;
+  return null;
+}
 
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
+function extractFournisseurInfo(raw: TravauxRawItem): {
+  label: string;
+  source: DossierView["fournisseurSource"];
+} {
+  const directSources = [
+    raw.fournisseur,
+    raw.prestataire,
+    raw.fournisseur_principal,
+    raw.prestataire_principal,
+    raw.fournisseur_nom,
+    raw.fournisseur_label,
+    raw.nom_fournisseur,
+    raw.prestataire_nom,
+    raw.prestataire_label,
+    raw.nom_prestataire,
+  ];
 
-  const fid = toNumberOrNull(raw.fournisseur_id ?? raw.fournisseur);
+  for (const source of directSources) {
+    const label = extractFournisseurName(source);
+    if (label) return { label, source: "direct" };
+  }
 
-  if (fid !== null) return `Prestataire #${fid}`;
+  const directId = toNumberOrNull(
+    raw.fournisseur_id ?? raw.prestataire_id ?? raw.fournisseur_principal_id,
+  );
+  if (directId !== null) return { label: `Prestataire #${directId}`, source: "direct" };
 
-  return "—";
+  const paiementCollections = [
+    raw.paiements,
+    raw.paiements_travaux,
+    raw.travaux_paiements,
+    raw.reglements,
+    raw.reglements_travaux,
+    raw.payments,
+  ];
+
+  for (const collection of paiementCollections) {
+    if (!Array.isArray(collection)) continue;
+
+    for (const paiement of collection) {
+      if (!paiement || typeof paiement !== "object") continue;
+
+      const item = paiement as Record<string, unknown>;
+      const label =
+        extractFournisseurName(item.fournisseur) ??
+        extractFournisseurName(item.prestataire) ??
+        extractFournisseurName(item.fournisseur_nom) ??
+        extractFournisseurName(item.prestataire_nom) ??
+        extractFournisseurName(item.nom_fournisseur) ??
+        extractFournisseurName(item.nom_prestataire);
+
+      if (label) return { label, source: "paiements" };
+    }
+  }
+
+  return { label: "Suivi via paiements", source: "suivi" };
+}
+
+function getFournisseurHint(source: DossierView["fournisseurSource"]) {
+  if (source === "direct") return "Prestataire principal lié au dossier.";
+  if (source === "paiements") return "Prestataire identifié depuis les paiements travaux.";
+
+  return "Aucun prestataire direct : suivi financier dans les paiements.";
+}
+
+function getFournisseurKind(source: DossierView["fournisseurSource"]): BadgeKind {
+  if (source === "direct") return "success";
+  if (source === "paiements") return "info";
+
+  return "warning";
 }
 
 function normalizeDossier(raw: TravauxRawItem): DossierView {
@@ -253,11 +330,14 @@ function normalizeDossier(raw: TravauxRawItem): DossierView {
     Boolean(raw.verrouille) ||
     Boolean(lockedAt);
 
+  const fournisseurInfo = extractFournisseurInfo(raw);
+
   return {
     id,
     titre,
     description,
-    fournisseurLabel: extractFournisseurLabel(raw),
+    fournisseurLabel: fournisseurInfo.label,
+    fournisseurSource: fournisseurInfo.source,
     statut: normalizeStatut(raw.statut),
     budget,
     createdAt: cleanText(raw.created_at ?? raw.date_creation),
@@ -908,13 +988,13 @@ export default function TravauxDossiers() {
                     </td>
 
                     <td style={td}>
-                      {item.fournisseurLabel && item.fournisseurLabel !== "—" ? (
-                        <span style={{ color: "#374151" }}>
-                          {truncateText(item.fournisseurLabel, 30)}
-                        </span>
-                      ) : (
-                        <span style={{ color: "#9ca3af" }}>Non renseigné</span>
-                      )}
+                      <div style={fournisseurCell}>
+                        <Badge
+                          text={truncateText(item.fournisseurLabel, 30)}
+                          kind={getFournisseurKind(item.fournisseurSource)}
+                        />
+                        <MetaLine>{getFournisseurHint(item.fournisseurSource)}</MetaLine>
+                      </div>
                     </td>
 
                     <td style={tdStrong}>{fmtMoney(item.budget)}</td>
@@ -1003,8 +1083,8 @@ export default function TravauxDossiers() {
 
       {state === "success" && rows.length > 0 ? (
         <AlertBox kind="info" title="Lecture métier">
-          Cette liste centralise le pilotage des dossiers. La lecture détaillée du budget, de la
-          résolution et du verrouillage se poursuit dans chaque fiche dossier.
+          Cette liste centralise le pilotage des dossiers. La colonne prestataire reste lisible
+          même lorsque le modèle ne porte pas encore de prestataire principal direct sur le dossier.
         </AlertBox>
       ) : null}
 
@@ -1262,6 +1342,13 @@ const dossierTitle: CSSProperties = {
 
 const tableRowStyle: CSSProperties = {
   transition: "background 0.18s ease",
+};
+
+const fournisseurCell: CSSProperties = {
+  display: "grid",
+  gap: 4,
+  alignItems: "start",
+  minWidth: 0,
 };
 
 const miniLink: CSSProperties = {

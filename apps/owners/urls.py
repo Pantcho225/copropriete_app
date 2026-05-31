@@ -1,30 +1,32 @@
 # apps/owners/urls.py
+from __future__ import annotations
+
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import CoproprietaireViewSet, ProprietaireLotViewSet
-from .coproprietaire_space_views import CoproprietaireMesLotsAPIView
-
-
-app_name = "owners"
+from .views import (
+    CoproprietaireMesLotsAPIView,
+    CoproprietaireViewSet,
+    ProprietaireLotViewSet,
+)
 
 router = DefaultRouter()
 router.register(
     r"coproprietaires",
     CoproprietaireViewSet,
-    basename="coproprietaires",
+    basename="coproprietaire",
 )
 router.register(
-    "proprietaires-lots",
+    r"proprietaires-lots",
     ProprietaireLotViewSet,
-    basename="proprietaires-lots",
+    basename="proprietaire-lot",
 )
 
 urlpatterns = [
-    path("", include(router.urls)),
     path(
-    "coproprietaire/mes-lots/",
-    CoproprietaireMesLotsAPIView.as_view(),
-    name="coproprietaire_mes_lots",
-),
+        "coproprietaire/mes-lots/",
+        CoproprietaireMesLotsAPIView.as_view(),
+        name="coproprietaire-mes-lots",
+    ),
+    path("", include(router.urls)),
 ]

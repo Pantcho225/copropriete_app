@@ -131,7 +131,12 @@ function getErrorMessage(e: unknown, fallback: string) {
 }
 
 function extractNom(raw: FournisseurRaw, id: number) {
-  return cleanText(raw.nom) ?? cleanText(raw.raison_sociale) ?? cleanText(raw.name) ?? `Prestataire #${id}`;
+  return (
+    cleanText(raw.nom) ??
+    cleanText(raw.raison_sociale) ??
+    cleanText(raw.name) ??
+    `Prestataire #${id}`
+  );
 }
 
 function extractEmail(raw: FournisseurRaw) {
@@ -147,7 +152,11 @@ function extractAdresse(raw: FournisseurRaw) {
 }
 
 function extractSpecialite(raw: FournisseurRaw) {
-  return cleanText(raw.specialite) ?? cleanText(raw.domaine) ?? cleanText(raw.type_intervention);
+  return (
+    cleanText(raw.specialite) ??
+    cleanText(raw.domaine) ??
+    cleanText(raw.type_intervention)
+  );
 }
 
 function extractActif(raw: FournisseurRaw) {
@@ -277,7 +286,12 @@ function Panel(props: { children: ReactNode; style?: CSSProperties }) {
   );
 }
 
-function StatCard(props: { title: string; value: string | number; sub?: string; kind?: BadgeKind }) {
+function StatCard(props: {
+  title: string;
+  value: string | number;
+  sub?: string;
+  kind?: BadgeKind;
+}) {
   const tone = getTone(props.kind ?? "neutral");
 
   return (
@@ -433,7 +447,12 @@ function AppButton(props: {
   );
 }
 
-function EmptyState(props: { title: string; text: string; actionLabel?: string; actionTo?: string }) {
+function EmptyState(props: {
+  title: string;
+  text: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
     <div style={emptyState}>
       <div style={emptyStateTitle}>{props.title}</div>
@@ -483,8 +502,8 @@ function InfoStrip() {
   return (
     <div style={infoStrip}>
       <div style={infoStripText}>
-        Cette vue centralise les prestataires du module Travaux. Elle permet d’identifier rapidement
-        les intervenants exploitables, les statuts à compléter et les fiches à mettre à jour.
+        Cette vue affiche les prestataires actifs par défaut pour une lecture plus claire en
+        démonstration. Les prestataires inactifs restent consultables avec le filtre d’état.
       </div>
     </div>
   );
@@ -498,7 +517,7 @@ export default function TravauxFournisseurs() {
   const [rows, setRows] = useState<FournisseurView[]>([]);
 
   const [query, setQuery] = useState("");
-  const [actifFilter, setActifFilter] = useState<string>("TOUS");
+  const [actifFilter, setActifFilter] = useState<string>("ACTIF");
 
   const fetchData = useCallback(async () => {
     setState("loading");
@@ -507,9 +526,20 @@ export default function TravauxFournisseurs() {
     try {
       const res = await api.get(ENDPOINTS.travauxFournisseurs);
       const data = res?.data;
-      const items = isDRFPage<FournisseurRaw>(data) ? data.results : asArray<FournisseurRaw>(data);
+      const items = isDRFPage<FournisseurRaw>(data)
+        ? data.results
+        : asArray<FournisseurRaw>(data);
 
-      setRows(items.map(normalizeFournisseur));
+      const normalized = items.map(normalizeFournisseur).sort((a, b) => {
+        const actifA = a.actif === true ? 0 : a.actif === false ? 1 : 2;
+        const actifB = b.actif === true ? 0 : b.actif === false ? 1 : 2;
+
+        if (actifA !== actifB) return actifA - actifB;
+
+        return a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" });
+      });
+
+      setRows(normalized);
       setState("success");
     } catch (e) {
       setState("error");
@@ -567,7 +597,16 @@ export default function TravauxFournisseurs() {
     });
   }, [rows, query, actifFilter]);
 
-  const stats = useMemo(() => {
+  const globalStats = useMemo(() => {
+    const total = rows.length;
+    const actifs = rows.filter((x) => x.actif === true).length;
+    const inactifs = rows.filter((x) => x.actif === false).length;
+    const nonRenseignes = rows.filter((x) => x.actif === null).length;
+
+    return { total, actifs, inactifs, nonRenseignes };
+  }, [rows]);
+
+  const displayStats = useMemo(() => {
     const total = filtered.length;
     const actifs = filtered.filter((x) => x.actif === true).length;
     const inactifs = filtered.filter((x) => x.actif === false).length;
@@ -578,7 +617,7 @@ export default function TravauxFournisseurs() {
 
   const isLoading = state === "loading";
   const hasRows = rows.length > 0;
-  const hasFilters = query.trim().length > 0 || actifFilter !== "TOUS";
+  const hasFilters = query.trim().length > 0 || actifFilter !== "ACTIF";
 
   const resultLabel = isLoading
     ? "Chargement des prestataires..."
@@ -586,13 +625,15 @@ export default function TravauxFournisseurs() {
       ? `${filtered.length} prestataire${filtered.length > 1 ? "s" : ""} affiché${
           filtered.length > 1 ? "s" : ""
         }`
-      : `${rows.length} prestataire${rows.length > 1 ? "s" : ""}`;
+      : `${filtered.length} prestataire${filtered.length > 1 ? "s" : ""} actif${
+          filtered.length > 1 ? "s" : ""
+        }`;
 
   return (
     <PageShell>
       <HeroHeader
         title="Prestataires"
-        subtitle="Consultez les prestataires enregistrés dans le module Travaux, recherchez rapidement une fiche prestataire et accédez à sa modification depuis un écran centralisé."
+        subtitle="Consultez les prestataires actifs du module Travaux, maintenez leurs coordonnées et gardez les archives accessibles sans encombrer la vue principale."
         right={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <AppButton onClick={goToDossiers} variant="secondary">
@@ -610,29 +651,29 @@ export default function TravauxFournisseurs() {
 
       <div className="travaux-fournisseurs-stats-grid" style={statsGrid}>
         <StatCard
-          title="Prestataires affichés"
-          value={stats.total}
-          sub="Résultats visibles après filtres."
+          title="Affichés"
+          value={displayStats.total}
+          sub={`Total référentiel : ${globalStats.total}`}
           kind="neutral"
         />
 
         <StatCard
           title="Actifs"
-          value={stats.actifs}
-          sub="Prestataires exploitables."
+          value={globalStats.actifs}
+          sub="Prestataires exploitables en démo."
           kind="success"
         />
 
         <StatCard
-          title="Inactifs"
-          value={stats.inactifs}
-          sub="Prestataires désactivés ou suspendus."
+          title="Archivés"
+          value={globalStats.inactifs}
+          sub="Masqués par défaut."
           kind="danger"
         />
 
         <StatCard
           title="Statut à compléter"
-          value={stats.nonRenseignes}
+          value={globalStats.nonRenseignes}
           sub="Fiches à enrichir côté données."
           kind="warning"
         />
@@ -659,9 +700,9 @@ export default function TravauxFournisseurs() {
               onChange={(e) => setActifFilter(e.target.value)}
               style={selectInput}
             >
-              <option value="TOUS">Tous les états</option>
               <option value="ACTIF">Actifs</option>
-              <option value="INACTIF">Inactifs</option>
+              <option value="TOUS">Tous les états</option>
+              <option value="INACTIF">Inactifs / archivés</option>
               <option value="INCONNU">Statut non renseigné</option>
             </select>
 
@@ -676,7 +717,7 @@ export default function TravauxFournisseurs() {
 
       <Panel style={{ overflow: "hidden" }}>
         <div style={tableWrap}>
-          <table style={tableStyle}>
+          <table className="travaux-fournisseurs-table" style={tableStyle}>
             <thead>
               <tr style={{ textAlign: "left" }}>
                 <th style={{ ...th, width: "28%" }}>Prestataire</th>
@@ -782,9 +823,8 @@ export default function TravauxFournisseurs() {
 
       {state === "success" && rows.length > 0 ? (
         <AlertBox kind="info" title="Lecture métier">
-          Ce sous-module centralise la gestion des prestataires. Une liaison directe entre un dossier
-          de travaux et un prestataire principal pourra être ajoutée plus tard sans bloquer l’usage
-          actuel.
+          Les prestataires actifs sont affichés en priorité pour garder une vue claire en exploitation.
+          Les archives restent disponibles depuis le filtre “Inactifs / archivés” ou “Tous les états”.
         </AlertBox>
       ) : null}
 
@@ -836,7 +876,8 @@ const heroGlow: CSSProperties = {
   width: 280,
   height: 280,
   borderRadius: "50%",
-  background: "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  background:
+    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
   pointerEvents: "none",
 };
 
@@ -1047,6 +1088,6 @@ const miniLink: CSSProperties = {
 const primaryMiniLink: CSSProperties = {
   ...miniLink,
   border: "1px solid #93c5fd",
-  background: "#dbeafe",
+  background: "#eff6ff",
   color: "#1e3a8a",
 };

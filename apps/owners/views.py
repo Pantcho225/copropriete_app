@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.core.models import CoproMembre, UserSecurityProfile
 
@@ -216,6 +217,105 @@ def _build_username_from_owner(owner: Coproprietaire) -> str:
         counter += 1
 
     return username
+
+
+class CoproprietaireMesLotsAPIView(APIView):
+    """
+    Espace copropriétaire — lots du copropriétaire connecté.
+
+    Important :
+    - cet endpoint est séparé du back-office référentiel ;
+    - il retourne uniquement les lots liés au compte utilisateur connecté ;
+    - la quote-part vient de ProprietaireLot.quote_part, pas du modèle Lot.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        coproprietaire = (
+            Coproprietaire.objects.filter(
+                user_account=request.user,
+                actif=True,
+            )
+            .select_related("copropriete", "user_account")
+            .order_by("id")
+            .first()
+        )
+
+        if not coproprietaire:
+            return Response(
+                {
+                    "count": 0,
+                    "coproprietaire": None,
+                    "lots": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        liens = (
+            ProprietaireLot.objects.filter(
+                coproprietaire=coproprietaire,
+                copropriete=coproprietaire.copropriete,
+                date_fin__isnull=True,
+            )
+            .select_related("copropriete", "lot", "coproprietaire")
+            .order_by("-principal", "lot__reference", "lot__numero", "id")
+        )
+
+        lots = []
+
+        for lien in liens:
+            lot = lien.lot
+
+            reference = (
+                getattr(lot, "reference", None)
+                or getattr(lot, "numero", None)
+                or f"Lot #{lot.id}"
+            )
+
+            numero = getattr(lot, "numero", None) or reference
+            type_lot = getattr(lot, "type_lot", "") or ""
+            etage = getattr(lot, "etage", "") or ""
+            surface = getattr(lot, "surface", None)
+            description = getattr(lot, "description", "") or ""
+
+            lots.append(
+                {
+                    "id": lien.id,
+                    "lot_id": lot.id,
+                    "label": reference,
+                    "numero": numero,
+                    "reference": reference,
+                    "type_lot": type_lot,
+                    "etage": etage,
+                    "surface": str(surface) if surface is not None else None,
+                    "description": description,
+                    "type_droit": (
+                        "Propriétaire principal"
+                        if lien.principal
+                        else "Copropriétaire"
+                    ),
+                    "quote_part": str(lien.quote_part or "0.00"),
+                    "copropriete": {
+                        "id": coproprietaire.copropriete_id,
+                        "nom": coproprietaire.copropriete.nom,
+                    },
+                }
+            )
+
+        return Response(
+            {
+                "count": len(lots),
+                "coproprietaire": {
+                    "id": coproprietaire.id,
+                    "nom": coproprietaire.nom,
+                    "prenoms": coproprietaire.prenom,
+                    "email": coproprietaire.email,
+                },
+                "lots": lots,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CoproprietaireViewSet(viewsets.ModelViewSet):
