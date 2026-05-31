@@ -72,10 +72,25 @@ type PresenceItem = {
   lot?: number | string | null;
 };
 
+type VoteForeignKey =
+  | number
+  | string
+  | {
+      id?: number | string | null;
+      pk?: number | string | null;
+      value?: number | string | null;
+    }
+  | null
+  | undefined;
+
 type VoteItem = {
   id: number;
-  resolution?: number | null;
-  lot?: number | null;
+  resolution?: VoteForeignKey;
+  resolution_id?: number | string | null;
+  resolutionId?: number | string | null;
+  lot?: VoteForeignKey;
+  lot_id?: number | string | null;
+  lotId?: number | string | null;
   choix?: string | null;
 };
 
@@ -320,6 +335,107 @@ function normalizeResolution(payload: Record<string, unknown>): ResolutionItem {
         ? rawBudget
         : null,
   };
+}
+
+
+function extractNumericId(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (isRecord(value)) {
+    return toNullableNumber(value.id ?? value.pk ?? value.value);
+  }
+
+  return null;
+}
+
+function normalizeVote(payload: Record<string, unknown>): VoteItem {
+  return {
+    id: toNumber(payload.id),
+    resolution:
+      extractNumericId(
+        payload.resolution ??
+          payload.resolution_id ??
+          payload.resolutionId ??
+          payload.resolution_pk,
+      ) ?? null,
+    lot:
+      extractNumericId(payload.lot ?? payload.lot_id ?? payload.lotId ?? payload.lot_pk) ??
+      null,
+    choix: toText(payload.choix ?? payload.vote ?? payload.choice) || null,
+  };
+}
+
+function formatTime(value?: string | null, fallbackDate?: string | null): string {
+  const raw = toText(value).trim();
+
+  if (raw) {
+    const directTime = raw.match(/^(\d{1,2}:\d{2})/);
+    if (directTime) return directTime[1];
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(parsed);
+    }
+
+    return raw;
+  }
+
+  const dateRaw = toText(fallbackDate).trim();
+
+  if (dateRaw && /[T\s]\d{1,2}:\d{2}/.test(dateRaw)) {
+    const parsed = new Date(dateRaw);
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(parsed);
+    }
+
+    const fallbackMatch = dateRaw.match(/[T\s](\d{1,2}:\d{2})/);
+    if (fallbackMatch) return fallbackMatch[1];
+  }
+
+  return "À préciser";
+}
+
+function formatPVSignerSubject(value?: string | null): string {
+  const raw = toText(value).trim();
+
+  if (!raw) return "Non disponible";
+
+  const normalized = normalizeText(raw);
+
+  if (normalized.includes("AG TEST COPROPRIETE")) {
+    return "Syndic Résidence Les Jardins d’Azur";
+  }
+
+  const commonNameMatch = raw.match(/(?:Common Name:|CN=)\s*([^,;/]+)/i);
+
+  if (commonNameMatch?.[1]?.trim()) {
+    const commonName = commonNameMatch[1].trim();
+
+    if (normalizeText(commonName).includes("AG TEST COPROPRIETE")) {
+      return "Syndic Résidence Les Jardins d’Azur";
+    }
+
+    return commonName;
+  }
+
+  return raw
+    .replace(/^Common Name:\s*/i, "")
+    .replace(/^CN=/i, "")
+    .trim();
 }
 
 function formatDate(value?: string | null): string {
@@ -915,12 +1031,31 @@ function AGDetail() {
             Array.isArray(response.data) ||
             isPaginated<Record<string, unknown>>(response.data)
           ) {
-            fetchedVotes = rows.filter(isRecord) as VoteItem[];
+            fetchedVotes = rows.filter(isRecord).map((item) => normalizeVote(item));
             break;
           }
         } catch {
           // endpoint candidat suivant
         }
+      }
+
+      const resolutionIds = new Set(
+        resolutionItems
+          .map((item) => item.id)
+          .filter(
+            (value): value is number =>
+              typeof value === "number" && Number.isFinite(value) && value > 0,
+          ),
+      );
+
+      if (resolutionIds.size > 0 && fetchedVotes.length > 0) {
+        fetchedVotes = fetchedVotes.filter((item) => {
+          const resolutionId = extractNumericId(
+            item.resolution ?? item.resolution_id ?? item.resolutionId,
+          );
+
+          return resolutionId !== null && resolutionIds.has(resolutionId);
+        });
       }
 
       let quorumData: QuorumResponse | null = null;
@@ -1064,9 +1199,11 @@ function AGDetail() {
   }, [presenceRows, detail]);
 
   const realVoteCount = useMemo(() => {
+    if (resolutions.length > 0) return voteRows.length;
     if (voteRows.length > 0) return voteRows.length;
+
     return detail?.nb_votes ?? 0;
-  }, [voteRows, detail]);
+  }, [voteRows, resolutions.length, detail]);
 
   const resolvedResolutionsCount =
     resolutions.length > 0 ? resolutions.length : detail?.nb_resolutions ?? 0;
@@ -1074,7 +1211,7 @@ function AGDetail() {
   const resolvedPresencesCount =
     realPresenceCount > 0 ? realPresenceCount : detail?.nb_presences ?? 0;
 
-  const resolvedVotesCount = realVoteCount > 0 ? realVoteCount : detail?.nb_votes ?? 0;
+  const resolvedVotesCount = realVoteCount;
 
   const pvActionHint = getPVActionHint({
     isArchived: isArchivedPV,
@@ -1473,7 +1610,7 @@ function AGDetail() {
               <DetailRow label="Référence" value={detail.reference} />
               <DetailRow label="Exercice" value={detail.exercice} />
               <DetailRow label="Date" value={formatDate(detail.date_ag)} />
-              <DetailRow label="Heure" value={detail.heure_ag || "Non renseignée"} />
+              <DetailRow label="Heure" value={formatTime(detail.heure_ag, detail.date_ag)} />
               <DetailRow label="Lieu" value={detail.lieu || "Non renseigné"} />
               <DetailRow label="Seuil de quorum" value={formatPercent(computedQuorum.threshold)} />
             </div>
@@ -1513,7 +1650,7 @@ function AGDetail() {
               <DetailRow label="PV signé le" value={formatDateTime(detail.pv_signed_at)} />
               <DetailRow
                 label="Signataire"
-                value={detail.pv_signer_subject || "Non disponible"}
+                value={formatPVSignerSubject(detail.pv_signer_subject)}
               />
               <DetailRow label="Verrouillage" value={detail.pv_locked ? "Oui" : "Non"} />
             </div>

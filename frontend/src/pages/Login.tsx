@@ -57,7 +57,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState(
-    "Ce backend exige l’en-tête X-Copropriete-Id dès l’authentification.",
+    "Saisissez l’identifiant de la copropriété active pour accéder à votre espace de gestion.",
   );
 
   const isFormValid = useMemo(() => {
@@ -240,8 +240,8 @@ export default function Login() {
                 />
 
                 <div style={helperText}>
-                  Cet identifiant est requis pour transmettre l’en-tête{" "}
-                  <strong>X-Copropriete-Id</strong> dès la connexion.
+                  Utilisez l’identifiant de la copropriété active pour ouvrir le bon
+                  espace de gestion.
                 </div>
               </div>
 
