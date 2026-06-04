@@ -1,6 +1,13 @@
 # apps/documents/urls.py
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
+from .views import (
+    CoproprietaireGeneratedDocumentsAPIView,
+    GenerateAgMandatAPIView,
+    GenerateRelanceLetterAPIView,
+    GeneratedDocumentViewSet,
+)
 from .views_coproprietaire import (
     CoproprietaireDocumentsAPIView,
     CoproprietaireMasquerDocumentAPIView,
@@ -9,11 +16,19 @@ from .views_coproprietaire import (
 
 app_name = "documents"
 
+router = DefaultRouter()
+router.register(r"generated", GeneratedDocumentViewSet, basename="generated-document")
+
 urlpatterns = [
     path(
         "coproprietaire/documents/",
         CoproprietaireDocumentsAPIView.as_view(),
         name="coproprietaire-documents",
+    ),
+    path(
+        "coproprietaire/generated/",
+        CoproprietaireGeneratedDocumentsAPIView.as_view(),
+        name="coproprietaire-generated-documents",
     ),
     path(
         "coproprietaire/documents/masquer/",
@@ -25,4 +40,15 @@ urlpatterns = [
         CoproprietaireRestaurerDocumentAPIView.as_view(),
         name="coproprietaire-documents-restaurer",
     ),
+    path(
+        "generate/relance/<int:dossier_id>/",
+        GenerateRelanceLetterAPIView.as_view(),
+        name="generate-relance-letter",
+    ),
+    path(
+        "generate/ag/<int:ag_id>/mandat/",
+        GenerateAgMandatAPIView.as_view(),
+        name="generate-ag-mandat",
+    ),
+    path("", include(router.urls)),
 ]

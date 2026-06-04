@@ -126,15 +126,11 @@ class DossierImpayeViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = self._apply_filters(self._base_queryset())
 
-        # Par défaut, la liste /api/relances/dossiers/ doit afficher
-        # uniquement les vrais impayés actifs.
         if self.action == "list":
             params = self.request.query_params
             statut = params.get("statut")
             est_regularise = params.get("est_regularise")
 
-            # Si aucun filtre explicite n'est demandé, on masque les
-            # dossiers déjà régularisés / soldés.
             if not statut and est_regularise is None:
                 qs = qs.filter(est_regularise=False, reste_a_payer__gt=0)
 
@@ -315,11 +311,92 @@ class RelanceViewSet(
         return RelanceSerializer
 
     def perform_create(self, serializer):
+        """
+        Création sécurisée d'une relance.
+
+        Règle métier :
+        une relance doit toujours rester cohérente avec son DossierImpaye.
+
+        On contrôle à la fois :
+        - serializer.validated_data ;
+        - self.request.data.
+
+        Pourquoi ?
+        Parce que le serializer peut ignorer ou normaliser certains champs du payload.
+        Sans contrôle explicite sur request.data, un payload incohérent peut passer.
+        """
         copro_id = _require_copro_id(self.request)
+
         dossier = serializer.validated_data.get("dossier")
-        if dossier:
-            _assert_same_copro(dossier, copro_id)
-        serializer.save()
+        if not dossier:
+            raise ValidationError(
+                {"dossier": "Le dossier d'impayé est obligatoire."}
+            )
+
+        _assert_same_copro(dossier, copro_id)
+
+        def _raw_int(field_name: str):
+            raw_value = self.request.data.get(field_name)
+
+            if raw_value in (None, ""):
+                return None
+
+            try:
+                return int(raw_value)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {field_name: "Identifiant invalide."}
+                )
+
+        raw_copropriete_id = _raw_int("copropriete")
+        raw_appel_id = _raw_int("appel")
+        raw_lot_id = _raw_int("lot")
+        raw_coproprietaire_id = _raw_int("coproprietaire")
+
+        if raw_copropriete_id and raw_copropriete_id != int(dossier.copropriete_id):
+            raise ValidationError(
+                {
+                    "copropriete": (
+                        "La copropriété ne correspond pas au dossier d'impayé."
+                    )
+                }
+            )
+
+        if raw_appel_id and raw_appel_id != int(dossier.appel_id):
+            raise ValidationError(
+                {
+                    "appel": (
+                        "L'appel de fonds ne correspond pas au dossier d'impayé."
+                    )
+                }
+            )
+
+        if raw_lot_id and raw_lot_id != int(dossier.lot_id):
+            raise ValidationError(
+                {
+                    "lot": (
+                        "Le lot ne correspond pas au dossier d'impayé."
+                    )
+                }
+            )
+
+        if raw_coproprietaire_id and dossier.coproprietaire_id:
+            if raw_coproprietaire_id != int(dossier.coproprietaire_id):
+                raise ValidationError(
+                    {
+                        "coproprietaire": (
+                            "Le copropriétaire ne correspond pas au dossier d'impayé."
+                        )
+                    }
+                )
+
+        serializer.save(
+            copropriete=dossier.copropriete,
+            appel=dossier.appel,
+            lot=dossier.lot,
+            coproprietaire=dossier.coproprietaire,
+            envoye_par=self.request.user,
+        )
 
     @action(detail=True, methods=["post"], url_path="annuler")
     def annuler(self, request, pk=None):
