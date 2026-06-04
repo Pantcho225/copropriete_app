@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
+import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
@@ -108,6 +109,16 @@ type DRFPage<T> = {
   next: string | null;
   previous: string | null;
   results: T[];
+};
+
+type GeneratedDocumentPayload = {
+  detail?: string;
+  document?: {
+    reference?: string | null;
+    file?: string | null;
+    file_url?: string | null;
+    title?: string | null;
+  };
 };
 
 const AG_ENDPOINT_CANDIDATES = ["/api/ag/ags/", "/api/ag/ags"];
@@ -1403,6 +1414,58 @@ function AGDetail() {
     );
   };
 
+  const handleGenerateMandatAG = useCallback(async () => {
+    if (!detail) return;
+
+    if (isReadOnly) {
+      showFlash(
+        "info",
+        "Assemblée déjà clôturée, archivée ou annulée. Génération du mandat indisponible.",
+      );
+      return;
+    }
+
+    if (busyAction) return;
+
+    const confirmed = window.confirm(
+      "Générer un mandat de représentation PDF pour cette assemblée générale ?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("generate-mandat-ag");
+
+      const response = await api.post<GeneratedDocumentPayload>(
+        ENDPOINTS.documentGenerateAgMandat(agId),
+        {},
+      );
+
+      const document = response.data.document;
+      const fileUrl = buildMediaUrl(document?.file_url || document?.file || null);
+      const reference = document?.reference || "—";
+
+      showFlash(
+        "success",
+        `Mandat AG généré avec succès. Référence : ${reference}.`,
+      );
+
+      await fetchDetail();
+
+      if (fileUrl) {
+        window.open(fileUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      console.error(error);
+      showFlash(
+        "error",
+        getBackendErrorMessage(error, "Impossible de générer le mandat AG."),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [agId, busyAction, detail, fetchDetail, isReadOnly, showFlash]);
+
   if (loadState === "loading") {
     return (
       <PageShell>
@@ -1478,6 +1541,16 @@ function AGDetail() {
 
               <AppButton onClick={() => navigate("/ag/resolutions")} variant="secondary">
                 Voir les résolutions
+              </AppButton>
+
+              <AppButton
+                onClick={() => void handleGenerateMandatAG()}
+                variant="secondary"
+                disabled={isReadOnly || busyAction === "generate-mandat-ag"}
+              >
+                {busyAction === "generate-mandat-ag"
+                  ? "Génération mandat..."
+                  : "Générer mandat AG"}
               </AppButton>
             </div>
 

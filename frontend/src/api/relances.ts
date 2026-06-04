@@ -1,6 +1,40 @@
 import api from "./axios";
 import { ENDPOINTS } from "./endpoints";
 
+export type GeneratedDocumentResponse = {
+  id: number;
+  copropriete: number;
+  document_type: string;
+  document_type_label: string;
+  title: string;
+  reference: string;
+  file: string;
+  file_url: string;
+  filename: string;
+  file_hash: string;
+  related_owner: number | null;
+  related_owner_label: string;
+  related_lot: number | null;
+  related_lot_label: string;
+  related_ag: number | null;
+  related_ag_label: string;
+  related_dossier_impaye: number | null;
+  related_relance: number | null;
+  is_visible_to_owner: boolean;
+  status: string;
+  status_label: string;
+  metadata: Record<string, unknown>;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GenerateRelancePdfResponse = {
+  detail: string;
+  relance: unknown;
+  document: GeneratedDocumentResponse;
+};
+
 export const relancesAPI = {
   getDossiers: async () => {
     const res = await api.get(ENDPOINTS.relancesDossiers);
@@ -33,7 +67,7 @@ export const relancesAPI = {
       canal: string;
       objet: string;
       message: string;
-    }
+    },
   ) => {
     const res = await api.post(ENDPOINTS.relanceEnvoyer(dossierId), payload);
     return res.data;
@@ -44,9 +78,24 @@ export const relancesAPI = {
     payload: {
       canal: string;
       message: string;
-    }
+    },
   ) => {
     const res = await api.post(ENDPOINTS.relanceGenererAvis(dossierId), payload);
+    return res.data;
+  },
+
+  genererCourrierRelancePdf: async (
+    dossierId: number | string,
+    payload?: {
+      objet?: string;
+      message?: string;
+    },
+  ): Promise<GenerateRelancePdfResponse> => {
+    const res = await api.post(
+      ENDPOINTS.documentGenerateRelance(dossierId),
+      payload ?? {},
+    );
+
     return res.data;
   },
 };

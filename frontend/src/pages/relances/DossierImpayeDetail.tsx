@@ -753,6 +753,50 @@ export default function DossierImpayeDetail() {
     }
   }, [avisForm, dossier, load]);
 
+  const handleGenerateCourrierPdf = useCallback(async () => {
+    if (!dossier) return;
+
+    const confirmed = window.confirm(
+      "Générer un courrier PDF officiel de relance pour ce dossier ? Le document sera visible dans l’espace copropriétaire.",
+    );
+
+    if (!confirmed) return;
+
+    setBusy("courrier-pdf");
+    setFlash(null);
+
+    try {
+      const response = await relancesAPI.genererCourrierRelancePdf(dossier.id, {
+        objet: "Relance pour impayé de charges",
+        message:
+          "Sauf erreur ou omission de notre part, nous constatons que le règlement des charges de copropriété reste à régulariser. Nous vous invitons à procéder au paiement dans les meilleurs délais ou à contacter le syndic pour toute clarification.",
+      });
+
+      const fileUrl = response.document?.file_url || response.document?.file;
+      const reference = response.document?.reference;
+
+      setFlash({
+        kind: "success",
+        text: fileUrl
+          ? `Courrier PDF généré avec succès.\nRéférence : ${reference || "—"}\nLe document est visible dans l’espace copropriétaire.`
+          : "Courrier PDF généré avec succès. Le document est visible dans l’espace copropriétaire.",
+      });
+
+      await load();
+
+      if (fileUrl) {
+        window.open(fileUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      setFlash({
+        kind: "error",
+        text: getErrorMessage(e, "Impossible de générer le courrier PDF."),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [dossier, load]);
+
   if (!dossierId) {
     return (
       <PageShell>
@@ -776,6 +820,19 @@ export default function DossierImpayeDetail() {
               disabled={!canRelancer || busy !== null}
             >
               {busy === "relance" ? "Envoi..." : "Envoyer une relance"}
+            </SmallButton>
+
+            <SmallButton
+              onClick={handleGenerateCourrierPdf}
+              primary
+              disabled={!canRelancer || busy !== null}
+              title={
+                canRelancer
+                  ? "Générer un courrier PDF visible côté copropriétaire"
+                  : "Le courrier PDF est réservé aux dossiers avec un reste à payer."
+              }
+            >
+              {busy === "courrier-pdf" ? "Génération PDF..." : "Générer courrier PDF"}
             </SmallButton>
 
             <SmallButton

@@ -210,6 +210,15 @@ export const ENDPOINTS = {
     `/api/relances/dossiers/${dossierId}/generer-avis-regularisation/`,
 
   // =========================
+  // DOCUMENTS GÉNÉRÉS
+  // =========================
+  documentsGenerated: "/api/documents/generated/",
+  documentGenerateRelance: (dossierId: number | string) =>
+    `/api/documents/generate/relance/${dossierId}/`,
+  documentGenerateAgMandat: (agId: number | string) =>
+    `/api/documents/generate/ag/${agId}/mandat/`,
+
+  // =========================
   // BILLING
   // =========================
   billingDashboard: "/api/billing/dashboard/",
