@@ -343,6 +343,108 @@ export async function generateMandatAgCoproprietaire(
   return response.data;
 }
 
+export type CoproprietaireProcurationStatut =
+  | "EN_ATTENTE"
+  | "VALIDEE"
+  | "REJETEE"
+  | "ANNULEE";
+
+export type CoproprietaireProcurationItem = {
+  id: number;
+  ag: number;
+  ag_titre: string;
+  ag_date_ag: string | null;
+  coproprietaire: number;
+  coproprietaire_label: string;
+  lot: number;
+  lot_reference: string;
+  lot_numero: string;
+  lot_label: string;
+  mandataire_nom: string;
+  mandataire_telephone: string;
+  mandataire_email: string;
+  document: number | null;
+  document_url: string | null;
+  document_reference: string;
+  document_title: string;
+  statut: CoproprietaireProcurationStatut | string;
+  statut_label: string;
+  motif_rejet: string;
+  created_by: number | null;
+  created_by_label: string;
+  validated_by: number | null;
+  validated_by_label: string;
+  validated_at: string | null;
+  rejected_by: number | null;
+  rejected_by_label: string;
+  rejected_at: string | null;
+  ip_address: string | null;
+  user_agent: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoproprietaireProcurationsResponse = {
+  count: number;
+  procurations: CoproprietaireProcurationItem[];
+};
+
+export type CreerProcurationAgCoproprietairePayload = {
+  ag_id: number | string;
+  lot_id?: number | string;
+  mandataire_nom: string;
+  mandataire_telephone?: string;
+  mandataire_email?: string;
+};
+
+export type CreerProcurationAgCoproprietaireResponse = {
+  detail: string;
+  procuration: CoproprietaireProcurationItem;
+};
+
+export type AnnulerProcurationAgCoproprietaireResponse = {
+  detail: string;
+  procuration: CoproprietaireProcurationItem;
+};
+
+export async function getProcurationsAgCoproprietaire(options?: {
+  agId?: number | string;
+  statut?: CoproprietaireProcurationStatut | string;
+}) {
+  const response = await api.get<CoproprietaireProcurationsResponse>(
+    "/api/ag/coproprietaire/procurations/",
+    {
+      params: {
+        ag: options?.agId,
+        statut: options?.statut,
+      },
+    },
+  );
+
+  return response.data;
+}
+
+export async function creerProcurationAgCoproprietaire(
+  payload: CreerProcurationAgCoproprietairePayload,
+) {
+  const response = await api.post<CreerProcurationAgCoproprietaireResponse>(
+    "/api/ag/coproprietaire/procurations/",
+    payload,
+  );
+
+  return response.data;
+}
+
+export async function annulerProcurationAgCoproprietaire(
+  procurationId: number | string,
+) {
+  const response = await api.post<AnnulerProcurationAgCoproprietaireResponse>(
+    `/api/ag/coproprietaire/procurations/${procurationId}/annuler/`,
+  );
+
+  return response.data;
+}
+
 export type CoproprietairePresenceMode =
   | "PRESENT_PHYSIQUE"
   | "PRESENT_EN_LIGNE"

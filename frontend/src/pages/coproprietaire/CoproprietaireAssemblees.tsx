@@ -1,6 +1,6 @@
 // frontend/src/pages/coproprietaire/CoproprietaireAssemblees.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 
 import {
   getAssembleesGeneralesCoproprietaire,
@@ -8,10 +8,14 @@ import {
   type CoproprietaireAGResponse,
 } from "../../api/coproprietaireAg";
 import {
+  annulerProcurationAgCoproprietaire,
   confirmerPresenceAgCoproprietaire,
+  creerProcurationAgCoproprietaire,
   generateMandatAgCoproprietaire,
+  getProcurationsAgCoproprietaire,
   voterResolutionAgCoproprietaire,
   type CoproprietairePresenceMode,
+  type CoproprietaireProcurationItem,
   type CoproprietaireVoteChoix,
   type CoproprietaireVoteItem,
 } from "../../api/coproprietaire";
@@ -40,10 +44,17 @@ type PresenceItemLike = {
   present_ou_represente?: boolean;
   lot?: {
     id?: number | string | null;
+    label?: string;
+    reference?: string;
+    numero?: string;
+    type_lot?: string;
+    etage?: string;
   } | null;
 };
 
 type PresenceSummaryLike = {
+  status?: string;
+  label?: string;
   items?: PresenceItemLike[];
 };
 
@@ -52,6 +63,19 @@ type CoproprietaireAGWithResolutions = CoproprietaireAG & {
   resolutions?: CoproprietaireResolution[];
   vote_summary?: VoteSummaryLike;
   presence_coproprietaire?: PresenceSummaryLike;
+};
+
+type ProcurationModalState = {
+  ag: CoproprietaireAGWithResolutions;
+  lot_id: string;
+  mandataire_nom: string;
+  mandataire_telephone: string;
+  mandataire_email: string;
+};
+
+type LotOption = {
+  id: number | string;
+  label: string;
 };
 
 const emptyResponse: CoproprietaireAGResponse = {
@@ -81,6 +105,7 @@ const voteChoiceLabels: Record<CoproprietaireVoteChoix, string> = {
 
 export default function CoproprietaireAssemblees() {
   const [data, setData] = useState<CoproprietaireAGResponse>(emptyResponse);
+  const [procurations, setProcurations] = useState<CoproprietaireProcurationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(null);
@@ -98,6 +123,13 @@ export default function CoproprietaireAssemblees() {
   const [localVotesByResolution, setLocalVotesByResolution] = useState<
     Record<string, CoproprietaireVoteItem>
   >({});
+  const [procurationModal, setProcurationModal] = useState<ProcurationModalState | null>(
+    null,
+  );
+  const [creatingProcuration, setCreatingProcuration] = useState(false);
+  const [cancelingProcurationId, setCancelingProcurationId] = useState<number | null>(
+    null,
+  );
 
   const loadAssemblees = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -114,9 +146,17 @@ export default function CoproprietaireAssemblees() {
         });
 
         setData(response);
+
+        try {
+          const procurationsResponse = await getProcurationsAgCoproprietaire();
+          setProcurations(procurationsResponse.procurations ?? []);
+        } catch {
+          setProcurations([]);
+        }
       } catch {
         setError("Impossible de charger vos assemblées générales pour le moment.");
         setData(emptyResponse);
+        setProcurations([]);
       } finally {
         if (!options?.silent) {
           setLoading(false);
@@ -143,6 +183,22 @@ export default function CoproprietaireAssemblees() {
 
   const assemblees = useMemo(() => data.assemblees ?? [], [data.assemblees]);
 
+  const procurationsByAg = useMemo(() => {
+    return procurations.reduce<Record<string, CoproprietaireProcurationItem[]>>(
+      (acc, procuration) => {
+        const key = String(procuration.ag);
+
+        if (!acc[key]) {
+          acc[key] = [];
+        }
+
+        acc[key].push(procuration);
+        return acc;
+      },
+      {},
+    );
+  }, [procurations]);
+
   const pvDisponibles = useMemo(() => {
     return assemblees.filter((ag) => ag.has_pv).length;
   }, [assemblees]);
@@ -154,6 +210,134 @@ export default function CoproprietaireAssemblees() {
       setFlash((current) => (current?.text === text ? null : current));
     }, 5000);
   }, []);
+
+  const handleOpenProcurationModal = useCallback(
+    (ag: CoproprietaireAGWithResolutions) => {
+      if (!canGiveProcuration(ag)) {
+        showFlash(
+          "info",
+          "La procuration est disponible uniquement pour une AG convoquée ou ouverte, non verrouillée.",
+        );
+        return;
+      }
+
+      const lotOptions = getPresenceLotOptions(ag);
+
+      setProcurationModal({
+        ag,
+        lot_id: lotOptions.length === 1 ? String(lotOptions[0].id) : "",
+        mandataire_nom: "",
+        mandataire_telephone: "",
+        mandataire_email: "",
+      });
+    },
+    [showFlash],
+  );
+
+  const handleCloseProcurationModal = useCallback(() => {
+    if (creatingProcuration) return;
+    setProcurationModal(null);
+  }, [creatingProcuration]);
+
+  const handleChangeProcurationModal = useCallback(
+    (field: keyof Omit<ProcurationModalState, "ag">, value: string) => {
+      setProcurationModal((current) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          [field]: value,
+        };
+      });
+    },
+    [],
+  );
+
+  const handleSubmitProcuration = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      if (!procurationModal) return;
+
+      const mandataireNom = procurationModal.mandataire_nom.trim();
+      const mandataireTelephone = procurationModal.mandataire_telephone.trim();
+      const mandataireEmail = procurationModal.mandataire_email.trim();
+      const lotId = procurationModal.lot_id.trim();
+
+      if (!mandataireNom) {
+        showFlash("info", "Le nom complet du mandataire est obligatoire.");
+        return;
+      }
+
+      try {
+        setCreatingProcuration(true);
+
+        const response = await creerProcurationAgCoproprietaire({
+          ag_id: procurationModal.ag.id,
+          lot_id: lotId || undefined,
+          mandataire_nom: mandataireNom,
+          mandataire_telephone: mandataireTelephone || undefined,
+          mandataire_email: mandataireEmail || undefined,
+        });
+
+        showFlash(
+          "success",
+          `${response.detail} Statut : ${
+            response.procuration.statut_label || response.procuration.statut
+          }.`,
+        );
+
+        setProcurationModal(null);
+        await loadAssemblees({ silent: true });
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(
+            err,
+            "Impossible d’enregistrer votre demande de procuration.",
+          ),
+        );
+      } finally {
+        setCreatingProcuration(false);
+      }
+    },
+    [loadAssemblees, procurationModal, showFlash],
+  );
+
+  const handleCancelProcuration = useCallback(
+    async (procuration: CoproprietaireProcurationItem) => {
+      if (!canCancelProcuration(procuration)) {
+        showFlash(
+          "info",
+          "Seules les procurations en attente peuvent être annulées depuis votre espace.",
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Annuler la procuration donnée à ${procuration.mandataire_nom} ?`,
+      );
+
+      if (!confirmed) return;
+
+      try {
+        setCancelingProcurationId(procuration.id);
+
+        const response = await annulerProcurationAgCoproprietaire(procuration.id);
+
+        showFlash("success", response.detail);
+        await loadAssemblees({ silent: true });
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(err, "Impossible d’annuler cette procuration."),
+        );
+      } finally {
+        setCancelingProcurationId(null);
+      }
+    },
+    [loadAssemblees, showFlash],
+  );
 
   const handleGenerateMandat = useCallback(
     async (ag: CoproprietaireAG) => {
@@ -212,22 +396,9 @@ export default function CoproprietaireAssemblees() {
         return;
       }
 
-      let representantNom = "";
-
       if (mode === "REPRESENTE") {
-        const entered = window.prompt(
-          "Nom complet du mandataire qui vous représentera à cette AG :",
-        );
-
-        if (!entered || !entered.trim()) {
-          showFlash(
-            "info",
-            "Le nom du mandataire est obligatoire pour déclarer une représentation.",
-          );
-          return;
-        }
-
-        representantNom = entered.trim();
+        handleOpenProcurationModal(ag as CoproprietaireAGWithResolutions);
+        return;
       }
 
       const label = presenceModeLabels[mode];
@@ -245,7 +416,6 @@ export default function CoproprietaireAssemblees() {
 
         const response = await confirmerPresenceAgCoproprietaire(ag.id, {
           mode_presence: mode,
-          representant_nom: representantNom,
         });
 
         showFlash(
@@ -268,7 +438,7 @@ export default function CoproprietaireAssemblees() {
         setPresenceBusy(null);
       }
     },
-    [loadAssemblees, showFlash],
+    [handleOpenProcurationModal, loadAssemblees, showFlash],
   );
 
   const handleVoteResolution = useCallback(
@@ -444,10 +614,10 @@ export default function CoproprietaireAssemblees() {
             <h3 style={styles.sectionTitle}>Liste de vos assemblées générales</h3>
             <p style={styles.sectionText}>
               Recherchez une assemblée par titre, lieu ou statut. Vous pouvez
-              confirmer votre présence, participer en ligne, déclarer une
-              représentation, voter sur les résolutions ouvertes, ouvrir le
-              procès-verbal lorsqu’il est disponible et télécharger votre mandat
-              pour les AG encore actives.
+              confirmer votre présence, participer en ligne, donner procuration,
+              voter sur les résolutions ouvertes, ouvrir le procès-verbal
+              lorsqu’il est disponible et télécharger votre mandat pour les AG
+              encore actives.
             </p>
           </div>
 
@@ -489,39 +659,62 @@ export default function CoproprietaireAssemblees() {
 
         {!error && assemblees.length > 0 ? (
           <div style={styles.list}>
-            {assemblees.map((ag) => (
-              <AGCard
-                key={ag.id}
-                ag={ag as CoproprietaireAGWithResolutions}
-                generatingMandat={generatingMandatAgId === ag.id}
-                presenceBusy={
-                  presenceBusy?.agId === ag.id ? presenceBusy.mode : null
-                }
-                voteBusy={voteBusy}
-                localVotesByResolution={localVotesByResolution}
-                onGenerateMandat={handleGenerateMandat}
-                onConfirmPresence={handleConfirmPresence}
-                onVoteResolution={handleVoteResolution}
-              />
-            ))}
+            {assemblees.map((ag) => {
+              const agTyped = ag as CoproprietaireAGWithResolutions;
+
+              return (
+                <AGCard
+                  key={ag.id}
+                  ag={agTyped}
+                  procurations={procurationsByAg[String(ag.id)] ?? []}
+                  generatingMandat={generatingMandatAgId === ag.id}
+                  presenceBusy={
+                    presenceBusy?.agId === ag.id ? presenceBusy.mode : null
+                  }
+                  voteBusy={voteBusy}
+                  localVotesByResolution={localVotesByResolution}
+                  cancelingProcurationId={cancelingProcurationId}
+                  onGenerateMandat={handleGenerateMandat}
+                  onConfirmPresence={handleConfirmPresence}
+                  onOpenProcuration={handleOpenProcurationModal}
+                  onCancelProcuration={handleCancelProcuration}
+                  onVoteResolution={handleVoteResolution}
+                />
+              );
+            })}
           </div>
         ) : null}
       </section>
+
+      {procurationModal ? (
+        <ProcurationModal
+          state={procurationModal}
+          creating={creatingProcuration}
+          onChange={handleChangeProcurationModal}
+          onClose={handleCloseProcurationModal}
+          onSubmit={handleSubmitProcuration}
+        />
+      ) : null}
     </div>
   );
 }
 
 function AGCard({
   ag,
+  procurations,
   generatingMandat,
   presenceBusy,
   voteBusy,
   localVotesByResolution,
+  cancelingProcurationId,
   onGenerateMandat,
   onConfirmPresence,
+  onOpenProcuration,
+  onCancelProcuration,
   onVoteResolution,
 }: {
   ag: CoproprietaireAGWithResolutions;
+  procurations: CoproprietaireProcurationItem[];
   generatingMandat: boolean;
   presenceBusy: CoproprietairePresenceMode | null;
   voteBusy: {
@@ -529,8 +722,11 @@ function AGCard({
     choix: CoproprietaireVoteChoix;
   } | null;
   localVotesByResolution: Record<string, CoproprietaireVoteItem>;
+  cancelingProcurationId: number | null;
   onGenerateMandat: (ag: CoproprietaireAG) => void;
   onConfirmPresence: (ag: CoproprietaireAG, mode: CoproprietairePresenceMode) => void;
+  onOpenProcuration: (ag: CoproprietaireAGWithResolutions) => void;
+  onCancelProcuration: (procuration: CoproprietaireProcurationItem) => void;
   onVoteResolution: (
     ag: CoproprietaireAGWithResolutions,
     resolution: CoproprietaireResolution,
@@ -541,9 +737,13 @@ function AGCard({
   const presence = ag.presence_coproprietaire;
   const votesTotal = ag.vote_summary?.total ?? 0;
   const mandatAvailable = canGenerateMandat(ag);
+  const procurationAvailable = canGiveProcuration(ag);
   const presenceAvailable = canConfirmPresence(ag);
   const presenceDisabled = !presenceAvailable || presenceBusy !== null;
   const resolutions = Array.isArray(ag.resolutions) ? ag.resolutions : [];
+  const hasActiveProcuration = procurations.some((item) =>
+    ["EN_ATTENTE", "VALIDEE"].includes(normalize(item.statut)),
+  );
 
   return (
     <article style={styles.agCard}>
@@ -579,8 +779,8 @@ function AGCard({
             <p style={styles.presenceBoxTitle}>Ma présence à cette AG</p>
             <p style={styles.presenceBoxText}>
               Déclarez votre participation depuis votre espace copropriétaire.
-              Cette action met à jour la présence de votre lot et le calcul du
-              quorum.
+              La procuration suit désormais un circuit de demande et validation
+              par le syndic avant impact définitif sur la présence.
             </p>
 
             <div style={styles.presenceActionsGrid}>
@@ -609,12 +809,12 @@ function AGCard({
                 onClick={() => onConfirmPresence(ag, "ABSENT")}
               />
               <PresenceButton
-                label="Représenté"
+                label={hasActiveProcuration ? "Procuration créée" : "Donner procuration"}
                 mode="REPRESENTE"
                 busyMode={presenceBusy}
-                disabled={presenceDisabled}
+                disabled={!procurationAvailable || presenceBusy !== null}
                 tone="indigo"
-                onClick={() => onConfirmPresence(ag, "REPRESENTE")}
+                onClick={() => onOpenProcuration(ag)}
               />
             </div>
 
@@ -625,6 +825,12 @@ function AGCard({
               </p>
             ) : null}
           </div>
+
+          <ProcurationsPanel
+            procurations={procurations}
+            cancelingProcurationId={cancelingProcurationId}
+            onCancel={onCancelProcuration}
+          />
 
           <div style={styles.voteBox}>
             <div style={styles.voteBoxHeader}>
@@ -771,6 +977,18 @@ function AGCard({
             {generatingMandat ? "Génération..." : "Télécharger mon mandat"}
           </button>
 
+          <button
+            type="button"
+            disabled={!procurationAvailable}
+            onClick={() => onOpenProcuration(ag)}
+            style={{
+              ...styles.procurationMainButton,
+              ...(!procurationAvailable ? styles.procurationMainButtonDisabled : {}),
+            }}
+          >
+            Donner procuration
+          </button>
+
           {ag.has_pv ? (
             <span style={styles.pvHint}>
               {ag.pv_signed_url ? "PV signé disponible" : "PV disponible"}
@@ -781,7 +999,7 @@ function AGCard({
 
           <span style={mandatAvailable ? styles.mandatHint : styles.mandatHintMuted}>
             {mandatAvailable
-              ? "Mandat disponible pour représentation"
+              ? "Mandat PDF disponible"
               : "Mandat indisponible pour cette AG"}
           </span>
         </div>
@@ -794,11 +1012,252 @@ function AGCard({
         />
         <SmallStat label="Mes votes" value={formatNumber(votesTotal)} />
         <SmallStat
-          label="Procès-verbal"
-          value={ag.has_pv ? "Disponible" : "Non disponible"}
+          label="Procurations"
+          value={formatNumber(procurations.length)}
         />
       </div>
     </article>
+  );
+}
+
+function ProcurationsPanel({
+  procurations,
+  cancelingProcurationId,
+  onCancel,
+}: {
+  procurations: CoproprietaireProcurationItem[];
+  cancelingProcurationId: number | null;
+  onCancel: (procuration: CoproprietaireProcurationItem) => void;
+}) {
+  return (
+    <div style={styles.procurationBox}>
+      <div style={styles.procurationHeader}>
+        <div>
+          <p style={styles.procurationTitle}>Mes procurations pour cette AG</p>
+          <p style={styles.procurationText}>
+            Suivez les demandes transmises au syndic : en attente, validées,
+            rejetées ou annulées.
+          </p>
+        </div>
+
+        <Badge style={styles.procurationCountBadge}>
+          {formatNumber(procurations.length)}
+        </Badge>
+      </div>
+
+      {procurations.length === 0 ? (
+        <p style={styles.procurationEmpty}>
+          Aucune procuration enregistrée pour cette assemblée.
+        </p>
+      ) : (
+        <div style={styles.procurationList}>
+          {procurations.map((procuration) => {
+            const canCancel = canCancelProcuration(procuration);
+            const canceling = cancelingProcurationId === procuration.id;
+
+            return (
+              <div key={procuration.id} style={styles.procurationItem}>
+                <div style={styles.procurationItemMain}>
+                  <div style={styles.procurationItemHeader}>
+                    <p style={styles.procurationName}>
+                      {procuration.mandataire_nom || "Mandataire non renseigné"}
+                    </p>
+
+                    <Badge style={getProcurationStatusStyle(procuration.statut)}>
+                      {procuration.statut_label || procuration.statut}
+                    </Badge>
+                  </div>
+
+                  <p style={styles.procurationDetails}>
+                    Lot : {procuration.lot_label || procuration.lot_reference || "—"}
+                  </p>
+
+                  {procuration.mandataire_telephone ? (
+                    <p style={styles.procurationDetails}>
+                      Téléphone : {procuration.mandataire_telephone}
+                    </p>
+                  ) : null}
+
+                  {procuration.mandataire_email ? (
+                    <p style={styles.procurationDetails}>
+                      Email : {procuration.mandataire_email}
+                    </p>
+                  ) : null}
+
+                  {procuration.motif_rejet ? (
+                    <p style={styles.procurationRejectReason}>
+                      Motif du rejet : {procuration.motif_rejet}
+                    </p>
+                  ) : null}
+
+                  <p style={styles.procurationDate}>
+                    Créée le {formatDate(procuration.created_at)}
+                  </p>
+                </div>
+
+                <div style={styles.procurationActions}>
+                  {procuration.document_url ? (
+                    <button
+                      type="button"
+                      onClick={() => openDocument(procuration.document_url)}
+                      style={styles.procurationDocButton}
+                    >
+                      Ouvrir le document
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    disabled={!canCancel || canceling}
+                    onClick={() => onCancel(procuration)}
+                    style={{
+                      ...styles.cancelProcurationButton,
+                      ...(!canCancel || canceling ? styles.cancelProcurationButtonDisabled : {}),
+                    }}
+                  >
+                    {canceling ? "Annulation..." : "Annuler"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProcurationModal({
+  state,
+  creating,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  state: ProcurationModalState;
+  creating: boolean;
+  onChange: (field: keyof Omit<ProcurationModalState, "ag">, value: string) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const lotOptions = getPresenceLotOptions(state.ag);
+
+  return (
+    <div style={styles.modalBackdrop}>
+      <div style={styles.modalCard}>
+        <div style={styles.modalHeader}>
+          <div>
+            <p style={styles.modalEyebrow}>Procuration AG</p>
+            <h3 style={styles.modalTitle}>Donner procuration</h3>
+            <p style={styles.modalText}>
+              Désignez le mandataire qui vous représentera pour{" "}
+              <strong>{state.ag.titre}</strong>. La demande sera transmise au
+              syndic pour validation.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={creating}
+            style={styles.modalCloseButton}
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} style={styles.modalForm}>
+          {lotOptions.length > 0 ? (
+            <label style={styles.fieldGroup}>
+              <span style={styles.label}>Lot concerné</span>
+              <select
+                value={state.lot_id}
+                onChange={(event) => onChange("lot_id", event.target.value)}
+                style={styles.formSelect}
+                disabled={creating}
+              >
+                <option value="">Sélection automatique si un seul lot actif</option>
+                {lotOptions.map((lot) => (
+                  <option key={String(lot.id)} value={String(lot.id)}>
+                    {lot.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p style={styles.helperText}>
+              Aucun lot n’est encore listé dans les présences de cette AG. Si
+              votre compte ne possède qu’un seul lot actif, il sera associé
+              automatiquement par le backend.
+            </p>
+          )}
+
+          <label style={styles.fieldGroup}>
+            <span style={styles.label}>Nom complet du mandataire *</span>
+            <input
+              value={state.mandataire_nom}
+              onChange={(event) => onChange("mandataire_nom", event.target.value)}
+              placeholder="Ex. Kouamé Jean"
+              style={styles.formInput}
+              disabled={creating}
+              required
+            />
+          </label>
+
+          <label style={styles.fieldGroup}>
+            <span style={styles.label}>Téléphone du mandataire</span>
+            <input
+              value={state.mandataire_telephone}
+              onChange={(event) =>
+                onChange("mandataire_telephone", event.target.value)
+              }
+              placeholder="Ex. +225 07 00 00 00 00"
+              style={styles.formInput}
+              disabled={creating}
+            />
+          </label>
+
+          <label style={styles.fieldGroup}>
+            <span style={styles.label}>Email du mandataire</span>
+            <input
+              value={state.mandataire_email}
+              onChange={(event) => onChange("mandataire_email", event.target.value)}
+              placeholder="Ex. mandataire@email.com"
+              type="email"
+              style={styles.formInput}
+              disabled={creating}
+            />
+          </label>
+
+          <p style={styles.helperText}>
+            Après enregistrement, la procuration sera en attente. Elle ne sera
+            prise en compte dans les présences qu’après validation par le syndic.
+          </p>
+
+          <div style={styles.modalActions}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={creating}
+              style={styles.secondaryButton}
+            >
+              Annuler
+            </button>
+
+            <button
+              type="submit"
+              disabled={creating}
+              style={{
+                ...styles.primaryButton,
+                ...(creating ? styles.primaryButtonDisabled : {}),
+              }}
+            >
+              {creating ? "Enregistrement..." : "Envoyer la procuration"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -1050,10 +1509,50 @@ function canConfirmPresence(ag: CoproprietaireAG): boolean {
   return ["CONVOQUEE", "CONVOQUÉE", "OUVERTE"].includes(value) && !pvLocked;
 }
 
+function canGiveProcuration(ag: CoproprietaireAG): boolean {
+  const value = normalize(ag.statut);
+  const pvLocked = (ag as { pv_locked?: boolean }).pv_locked === true;
+
+  return ["CONVOQUEE", "CONVOQUÉE", "OUVERTE"].includes(value) && !pvLocked;
+}
+
+function canCancelProcuration(procuration: CoproprietaireProcurationItem): boolean {
+  return normalize(procuration.statut) === "EN_ATTENTE";
+}
+
 function getPresenceItems(ag: CoproprietaireAGWithResolutions): PresenceItemLike[] {
   const presence = ag.presence_coproprietaire;
 
   return Array.isArray(presence?.items) ? presence.items : [];
+}
+
+function getPresenceLotOptions(ag: CoproprietaireAGWithResolutions): LotOption[] {
+  const items = getPresenceItems(ag);
+  const seen = new Set<string>();
+  const options: LotOption[] = [];
+
+  for (const item of items) {
+    const id = item.lot?.id;
+
+    if (id == null) continue;
+
+    const key = String(id);
+
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+
+    options.push({
+      id,
+      label:
+        item.lot?.label ||
+        item.lot?.reference ||
+        item.lot?.numero ||
+        `Lot #${String(id)}`,
+    });
+  }
+
+  return options;
 }
 
 function canVoteAg(ag: CoproprietaireAGWithResolutions): boolean {
@@ -1189,6 +1688,48 @@ function getPresenceStyle(status: string | null | undefined): CSSProperties {
       background: "#fffbeb",
       color: "#b45309",
       borderColor: "#fde68a",
+    };
+  }
+
+  return {
+    background: "#f8fafc",
+    color: "#475569",
+    borderColor: "#e2e8f0",
+  };
+}
+
+function getProcurationStatusStyle(statut: string | null | undefined): CSSProperties {
+  const value = normalize(statut);
+
+  if (value === "VALIDEE") {
+    return {
+      background: "#ecfdf5",
+      color: "#047857",
+      borderColor: "#a7f3d0",
+    };
+  }
+
+  if (value === "EN_ATTENTE") {
+    return {
+      background: "#fffbeb",
+      color: "#b45309",
+      borderColor: "#fde68a",
+    };
+  }
+
+  if (value === "REJETEE") {
+    return {
+      background: "#fff1f2",
+      color: "#be123c",
+      borderColor: "#fecdd3",
+    };
+  }
+
+  if (value === "ANNULEE") {
+    return {
+      background: "#f8fafc",
+      color: "#64748b",
+      borderColor: "#e2e8f0",
     };
   }
 
@@ -1674,6 +2215,142 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.45,
   },
 
+  procurationBox: {
+    marginTop: 14,
+    border: "1px solid #e0e7ff",
+    borderRadius: 20,
+    background: "#f8faff",
+    padding: 14,
+  },
+
+  procurationHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+
+  procurationTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  procurationText: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+
+  procurationCountBadge: {
+    background: "#eef2ff",
+    color: "#4338ca",
+    borderColor: "#c7d2fe",
+  },
+
+  procurationEmpty: {
+    margin: "12px 0 0",
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: 750,
+    lineHeight: 1.45,
+  },
+
+  procurationList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+
+  procurationItem: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 18,
+    background: "#ffffff",
+    padding: 12,
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 160px",
+    gap: 12,
+    alignItems: "start",
+  },
+
+  procurationItemMain: {
+    minWidth: 0,
+  },
+
+  procurationItemHeader: {
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  procurationName: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  procurationDetails: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.45,
+  },
+
+  procurationRejectReason: {
+    margin: "8px 0 0",
+    color: "#be123c",
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+
+  procurationDate: {
+    margin: "8px 0 0",
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: 800,
+  },
+
+  procurationActions: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+
+  procurationDocButton: {
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    borderRadius: 14,
+    padding: "9px 10px",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  cancelProcurationButton: {
+    border: "1px solid #fecdd3",
+    background: "#fff1f2",
+    color: "#be123c",
+    borderRadius: 14,
+    padding: "9px 10px",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  cancelProcurationButtonDisabled: {
+    borderColor: "#e2e8f0",
+    background: "#f8fafc",
+    color: "#94a3b8",
+    cursor: "not-allowed",
+  },
+
   voteBox: {
     marginTop: 14,
     border: "1px solid #dbeafe",
@@ -1849,6 +2526,24 @@ const styles: Record<string, CSSProperties> = {
     cursor: "not-allowed",
   },
 
+  procurationMainButton: {
+    border: "1px solid #c7d2fe",
+    background: "#ffffff",
+    color: "#4338ca",
+    borderRadius: 16,
+    padding: "11px 14px",
+    fontSize: 13,
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+
+  procurationMainButtonDisabled: {
+    borderColor: "#e2e8f0",
+    background: "#f8fafc",
+    color: "#94a3b8",
+    cursor: "not-allowed",
+  },
+
   pvHint: {
     color: "#047857",
     fontSize: 12,
@@ -1969,5 +2664,157 @@ const styles: Record<string, CSSProperties> = {
     color: "#64748b",
     fontSize: 14,
     lineHeight: 1.5,
+  },
+
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 80,
+    background: "rgba(15,23,42,0.48)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: 620,
+    borderRadius: 28,
+    background: "#ffffff",
+    boxShadow: "0 32px 90px rgba(15,23,42,0.32)",
+    border: "1px solid #e2e8f0",
+    padding: 22,
+  },
+
+  modalHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "flex-start",
+  },
+
+  modalEyebrow: {
+    margin: 0,
+    color: "#4f46e5",
+    fontSize: 11,
+    fontWeight: 950,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+  },
+
+  modalTitle: {
+    margin: "6px 0 0",
+    color: "#0f172a",
+    fontSize: 24,
+    fontWeight: 950,
+    letterSpacing: "-0.03em",
+  },
+
+  modalText: {
+    margin: "8px 0 0",
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.6,
+  },
+
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    border: "1px solid #e2e8f0",
+    background: "#f8fafc",
+    color: "#475569",
+    cursor: "pointer",
+    fontSize: 22,
+    lineHeight: 1,
+  },
+
+  modalForm: {
+    display: "grid",
+    gap: 14,
+    marginTop: 18,
+  },
+
+  fieldGroup: {
+    display: "grid",
+    gap: 7,
+  },
+
+  label: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
+  formInput: {
+    width: "100%",
+    border: "1px solid #dbe3ef",
+    borderRadius: 16,
+    padding: "12px 14px",
+    color: "#0f172a",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+
+  formSelect: {
+    width: "100%",
+    border: "1px solid #dbe3ef",
+    borderRadius: 16,
+    padding: "12px 14px",
+    color: "#0f172a",
+    fontSize: 14,
+    outline: "none",
+    background: "#ffffff",
+    boxSizing: "border-box",
+  },
+
+  helperText: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+    padding: "10px 12px",
+  },
+
+  modalActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 4,
+  },
+
+  secondaryButton: {
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    color: "#475569",
+    borderRadius: 16,
+    padding: "11px 14px",
+    fontSize: 13,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  primaryButton: {
+    border: "1px solid #4f46e5",
+    background: "#4f46e5",
+    color: "#ffffff",
+    borderRadius: 16,
+    padding: "11px 16px",
+    fontSize: 13,
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+
+  primaryButtonDisabled: {
+    borderColor: "#cbd5e1",
+    background: "#cbd5e1",
+    color: "#ffffff",
+    cursor: "not-allowed",
   },
 };
