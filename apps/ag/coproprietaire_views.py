@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db import transaction
 from django.db.models import Q
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.serializers import Serializer, IntegerField, SerializerMethodField
+from rest_framework.serializers import IntegerField, Serializer, SerializerMethodField
 from rest_framework.views import APIView
 
 from apps.ag.models import AssembleeGenerale, PresenceLot, Resolution, Vote
@@ -35,6 +38,19 @@ STATUS_LABELS = {
     "ARCHIVÉE": "Archivée",
     "ANNULEE": "Annulée",
     "ANNULÉE": "Annulée",
+}
+
+PRESENCE_MODES = {
+    "PRESENT_PHYSIQUE": "Présent physiquement",
+    "PRESENT_EN_LIGNE": "Présent en ligne",
+    "REPRESENTE": "Représenté par procuration",
+    "ABSENT": "Absent",
+}
+
+PRESENCE_WRITABLE_STATUSES = {
+    "CONVOQUEE",
+    "CONVOQUÉE",
+    "OUVERTE",
 }
 
 
@@ -92,12 +108,23 @@ def _absolute_file_url(request, value: Any) -> str | None:
     return url
 
 
-def _get_current_coproprietaire(user) -> Coproprietaire | None:
+def _get_current_coproprietaire(
+    user,
+    copropriete_id: int | None = None,
+) -> Coproprietaire | None:
     for field_name in ["user_account", "user", "compte_utilisateur"]:
-        if _model_has_field(Coproprietaire, field_name):
-            coproprietaire = Coproprietaire.objects.filter(**{field_name: user}).first()
-            if coproprietaire:
-                return coproprietaire
+        if not _model_has_field(Coproprietaire, field_name):
+            continue
+
+        filters = {field_name: user}
+
+        if copropriete_id and _model_has_field(Coproprietaire, "copropriete"):
+            filters["copropriete_id"] = copropriete_id
+
+        coproprietaire = Coproprietaire.objects.filter(**filters).first()
+
+        if coproprietaire:
+            return coproprietaire
 
     return None
 
@@ -205,6 +232,168 @@ def _vote_qs_for_ag(ag: AssembleeGenerale, lot_ids: list[int]):
     return qs
 
 
+def _presence_mode_from_comment(commentaire: str | None) -> str:
+    value = _as_upper(commentaire)
+
+    if "PRESENT_EN_LIGNE" in value:
+        return "PRESENT_EN_LIGNE"
+
+    if "PRESENT_PHYSIQUE" in value:
+        return "PRESENT_PHYSIQUE"
+
+    if "REPRESENTE" in value or "REPRÉSENTÉ" in value:
+        return "REPRESENTE"
+
+    if "ABSENT" in value:
+        return "ABSENT"
+
+    return ""
+
+
+def _lot_label(lot) -> str:
+    if not lot:
+        return ""
+
+    return (
+        getattr(lot, "label", None)
+        or getattr(lot, "reference", None)
+        or getattr(lot, "numero", None)
+        or f"Lot #{getattr(lot, 'id', '')}"
+    )
+
+
+def _presence_payload(presence: PresenceLot) -> dict[str, Any]:
+    lot = getattr(presence, "lot", None)
+    commentaire = getattr(presence, "commentaire", "") or ""
+    representant_nom = getattr(presence, "representant_nom", "") or ""
+    present_ou_represente = bool(getattr(presence, "present_ou_represente", False))
+
+    mode = _presence_mode_from_comment(commentaire)
+
+    if present_ou_represente:
+        if representant_nom:
+            status_value = "REPRESENTE"
+            label = "Représenté par procuration"
+        elif mode == "PRESENT_EN_LIGNE":
+            status_value = "PRESENT_EN_LIGNE"
+            label = "Présent en ligne"
+        else:
+            status_value = "PRESENT"
+            label = "Présent"
+    else:
+        status_value = "ABSENT"
+        label = "Absent / non marqué présent"
+
+    return {
+        "id": presence.id,
+        "status": status_value,
+        "mode_presence": mode or status_value,
+        "label": label,
+        "present_ou_represente": present_ou_represente,
+        "representant_nom": representant_nom,
+        "commentaire": commentaire,
+        "tantiemes": str(getattr(presence, "tantiemes", "0")),
+        "lot": {
+            "id": getattr(lot, "id", None),
+            "label": _lot_label(lot),
+            "reference": getattr(lot, "reference", "") if lot else "",
+            "numero": getattr(lot, "numero", "") if lot else "",
+            "type_lot": getattr(lot, "type_lot", "") if lot else "",
+            "etage": getattr(lot, "etage", "") if lot else "",
+        },
+    }
+
+
+def _presence_summary(qs) -> dict[str, Any]:
+    presences = list(qs.select_related("lot").order_by("lot__reference", "lot_id"))
+
+    if not presences:
+        return {
+            "status": "NON_INITIALISEE",
+            "label": "Non initialisée",
+            "count": 0,
+            "items": [],
+        }
+
+    items = [_presence_payload(presence) for presence in presences]
+
+    represented_count = sum(1 for item in items if item["status"] == "REPRESENTE")
+    online_count = sum(1 for item in items if item["status"] == "PRESENT_EN_LIGNE")
+    present_count = sum(1 for item in items if item["status"] == "PRESENT")
+    active_count = sum(1 for item in items if item["present_ou_represente"])
+
+    if represented_count > 0:
+        return {
+            "status": "REPRESENTE",
+            "label": "Représenté par procuration",
+            "count": active_count,
+            "items": items,
+        }
+
+    if online_count > 0:
+        return {
+            "status": "PRESENT_EN_LIGNE",
+            "label": "Présent en ligne",
+            "count": active_count,
+            "items": items,
+        }
+
+    if present_count > 0:
+        return {
+            "status": "PRESENT",
+            "label": "Présent",
+            "count": active_count,
+            "items": items,
+        }
+
+    return {
+        "status": "ABSENT",
+        "label": "Absent / non marqué présent",
+        "count": len(items),
+        "items": items,
+    }
+
+
+def _assert_ag_presence_writable(ag: AssembleeGenerale) -> None:
+    statut = _as_upper(getattr(ag, "statut", None))
+
+    if statut not in PRESENCE_WRITABLE_STATUSES:
+        raise ValidationError(
+            {
+                "detail": (
+                    "La confirmation de présence est disponible uniquement "
+                    "pour une assemblée convoquée ou ouverte."
+                )
+            }
+        )
+
+    if getattr(ag, "pv_locked", False):
+        raise ValidationError(
+            {"detail": "PV verrouillé : confirmation de présence interdite."}
+        )
+
+
+def _build_presence_comment(
+    *,
+    mode_presence: str,
+    commentaire: str,
+    source: str,
+) -> str:
+    mode_label = PRESENCE_MODES.get(mode_presence, mode_presence)
+
+    parts = [
+        "Confirmation copropriétaire depuis l’espace en ligne.",
+        f"MODE_PRESENCE={mode_presence}",
+        f"Mode lisible : {mode_label}",
+        f"Source : {source}",
+    ]
+
+    if commentaire:
+        parts.append(f"Commentaire : {commentaire}")
+
+    return "\n".join(parts)
+
+
 class CoproprietaireAGSerializer(Serializer):
     id = IntegerField(read_only=True)
 
@@ -285,39 +474,7 @@ class CoproprietaireAGSerializer(Serializer):
     def get_presence_coproprietaire(self, obj):
         lot_ids = self.context.get("lot_ids", [])
         qs = _presence_qs_for_ag(obj, lot_ids)
-
-        if not qs.exists():
-            return {
-                "status": "NON_INITIALISEE",
-                "label": "Non initialisée",
-                "count": 0,
-            }
-
-        present_count = 0
-
-        for presence in qs:
-            is_present = _value(
-                presence,
-                "present",
-                "is_present",
-                "est_present",
-                "present_physiquement",
-            )
-            if bool(is_present):
-                present_count += 1
-
-        if present_count > 0:
-            return {
-                "status": "PRESENT",
-                "label": "Présent",
-                "count": present_count,
-            }
-
-        return {
-            "status": "ABSENT",
-            "label": "Absent / non marqué présent",
-            "count": qs.count(),
-        }
+        return _presence_summary(qs)
 
     def get_vote_summary(self, obj):
         lot_ids = self.context.get("lot_ids", [])
@@ -466,4 +623,147 @@ class CoproprietaireAssembleesAPIView(APIView):
                 "stats": stats,
                 "assemblees": assemblees,
             }
+        )
+
+
+class CoproprietairePresenceAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ag_id: int):
+        ag = (
+            AssembleeGenerale.objects.select_related("copropriete")
+            .filter(pk=ag_id)
+            .first()
+        )
+
+        if not ag:
+            raise ValidationError({"detail": "Assemblée générale introuvable."})
+
+        _assert_ag_presence_writable(ag)
+
+        coproprietaire = _get_current_coproprietaire(
+            request.user,
+            copropriete_id=ag.copropriete_id,
+        )
+
+        if not coproprietaire:
+            raise PermissionDenied(
+                "Aucun profil copropriétaire actif ne correspond à cette assemblée générale."
+            )
+
+        mode_presence = _as_upper(request.data.get("mode_presence"))
+
+        if mode_presence not in PRESENCE_MODES:
+            raise ValidationError(
+                {
+                    "mode_presence": (
+                        "Mode de présence invalide. Valeurs attendues : "
+                        "PRESENT_PHYSIQUE, PRESENT_EN_LIGNE, REPRESENTE ou ABSENT."
+                    )
+                }
+            )
+
+        representant_nom = str(request.data.get("representant_nom") or "").strip()
+        commentaire = str(request.data.get("commentaire") or "").strip()
+        lot_id = request.data.get("lot_id") or request.data.get("lot")
+
+        if mode_presence == "REPRESENTE" and not representant_nom:
+            raise ValidationError(
+                {
+                    "representant_nom": (
+                        "Le nom du mandataire est obligatoire lorsque vous choisissez "
+                        "le mode représenté par procuration."
+                    )
+                }
+            )
+
+        owner_lots = _get_active_owner_lots(coproprietaire)
+
+        if _model_has_field(ProprietaireLot, "lot"):
+            owner_lots = owner_lots.filter(lot__copropriete_id=ag.copropriete_id)
+
+        if lot_id:
+            owner_lots = owner_lots.filter(lot_id=lot_id)
+
+        owner_lots = owner_lots.select_related("lot", "coproprietaire").order_by(
+            "-principal",
+            "lot__reference",
+            "lot_id",
+            "-date_debut",
+            "-id",
+        )
+
+        if not owner_lots.exists():
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Aucun lot actif rattaché à votre compte ne permet "
+                        "de confirmer votre présence pour cette assemblée."
+                    )
+                }
+            )
+
+        present_ou_represente = mode_presence != "ABSENT"
+        final_representant = representant_nom if mode_presence == "REPRESENTE" else ""
+
+        comment = _build_presence_comment(
+            mode_presence=mode_presence,
+            commentaire=commentaire,
+            source="coproprietaire",
+        )
+
+        updated_presences: list[PresenceLot] = []
+
+        with transaction.atomic():
+            for owner_lot in owner_lots:
+                lot = getattr(owner_lot, "lot", None)
+
+                if not lot:
+                    continue
+
+                presence, _ = PresenceLot.objects.get_or_create(
+                    ag=ag,
+                    lot=lot,
+                    defaults={
+                        "present_ou_represente": present_ou_represente,
+                        "representant_nom": final_representant,
+                        "commentaire": comment,
+                    },
+                )
+
+                presence.present_ou_represente = present_ou_represente
+                presence.representant_nom = final_representant
+                presence.commentaire = comment
+                presence.refresh_tantiemes()
+                presence.save()
+
+                updated_presences.append(presence)
+
+        if not updated_presences:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Aucun lot valide n’a pu être mis à jour pour cette assemblée."
+                    )
+                }
+            )
+
+        lot_ids = [presence.lot_id for presence in updated_presences if presence.lot_id]
+        presence_qs = _presence_qs_for_ag(ag, lot_ids)
+
+        return Response(
+            {
+                "detail": "Votre présence a été confirmée avec succès.",
+                "ag_id": ag.id,
+                "mode_presence": mode_presence,
+                "mode_presence_label": PRESENCE_MODES[mode_presence],
+                "updated_count": len(updated_presences),
+                "presence_coproprietaire": _presence_summary(presence_qs),
+                "quorum": {
+                    "total_tantiemes_copro": str(ag.total_tantiemes_copro()),
+                    "total_tantiemes_presents": str(ag.total_tantiemes_presents()),
+                    "quorum_atteint": bool(ag.quorum_atteint()),
+                },
+            },
+            status=status.HTTP_200_OK,
         )

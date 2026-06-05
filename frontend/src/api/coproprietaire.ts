@@ -342,3 +342,62 @@ export async function generateMandatAgCoproprietaire(
 
   return response.data;
 }
+
+export type CoproprietairePresenceMode =
+  | "PRESENT_PHYSIQUE"
+  | "PRESENT_EN_LIGNE"
+  | "REPRESENTE"
+  | "ABSENT";
+
+export type CoproprietairePresenceResponse = {
+  detail: string;
+  ag_id: number;
+  mode_presence: CoproprietairePresenceMode;
+  mode_presence_label: string;
+  updated_count: number;
+  presence_coproprietaire: {
+    status: string;
+    label: string;
+    count: number;
+    items: Array<{
+      id: number;
+      status: string;
+      mode_presence: string;
+      label: string;
+      present_ou_represente: boolean;
+      representant_nom: string;
+      commentaire: string;
+      tantiemes: string;
+      lot: {
+        id: number | null;
+        label: string;
+        reference: string;
+        numero: string;
+        type_lot: string;
+        etage: string;
+      };
+    }>;
+  };
+  quorum: {
+    total_tantiemes_copro: string;
+    total_tantiemes_presents: string;
+    quorum_atteint: boolean;
+  };
+};
+
+export async function confirmerPresenceAgCoproprietaire(
+  agId: number | string,
+  payload: {
+    mode_presence: CoproprietairePresenceMode;
+    lot_id?: number | string;
+    representant_nom?: string;
+    commentaire?: string;
+  },
+) {
+  const response = await api.post<CoproprietairePresenceResponse>(
+    `/api/ag/coproprietaire/assemblees/${agId}/presence/`,
+    payload,
+  );
+
+  return response.data;
+}

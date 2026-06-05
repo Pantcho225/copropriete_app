@@ -7,7 +7,11 @@ import {
   type CoproprietaireAG,
   type CoproprietaireAGResponse,
 } from "../../api/coproprietaireAg";
-import { generateMandatAgCoproprietaire } from "../../api/coproprietaire";
+import {
+  confirmerPresenceAgCoproprietaire,
+  generateMandatAgCoproprietaire,
+  type CoproprietairePresenceMode,
+} from "../../api/coproprietaire";
 
 type StatTone = "blue" | "green" | "amber" | "slate" | "indigo";
 type StatusFilter = "" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE" | "ANNULEE";
@@ -25,6 +29,13 @@ const emptyResponse: CoproprietaireAGResponse = {
   assemblees: [],
 };
 
+const presenceModeLabels: Record<CoproprietairePresenceMode, string> = {
+  PRESENT_PHYSIQUE: "Présent physiquement",
+  PRESENT_EN_LIGNE: "Présent en ligne",
+  REPRESENTE: "Représenté",
+  ABSENT: "Absent",
+};
+
 export default function CoproprietaireAssemblees() {
   const [data, setData] = useState<CoproprietaireAGResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
@@ -33,12 +44,17 @@ export default function CoproprietaireAssemblees() {
   const [search, setSearch] = useState("");
   const [statut, setStatut] = useState<StatusFilter>("");
   const [generatingMandatAgId, setGeneratingMandatAgId] = useState<number | null>(null);
+  const [presenceBusy, setPresenceBusy] = useState<{
+    agId: number;
+    mode: CoproprietairePresenceMode;
+  } | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const loadAssemblees = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
 
-    async function loadAssemblees() {
-      setLoading(true);
       setError(null);
 
       try {
@@ -47,29 +63,35 @@ export default function CoproprietaireAssemblees() {
           statut: statut || undefined,
         });
 
-        if (mounted) {
-          setData(response);
-        }
+        setData(response);
       } catch {
-        if (mounted) {
-          setError(
-            "Impossible de charger vos assemblées générales pour le moment.",
-          );
-          setData(emptyResponse);
-        }
+        setError(
+          "Impossible de charger vos assemblées générales pour le moment.",
+        );
+        setData(emptyResponse);
       } finally {
-        if (mounted) {
+        if (!options?.silent) {
           setLoading(false);
         }
       }
+    },
+    [search, statut],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function run() {
+      if (!mounted) return;
+      await loadAssemblees();
     }
 
-    void loadAssemblees();
+    void run();
 
     return () => {
       mounted = false;
     };
-  }, [search, statut]);
+  }, [loadAssemblees]);
 
   const assemblees = useMemo(() => data.assemblees ?? [], [data.assemblees]);
 
@@ -82,7 +104,7 @@ export default function CoproprietaireAssemblees() {
 
     window.setTimeout(() => {
       setFlash((current) => (current?.text === text ? null : current));
-    }, 4500);
+    }, 5000);
   }, []);
 
   const handleGenerateMandat = useCallback(
@@ -115,6 +137,8 @@ export default function CoproprietaireAssemblees() {
         if (fileUrl) {
           window.open(fileUrl, "_blank", "noopener,noreferrer");
         }
+
+        await loadAssemblees({ silent: true });
       } catch (err) {
         showFlash(
           "error",
@@ -127,7 +151,76 @@ export default function CoproprietaireAssemblees() {
         setGeneratingMandatAgId(null);
       }
     },
-    [showFlash],
+    [loadAssemblees, showFlash],
+  );
+
+  const handleConfirmPresence = useCallback(
+    async (ag: CoproprietaireAG, mode: CoproprietairePresenceMode) => {
+      if (!canConfirmPresence(ag)) {
+        showFlash(
+          "info",
+          "La confirmation de présence est disponible uniquement pour une AG convoquée ou ouverte.",
+        );
+        return;
+      }
+
+      let representantNom = "";
+
+      if (mode === "REPRESENTE") {
+        const entered = window.prompt(
+          "Nom complet du mandataire qui vous représentera à cette AG :",
+        );
+
+        if (!entered || !entered.trim()) {
+          showFlash(
+            "info",
+            "Le nom du mandataire est obligatoire pour déclarer une représentation.",
+          );
+          return;
+        }
+
+        representantNom = entered.trim();
+      }
+
+      const label = presenceModeLabels[mode];
+
+      const confirmed = window.confirm(
+        mode === "ABSENT"
+          ? "Confirmer que vous serez absent à cette assemblée générale ? Cela retirera vos tantièmes du calcul des présents sauf représentation ultérieure."
+          : `Confirmer votre statut : ${label} ?`,
+      );
+
+      if (!confirmed) return;
+
+      try {
+        setPresenceBusy({ agId: ag.id, mode });
+
+        const response = await confirmerPresenceAgCoproprietaire(ag.id, {
+          mode_presence: mode,
+          representant_nom: representantNom,
+        });
+
+        showFlash(
+          "success",
+          `${response.mode_presence_label} confirmé avec succès. Quorum atteint : ${
+            response.quorum.quorum_atteint ? "oui" : "non"
+          }.`,
+        );
+
+        await loadAssemblees({ silent: true });
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(
+            err,
+            "Impossible de confirmer votre présence pour cette assemblée.",
+          ),
+        );
+      } finally {
+        setPresenceBusy(null);
+      }
+    },
+    [loadAssemblees, showFlash],
   );
 
   if (loading) {
@@ -223,8 +316,9 @@ export default function CoproprietaireAssemblees() {
             <h3 style={styles.sectionTitle}>Liste de vos assemblées générales</h3>
             <p style={styles.sectionText}>
               Recherchez une assemblée par titre, lieu ou statut. Vous pouvez
-              ouvrir le procès-verbal lorsqu’il est disponible et télécharger
-              votre mandat de représentation pour les AG encore actives.
+              confirmer votre présence, participer en ligne, déclarer une
+              représentation, ouvrir le procès-verbal lorsqu’il est disponible
+              et télécharger votre mandat pour les AG encore actives.
             </p>
           </div>
 
@@ -271,7 +365,11 @@ export default function CoproprietaireAssemblees() {
                 key={ag.id}
                 ag={ag}
                 generatingMandat={generatingMandatAgId === ag.id}
+                presenceBusy={
+                  presenceBusy?.agId === ag.id ? presenceBusy.mode : null
+                }
                 onGenerateMandat={handleGenerateMandat}
+                onConfirmPresence={handleConfirmPresence}
               />
             ))}
           </div>
@@ -284,16 +382,22 @@ export default function CoproprietaireAssemblees() {
 function AGCard({
   ag,
   generatingMandat,
+  presenceBusy,
   onGenerateMandat,
+  onConfirmPresence,
 }: {
   ag: CoproprietaireAG;
   generatingMandat: boolean;
+  presenceBusy: CoproprietairePresenceMode | null;
   onGenerateMandat: (ag: CoproprietaireAG) => void;
+  onConfirmPresence: (ag: CoproprietaireAG, mode: CoproprietairePresenceMode) => void;
 }) {
   const pvUrl = ag.pv_signed_url || ag.pv_url;
   const presence = ag.presence_coproprietaire;
   const votesTotal = ag.vote_summary?.total ?? 0;
   const mandatAvailable = canGenerateMandat(ag);
+  const presenceAvailable = canConfirmPresence(ag);
+  const presenceDisabled = !presenceAvailable || presenceBusy !== null;
 
   return (
     <article style={styles.agCard}>
@@ -324,6 +428,57 @@ function AGCard({
             {ag.description ||
               "Aucun ordre du jour détaillé n’est disponible pour cette assemblée."}
           </p>
+
+          <div style={styles.presenceBox}>
+            <p style={styles.presenceBoxTitle}>Ma présence à cette AG</p>
+            <p style={styles.presenceBoxText}>
+              Déclarez votre participation depuis votre espace copropriétaire.
+              Cette action met à jour la présence de votre lot et le calcul du
+              quorum.
+            </p>
+
+            <div style={styles.presenceActionsGrid}>
+              <PresenceButton
+                label="Présent physique"
+                mode="PRESENT_PHYSIQUE"
+                busyMode={presenceBusy}
+                disabled={presenceDisabled}
+                tone="green"
+                onClick={() => onConfirmPresence(ag, "PRESENT_PHYSIQUE")}
+              />
+              <PresenceButton
+                label="Présent en ligne"
+                mode="PRESENT_EN_LIGNE"
+                busyMode={presenceBusy}
+                disabled={presenceDisabled}
+                tone="blue"
+                onClick={() => onConfirmPresence(ag, "PRESENT_EN_LIGNE")}
+              />
+              <PresenceButton
+                label="Absent"
+                mode="ABSENT"
+                busyMode={presenceBusy}
+                disabled={presenceDisabled}
+                tone="amber"
+                onClick={() => onConfirmPresence(ag, "ABSENT")}
+              />
+              <PresenceButton
+                label="Représenté"
+                mode="REPRESENTE"
+                busyMode={presenceBusy}
+                disabled={presenceDisabled}
+                tone="indigo"
+                onClick={() => onConfirmPresence(ag, "REPRESENTE")}
+              />
+            </div>
+
+            {!presenceAvailable ? (
+              <p style={styles.presenceUnavailableText}>
+                La confirmation de présence est indisponible pour une AG
+                clôturée, archivée, annulée ou verrouillée.
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <div style={styles.agActions}>
@@ -386,6 +541,42 @@ function AGCard({
         />
       </div>
     </article>
+  );
+}
+
+function PresenceButton({
+  label,
+  mode,
+  busyMode,
+  disabled,
+  tone,
+  onClick,
+}: {
+  label: string;
+  mode: CoproprietairePresenceMode;
+  busyMode: CoproprietairePresenceMode | null;
+  disabled: boolean;
+  tone: "green" | "blue" | "amber" | "indigo";
+  onClick: () => void;
+}) {
+  const toneStyle = presenceButtonTones[tone];
+  const isBusy = busyMode === mode;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...styles.presenceButton,
+        borderColor: disabled ? "#e2e8f0" : toneStyle.border,
+        background: disabled ? "#f8fafc" : toneStyle.background,
+        color: disabled ? "#94a3b8" : toneStyle.color,
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+    >
+      {isBusy ? "Validation..." : label}
+    </button>
   );
 }
 
@@ -558,6 +749,13 @@ function canGenerateMandat(ag: CoproprietaireAG): boolean {
   );
 }
 
+function canConfirmPresence(ag: CoproprietaireAG): boolean {
+  const value = normalize(ag.statut);
+  const pvLocked = Boolean((ag as { pv_locked?: boolean }).pv_locked);
+
+  return ["CONVOQUEE", "CONVOQUÉE", "OUVERTE"].includes(value) && !pvLocked;
+}
+
 function getStatusStyle(statut: string | null | undefined): CSSProperties {
   const value = normalize(statut);
 
@@ -603,11 +801,27 @@ function getStatusStyle(statut: string | null | undefined): CSSProperties {
 function getPresenceStyle(status: string | null | undefined): CSSProperties {
   const value = normalize(status);
 
-  if (value === "PRESENT") {
+  if (["PRESENT", "PRESENT_PHYSIQUE"].includes(value)) {
     return {
       background: "#ecfdf5",
       color: "#047857",
       borderColor: "#a7f3d0",
+    };
+  }
+
+  if (value === "PRESENT_EN_LIGNE") {
+    return {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      borderColor: "#bfdbfe",
+    };
+  }
+
+  if (value === "REPRESENTE") {
+    return {
+      background: "#eef2ff",
+      color: "#4338ca",
+      borderColor: "#c7d2fe",
     };
   }
 
@@ -689,6 +903,32 @@ const statTones: Record<
     background: "#eef2ff",
     border: "#c7d2fe",
     color: "#4f46e5",
+  },
+};
+
+const presenceButtonTones: Record<
+  "green" | "blue" | "amber" | "indigo",
+  { background: string; border: string; color: string }
+> = {
+  green: {
+    background: "#ecfdf5",
+    border: "#a7f3d0",
+    color: "#047857",
+  },
+  blue: {
+    background: "#eff6ff",
+    border: "#bfdbfe",
+    color: "#1d4ed8",
+  },
+  amber: {
+    background: "#fffbeb",
+    border: "#fde68a",
+    color: "#b45309",
+  },
+  indigo: {
+    background: "#eef2ff",
+    border: "#c7d2fe",
+    color: "#4338ca",
   },
 };
 
@@ -1006,6 +1246,52 @@ const styles: Record<string, CSSProperties> = {
     color: "#64748b",
     fontSize: 13,
     lineHeight: 1.6,
+  },
+
+  presenceBox: {
+    marginTop: 14,
+    border: "1px solid #e2e8f0",
+    borderRadius: 20,
+    background: "#f8fafc",
+    padding: 14,
+  },
+
+  presenceBoxTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  presenceBoxText: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+
+  presenceActionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 8,
+    marginTop: 12,
+  },
+
+  presenceButton: {
+    border: "1px solid",
+    borderRadius: 14,
+    padding: "10px 9px",
+    fontSize: 12,
+    fontWeight: 900,
+    transition: "all 0.2s ease",
+  },
+
+  presenceUnavailableText: {
+    margin: "10px 0 0",
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: 750,
+    lineHeight: 1.45,
   },
 
   agActions: {
