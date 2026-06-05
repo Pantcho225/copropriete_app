@@ -30,7 +30,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Référentiel",
     items: [
-      { label: "Lots privatifs", to: "/lots" },
+      { label: "Lots", to: "/lots" },
       {
         label: "Référentiel copropriété",
         to: "/platform-admin/referentiel-copropriete",
