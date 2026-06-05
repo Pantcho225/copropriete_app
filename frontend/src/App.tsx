@@ -42,6 +42,7 @@ import AGResolutions from "./pages/ag/AGResolutions";
 import AGPV from "./pages/ag/AGPV";
 import AGPresences from "./pages/ag/AGPresences";
 import AGVotes from "./pages/ag/AGVotes";
+import AGProcurations from "./pages/ag/AGProcurations";
 
 // Relances
 import RelancesDashboard from "./pages/relances/RelancesDashboard";
@@ -182,6 +183,9 @@ export default function App() {
             <Route path="assemblees/:id/presences" element={<AGPresences />} />
             <Route path="assemblees/:id/votes" element={<AGVotes />} />
             <Route path="assemblees/:id/pv" element={<AGPV />} />
+
+            {/* Procurations */}
+            <Route path="procurations" element={<AGProcurations />} />
 
             {/* Résolutions */}
             <Route
