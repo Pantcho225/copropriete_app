@@ -380,7 +380,17 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         copro_id = _require_copro_id(self.request)
-        return super().get_queryset().filter(copropriete_id=copro_id)
+
+        qs = super().get_queryset().filter(copropriete_id=copro_id)
+
+        include_archives = str(
+            self.request.query_params.get("include_archives", "")
+        ).lower() in {"1", "true", "yes", "on"}
+
+        if not include_archives:
+            qs = qs.exclude(titre__startswith="[ARCHIVE TEST]")
+
+        return qs
 
     def perform_create(self, serializer):
         copro_id = _require_copro_id(self.request)

@@ -668,6 +668,8 @@ class CoproprietaireAssembleesAPIView(APIView):
 
         qs = AssembleeGenerale.objects.filter(
             **{f"{copro_field}_id__in": copropriete_ids}
+        ).exclude(
+            titre__startswith="[ARCHIVE TEST]"
         )
 
         status_field = _first_existing_field(AssembleeGenerale, ["statut", "status"])
