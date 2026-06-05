@@ -10,12 +10,49 @@ import {
 import {
   confirmerPresenceAgCoproprietaire,
   generateMandatAgCoproprietaire,
+  voterResolutionAgCoproprietaire,
   type CoproprietairePresenceMode,
+  type CoproprietaireVoteChoix,
+  type CoproprietaireVoteItem,
 } from "../../api/coproprietaire";
 
 type StatTone = "blue" | "green" | "amber" | "slate" | "indigo";
 type StatusFilter = "" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE" | "ANNULEE";
 type FlashKind = "success" | "error" | "info";
+type VoteTone = "green" | "rose" | "slate";
+
+type VoteSummaryLike = {
+  total?: number;
+  par_choix?: Record<string, number>;
+  votes?: CoproprietaireVoteItem[];
+};
+
+type CoproprietaireResolution = {
+  id: number | string;
+  ordre?: number | string | null;
+  titre?: string;
+  texte?: string;
+  cloturee?: boolean;
+  vote_summary?: VoteSummaryLike;
+};
+
+type PresenceItemLike = {
+  present_ou_represente?: boolean;
+  lot?: {
+    id?: number | string | null;
+  } | null;
+};
+
+type PresenceSummaryLike = {
+  items?: PresenceItemLike[];
+};
+
+type CoproprietaireAGWithResolutions = CoproprietaireAG & {
+  pv_locked?: boolean;
+  resolutions?: CoproprietaireResolution[];
+  vote_summary?: VoteSummaryLike;
+  presence_coproprietaire?: PresenceSummaryLike;
+};
 
 const emptyResponse: CoproprietaireAGResponse = {
   count: 0,
@@ -36,6 +73,12 @@ const presenceModeLabels: Record<CoproprietairePresenceMode, string> = {
   ABSENT: "Absent",
 };
 
+const voteChoiceLabels: Record<CoproprietaireVoteChoix, string> = {
+  POUR: "Pour",
+  CONTRE: "Contre",
+  ABSTENTION: "Abstention",
+};
+
 export default function CoproprietaireAssemblees() {
   const [data, setData] = useState<CoproprietaireAGResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
@@ -48,6 +91,13 @@ export default function CoproprietaireAssemblees() {
     agId: number;
     mode: CoproprietairePresenceMode;
   } | null>(null);
+  const [voteBusy, setVoteBusy] = useState<{
+    resolutionId: number | string;
+    choix: CoproprietaireVoteChoix;
+  } | null>(null);
+  const [localVotesByResolution, setLocalVotesByResolution] = useState<
+    Record<string, CoproprietaireVoteItem>
+  >({});
 
   const loadAssemblees = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -65,9 +115,7 @@ export default function CoproprietaireAssemblees() {
 
         setData(response);
       } catch {
-        setError(
-          "Impossible de charger vos assemblées générales pour le moment.",
-        );
+        setError("Impossible de charger vos assemblées générales pour le moment.");
         setData(emptyResponse);
       } finally {
         if (!options?.silent) {
@@ -223,6 +271,85 @@ export default function CoproprietaireAssemblees() {
     [loadAssemblees, showFlash],
   );
 
+  const handleVoteResolution = useCallback(
+    async (
+      ag: CoproprietaireAGWithResolutions,
+      resolution: CoproprietaireResolution,
+      choix: CoproprietaireVoteChoix,
+    ) => {
+      if (!canVoteResolution(ag, resolution)) {
+        showFlash(
+          "info",
+          "Le vote est disponible uniquement pour une AG ouverte, non verrouillée, avec une résolution encore active.",
+        );
+        return;
+      }
+
+      const existingVote = getExistingVoteForResolution(
+        resolution,
+        localVotesByResolution,
+      );
+
+      if (existingVote) {
+        showFlash(
+          "info",
+          `Votre vote est déjà enregistré et verrouillé : ${
+            existingVote.choix_label || existingVote.choix
+          }.`,
+        );
+        return;
+      }
+
+      const lotId = getFirstPresenceLotId(ag);
+
+      if (!lotId) {
+        showFlash(
+          "error",
+          "Aucun lot présent ou représenté n’a été trouvé pour ce vote. Confirmez d’abord votre présence.",
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Confirmer votre vote "${voteChoiceLabels[choix]}" pour cette résolution ? Une fois enregistré, le vote sera verrouillé.`,
+      );
+
+      if (!confirmed) return;
+
+      try {
+        setVoteBusy({ resolutionId: resolution.id, choix });
+
+        const response = await voterResolutionAgCoproprietaire(resolution.id, {
+          lot_id: lotId,
+          choix,
+        });
+
+        setLocalVotesByResolution((current) => ({
+          ...current,
+          [String(resolution.id)]: response.vote,
+        }));
+
+        showFlash(
+          "success",
+          `${response.detail} Choix : ${response.vote.choix_label || response.vote.choix}.`,
+        );
+
+        await loadAssemblees({ silent: true });
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(
+            err,
+            "Impossible d’enregistrer votre vote pour cette résolution.",
+          ),
+        );
+      } finally {
+        setVoteBusy(null);
+      }
+    },
+    [loadAssemblees, localVotesByResolution, showFlash],
+  );
+
   if (loading) {
     return (
       <div style={styles.loadingCard}>
@@ -269,7 +396,8 @@ export default function CoproprietaireAssemblees() {
           <p style={styles.secureTitle}>Accès sécurisé</p>
           <p style={styles.secureText}>
             Les données sont filtrées automatiquement selon votre compte
-            copropriétaire et les lots qui vous sont rattachés.
+            copropriétaire et les lots qui vous sont rattachés. Les votes sont
+            uniques, verrouillés et tracés.
           </p>
         </div>
       </section>
@@ -317,8 +445,9 @@ export default function CoproprietaireAssemblees() {
             <p style={styles.sectionText}>
               Recherchez une assemblée par titre, lieu ou statut. Vous pouvez
               confirmer votre présence, participer en ligne, déclarer une
-              représentation, ouvrir le procès-verbal lorsqu’il est disponible
-              et télécharger votre mandat pour les AG encore actives.
+              représentation, voter sur les résolutions ouvertes, ouvrir le
+              procès-verbal lorsqu’il est disponible et télécharger votre mandat
+              pour les AG encore actives.
             </p>
           </div>
 
@@ -363,13 +492,16 @@ export default function CoproprietaireAssemblees() {
             {assemblees.map((ag) => (
               <AGCard
                 key={ag.id}
-                ag={ag}
+                ag={ag as CoproprietaireAGWithResolutions}
                 generatingMandat={generatingMandatAgId === ag.id}
                 presenceBusy={
                   presenceBusy?.agId === ag.id ? presenceBusy.mode : null
                 }
+                voteBusy={voteBusy}
+                localVotesByResolution={localVotesByResolution}
                 onGenerateMandat={handleGenerateMandat}
                 onConfirmPresence={handleConfirmPresence}
+                onVoteResolution={handleVoteResolution}
               />
             ))}
           </div>
@@ -383,14 +515,27 @@ function AGCard({
   ag,
   generatingMandat,
   presenceBusy,
+  voteBusy,
+  localVotesByResolution,
   onGenerateMandat,
   onConfirmPresence,
+  onVoteResolution,
 }: {
-  ag: CoproprietaireAG;
+  ag: CoproprietaireAGWithResolutions;
   generatingMandat: boolean;
   presenceBusy: CoproprietairePresenceMode | null;
+  voteBusy: {
+    resolutionId: number | string;
+    choix: CoproprietaireVoteChoix;
+  } | null;
+  localVotesByResolution: Record<string, CoproprietaireVoteItem>;
   onGenerateMandat: (ag: CoproprietaireAG) => void;
   onConfirmPresence: (ag: CoproprietaireAG, mode: CoproprietairePresenceMode) => void;
+  onVoteResolution: (
+    ag: CoproprietaireAGWithResolutions,
+    resolution: CoproprietaireResolution,
+    choix: CoproprietaireVoteChoix,
+  ) => void;
 }) {
   const pvUrl = ag.pv_signed_url || ag.pv_url;
   const presence = ag.presence_coproprietaire;
@@ -398,6 +543,7 @@ function AGCard({
   const mandatAvailable = canGenerateMandat(ag);
   const presenceAvailable = canConfirmPresence(ag);
   const presenceDisabled = !presenceAvailable || presenceBusy !== null;
+  const resolutions = Array.isArray(ag.resolutions) ? ag.resolutions : [];
 
   return (
     <article style={styles.agCard}>
@@ -478,6 +624,118 @@ function AGCard({
                 clôturée, archivée, annulée ou verrouillée.
               </p>
             ) : null}
+          </div>
+
+          <div style={styles.voteBox}>
+            <div style={styles.voteBoxHeader}>
+              <div>
+                <p style={styles.voteBoxTitle}>Mes votes sur les résolutions</p>
+                <p style={styles.voteBoxText}>
+                  Le vote en ligne est autorisé uniquement lorsque l’AG est
+                  ouverte. Chaque vote est unique, verrouillé et tracé.
+                </p>
+              </div>
+
+              <Badge style={canVoteAg(ag) ? styles.voteOpenBadge : styles.voteClosedBadge}>
+                {canVoteAg(ag) ? "Vote ouvert" : "Vote indisponible"}
+              </Badge>
+            </div>
+
+            {resolutions.length === 0 ? (
+              <p style={styles.voteUnavailableText}>
+                Aucune résolution détaillée n’est actuellement exposée dans cette
+                vue. Le backend doit renvoyer la liste des résolutions de l’AG
+                pour afficher les boutons de vote.
+              </p>
+            ) : (
+              <div style={styles.resolutionsList}>
+                {resolutions.map((resolution) => {
+                  const existingVote = getExistingVoteForResolution(
+                    resolution,
+                    localVotesByResolution,
+                  );
+                  const voteAvailable = canVoteResolution(ag, resolution) && !existingVote;
+                  const resolutionBusy =
+                    voteBusy?.resolutionId === resolution.id
+                      ? voteBusy.choix
+                      : null;
+
+                  return (
+                    <div key={String(resolution.id)} style={styles.resolutionCard}>
+                      <div style={styles.resolutionHeader}>
+                        <div>
+                          <p style={styles.resolutionTitle}>
+                            {formatResolutionTitle(resolution)}
+                          </p>
+
+                          {resolution.texte ? (
+                            <p style={styles.resolutionText}>{resolution.texte}</p>
+                          ) : null}
+                        </div>
+
+                        <Badge
+                          style={
+                            resolution.cloturee
+                              ? styles.resolutionClosedBadge
+                              : styles.resolutionOpenBadge
+                          }
+                        >
+                          {resolution.cloturee ? "Clôturée" : "Active"}
+                        </Badge>
+                      </div>
+
+                      {existingVote ? (
+                        <div style={styles.voteResult}>
+                          <span style={styles.voteResultIcon}>✅</span>
+                          <span>
+                            Vote enregistré et verrouillé :{" "}
+                            <strong>
+                              {existingVote.choix_label || existingVote.choix}
+                            </strong>
+                          </span>
+                        </div>
+                      ) : null}
+
+                      <div style={styles.voteActionsGrid}>
+                        <VoteButton
+                          label="Pour"
+                          choix="POUR"
+                          tone="green"
+                          busyChoice={resolutionBusy}
+                          disabled={!voteAvailable || resolutionBusy !== null}
+                          onClick={() => onVoteResolution(ag, resolution, "POUR")}
+                        />
+                        <VoteButton
+                          label="Contre"
+                          choix="CONTRE"
+                          tone="rose"
+                          busyChoice={resolutionBusy}
+                          disabled={!voteAvailable || resolutionBusy !== null}
+                          onClick={() => onVoteResolution(ag, resolution, "CONTRE")}
+                        />
+                        <VoteButton
+                          label="Abstention"
+                          choix="ABSTENTION"
+                          tone="slate"
+                          busyChoice={resolutionBusy}
+                          disabled={!voteAvailable || resolutionBusy !== null}
+                          onClick={() =>
+                            onVoteResolution(ag, resolution, "ABSTENTION")
+                          }
+                        />
+                      </div>
+
+                      {!voteAvailable && !existingVote ? (
+                        <p style={styles.voteUnavailableText}>
+                          Vote indisponible : AG non ouverte, PV verrouillé,
+                          résolution clôturée ou présence non confirmée.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -576,6 +834,42 @@ function PresenceButton({
       }}
     >
       {isBusy ? "Validation..." : label}
+    </button>
+  );
+}
+
+function VoteButton({
+  label,
+  choix,
+  busyChoice,
+  disabled,
+  tone,
+  onClick,
+}: {
+  label: string;
+  choix: CoproprietaireVoteChoix;
+  busyChoice: CoproprietaireVoteChoix | null;
+  disabled: boolean;
+  tone: VoteTone;
+  onClick: () => void;
+}) {
+  const toneStyle = voteButtonTones[tone];
+  const isBusy = busyChoice === choix;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...styles.voteButton,
+        borderColor: disabled ? "#e2e8f0" : toneStyle.border,
+        background: disabled ? "#f8fafc" : toneStyle.background,
+        color: disabled ? "#94a3b8" : toneStyle.color,
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+    >
+      {isBusy ? "Enregistrement..." : label}
     </button>
   );
 }
@@ -751,9 +1045,74 @@ function canGenerateMandat(ag: CoproprietaireAG): boolean {
 
 function canConfirmPresence(ag: CoproprietaireAG): boolean {
   const value = normalize(ag.statut);
-  const pvLocked = Boolean((ag as { pv_locked?: boolean }).pv_locked);
+  const pvLocked = (ag as { pv_locked?: boolean }).pv_locked === true;
 
   return ["CONVOQUEE", "CONVOQUÉE", "OUVERTE"].includes(value) && !pvLocked;
+}
+
+function getPresenceItems(ag: CoproprietaireAGWithResolutions): PresenceItemLike[] {
+  const presence = ag.presence_coproprietaire;
+
+  return Array.isArray(presence?.items) ? presence.items : [];
+}
+
+function canVoteAg(ag: CoproprietaireAGWithResolutions): boolean {
+  const value = normalize(ag.statut);
+  const pvLocked = ag.pv_locked === true;
+  const hasActivePresence = hasPresentOrRepresentedLot(ag);
+
+  return value === "OUVERTE" && !pvLocked && hasActivePresence;
+}
+
+function canVoteResolution(
+  ag: CoproprietaireAGWithResolutions,
+  resolution: CoproprietaireResolution,
+): boolean {
+  return canVoteAg(ag) && resolution.cloturee !== true;
+}
+
+function hasPresentOrRepresentedLot(ag: CoproprietaireAGWithResolutions): boolean {
+  const items = getPresenceItems(ag);
+
+  return items.some((item: PresenceItemLike) => {
+    return item.present_ou_represente === true && item.lot?.id != null;
+  });
+}
+
+function getFirstPresenceLotId(
+  ag: CoproprietaireAGWithResolutions,
+): number | string | null {
+  const items = getPresenceItems(ag);
+
+  const item = items.find((entry: PresenceItemLike) => {
+    return entry.present_ou_represente === true && entry.lot?.id != null;
+  });
+
+  return item?.lot?.id ?? null;
+}
+
+function getExistingVoteForResolution(
+  resolution: CoproprietaireResolution,
+  localVotesByResolution: Record<string, CoproprietaireVoteItem>,
+): CoproprietaireVoteItem | null {
+  const localVote = localVotesByResolution[String(resolution.id)];
+
+  if (localVote) {
+    return localVote;
+  }
+
+  const votes = resolution.vote_summary?.votes ?? [];
+
+  if (votes.length > 0) {
+    return votes[0] ?? null;
+  }
+
+  return null;
+}
+
+function formatResolutionTitle(resolution: CoproprietaireResolution): string {
+  const ordre = resolution.ordre ? `R${resolution.ordre} · ` : "";
+  return `${ordre}${resolution.titre || `Résolution #${resolution.id}`}`;
 }
 
 function getStatusStyle(statut: string | null | undefined): CSSProperties {
@@ -929,6 +1288,27 @@ const presenceButtonTones: Record<
     background: "#eef2ff",
     border: "#c7d2fe",
     color: "#4338ca",
+  },
+};
+
+const voteButtonTones: Record<
+  VoteTone,
+  { background: string; border: string; color: string }
+> = {
+  green: {
+    background: "#ecfdf5",
+    border: "#a7f3d0",
+    color: "#047857",
+  },
+  rose: {
+    background: "#fff1f2",
+    border: "#fecdd3",
+    color: "#be123c",
+  },
+  slate: {
+    background: "#f8fafc",
+    border: "#cbd5e1",
+    color: "#475569",
   },
 };
 
@@ -1287,6 +1667,138 @@ const styles: Record<string, CSSProperties> = {
   },
 
   presenceUnavailableText: {
+    margin: "10px 0 0",
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: 750,
+    lineHeight: 1.45,
+  },
+
+  voteBox: {
+    marginTop: 14,
+    border: "1px solid #dbeafe",
+    borderRadius: 20,
+    background: "#f8fbff",
+    padding: 14,
+  },
+
+  voteBoxHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+
+  voteBoxTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  voteBoxText: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+
+  voteOpenBadge: {
+    background: "#ecfdf5",
+    color: "#047857",
+    borderColor: "#a7f3d0",
+  },
+
+  voteClosedBadge: {
+    background: "#f8fafc",
+    color: "#64748b",
+    borderColor: "#e2e8f0",
+  },
+
+  resolutionsList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+
+  resolutionCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 18,
+    background: "#ffffff",
+    padding: 12,
+  },
+
+  resolutionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+
+  resolutionTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+    lineHeight: 1.35,
+  },
+
+  resolutionText: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+
+  resolutionOpenBadge: {
+    background: "#ecfdf5",
+    color: "#047857",
+    borderColor: "#a7f3d0",
+  },
+
+  resolutionClosedBadge: {
+    background: "#fff1f2",
+    color: "#be123c",
+    borderColor: "#fecdd3",
+  },
+
+  voteActionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 8,
+    marginTop: 10,
+  },
+
+  voteButton: {
+    border: "1px solid",
+    borderRadius: 14,
+    padding: "10px 9px",
+    fontSize: 12,
+    fontWeight: 950,
+    transition: "all 0.2s ease",
+  },
+
+  voteResult: {
+    marginTop: 10,
+    border: "1px solid #a7f3d0",
+    background: "#ecfdf5",
+    color: "#047857",
+    borderRadius: 14,
+    padding: "10px 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+
+  voteResultIcon: {
+    fontSize: 14,
+  },
+
+  voteUnavailableText: {
     margin: "10px 0 0",
     color: "#94a3b8",
     fontSize: 12,

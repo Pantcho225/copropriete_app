@@ -515,6 +515,11 @@ class Vote(models.Model):
         ("ABSTENTION", "Abstention"),
     ]
 
+    SOURCE_CHOICES = [
+        ("BACKOFFICE", "Back-office syndic"),
+        ("ESPACE_COPROPRIETAIRE", "Espace copropriétaire"),
+    ]
+
     resolution = models.ForeignKey(
         Resolution,
         on_delete=models.CASCADE,
@@ -528,7 +533,43 @@ class Vote(models.Model):
 
     choix = models.CharField(max_length=12, choices=CHOIX)
     tantiemes = models.DecimalField(max_digits=12, decimal_places=4, default=DEC0)
+
+    # Traçabilité métier / juridique
+    coproprietaire = models.ForeignKey(
+        "owners.Coproprietaire",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="votes_ag",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="votes_ag_created",
+    )
+    source = models.CharField(
+        max_length=32,
+        choices=SOURCE_CHOICES,
+        default="BACKOFFICE",
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+
+    # Verrouillage du vote
+    locked = models.BooleanField(default=False)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    locked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="votes_ag_locked",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         # Un lot = un seul vote par résolution
@@ -536,21 +577,63 @@ class Vote(models.Model):
         indexes = [
             models.Index(fields=["resolution", "choix"]),
             models.Index(fields=["lot"]),
+            models.Index(fields=["source"]),
+            models.Index(fields=["created_by"]),
+            models.Index(fields=["coproprietaire"]),
+            models.Index(fields=["locked"]),
         ]
 
     def __str__(self):
         return f"Vote res={self.resolution_id} lot={self.lot_id} choix={self.choix}"
 
+    def _get_db_instance(self):
+        if not self.pk:
+            return None
+        return Vote.objects.filter(pk=self.pk).first()
+
     def clean(self):
         super().clean()
+
+        db = self._get_db_instance()
+
+        if db and db.locked:
+            changed_fields = []
+
+            fields_to_check = [
+                "resolution_id",
+                "lot_id",
+                "choix",
+                "tantiemes",
+                "coproprietaire_id",
+                "created_by_id",
+                "source",
+                "ip_address",
+                "user_agent",
+            ]
+
+            for field_name in fields_to_check:
+                if getattr(self, field_name) != getattr(db, field_name):
+                    changed_fields.append(field_name)
+
+            if changed_fields:
+                raise ValidationError(
+                    {
+                        "locked": (
+                            "Vote verrouillé : modification interdite "
+                            f"({', '.join(changed_fields)})."
+                        )
+                    }
+                )
 
         if self.resolution_id and self.resolution.cloturee:
             raise ValidationError({"resolution": "Cette résolution est clôturée. Aucun vote n'est accepté."})
 
         if self.resolution_id:
             ag = self.resolution.ag
+
             if ag.is_closed():
                 raise ValidationError({"resolution": "AG clôturée : aucun vote n'est accepté."})
+
             if ag.pv_locked:
                 raise ValidationError({"resolution": "PV verrouillé : aucun vote n'est accepté."})
 
@@ -560,12 +643,14 @@ class Vote(models.Model):
 
         if self.resolution_id and self.lot_id:
             has_presences = PresenceLot.objects.filter(ag_id=self.resolution.ag_id).exists()
+
             if has_presences:
                 ok = PresenceLot.objects.filter(
                     ag_id=self.resolution.ag_id,
                     lot_id=self.lot_id,
                     present_ou_represente=True,
                 ).exists()
+
                 if not ok:
                     raise ValidationError({"lot": "Ce lot n'est pas présent/représenté pour cette AG."})
 
@@ -578,9 +663,24 @@ class Vote(models.Model):
             )
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
         if self.resolution_id and self.lot_id:
             if self.tantiemes is None or Decimal(str(self.tantiemes)) <= 0:
                 self.refresh_tantiemes()
+
+                if update_fields is not None:
+                    update_fields = set(update_fields)
+                    update_fields.add("tantiemes")
+                    kwargs["update_fields"] = update_fields
+
+        if self.locked and not self.locked_at:
+            self.locked_at = timezone.now()
+
+            if update_fields is not None:
+                update_fields = set(update_fields)
+                update_fields.add("locked_at")
+                kwargs["update_fields"] = update_fields
 
         with transaction.atomic():
             self.full_clean()

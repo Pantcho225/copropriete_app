@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -51,6 +52,16 @@ PRESENCE_WRITABLE_STATUSES = {
     "CONVOQUEE",
     "CONVOQUÉE",
     "OUVERTE",
+}
+
+VOTE_WRITABLE_STATUSES = {
+    "OUVERTE",
+}
+
+VOTE_CHOICES = {
+    "POUR": "Pour",
+    "CONTRE": "Contre",
+    "ABSTENTION": "Abstention",
 }
 
 
@@ -394,6 +405,105 @@ def _build_presence_comment(
     return "\n".join(parts)
 
 
+def _get_client_ip(request) -> str | None:
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    return request.META.get("REMOTE_ADDR")
+
+
+def _assert_resolution_vote_writable(resolution: Resolution) -> None:
+    ag = resolution.ag
+    statut = _as_upper(getattr(ag, "statut", None))
+
+    if statut not in VOTE_WRITABLE_STATUSES:
+        raise ValidationError(
+            {
+                "detail": (
+                    "Le vote en ligne est disponible uniquement lorsque "
+                    "l’assemblée générale est ouverte."
+                )
+            }
+        )
+
+    if resolution.cloturee:
+        raise ValidationError(
+            {"detail": "Cette résolution est clôturée : aucun vote n’est accepté."}
+        )
+
+    if ag.is_closed():
+        raise ValidationError(
+            {"detail": "Assemblée générale clôturée : aucun vote n’est accepté."}
+        )
+
+    if getattr(ag, "pv_locked", False):
+        raise ValidationError(
+            {"detail": "PV verrouillé : aucun vote n’est accepté."}
+        )
+
+
+def _vote_payload(vote: Vote) -> dict[str, Any]:
+    lot = getattr(vote, "lot", None)
+    resolution = getattr(vote, "resolution", None)
+
+    return {
+        "id": vote.id,
+        "resolution_id": getattr(resolution, "id", None),
+        "lot": {
+            "id": getattr(lot, "id", None),
+            "label": _lot_label(lot),
+            "reference": getattr(lot, "reference", "") if lot else "",
+            "numero": getattr(lot, "numero", "") if lot else "",
+        },
+        "choix": vote.choix,
+        "choix_label": VOTE_CHOICES.get(vote.choix, vote.choix),
+        "tantiemes": str(vote.tantiemes),
+        "source": getattr(vote, "source", ""),
+        "locked": bool(getattr(vote, "locked", False)),
+        "locked_at": vote.locked_at.isoformat() if getattr(vote, "locked_at", None) else None,
+        "created_at": vote.created_at.isoformat() if getattr(vote, "created_at", None) else None,
+    }
+
+
+def _resolution_vote_summary(resolution: Resolution, lot_ids: list[int]) -> dict[str, Any]:
+    qs = Vote.objects.filter(resolution=resolution)
+
+    if lot_ids:
+        qs = qs.filter(lot_id__in=lot_ids)
+
+    counts: dict[str, int] = {}
+
+    for vote in qs:
+        choix = _as_upper(getattr(vote, "choix", ""))
+        choix = choix or "NON_DEFINI"
+        counts[choix] = counts.get(choix, 0) + 1
+
+    return {
+        "total": qs.count(),
+        "par_choix": counts,
+        "votes": [_vote_payload(vote) for vote in qs.select_related("lot", "resolution")],
+    }
+
+
+def _resolution_payload(resolution: Resolution, lot_ids: list[int]) -> dict[str, Any]:
+    return {
+        "id": resolution.id,
+        "ordre": getattr(resolution, "ordre", None),
+        "titre": getattr(resolution, "titre", "") or f"Résolution #{resolution.id}",
+        "texte": getattr(resolution, "texte", "") or "",
+        "cloturee": bool(getattr(resolution, "cloturee", False)),
+        "type_majorite": getattr(resolution, "type_majorite", "") or "",
+        "budget_vote": (
+            str(resolution.budget_vote)
+            if getattr(resolution, "budget_vote", None) is not None
+            else None
+        ),
+        "vote_summary": _resolution_vote_summary(resolution, lot_ids),
+    }
+
+
 class CoproprietaireAGSerializer(Serializer):
     id = IntegerField(read_only=True)
 
@@ -413,6 +523,7 @@ class CoproprietaireAGSerializer(Serializer):
     total_resolutions = SerializerMethodField()
     presence_coproprietaire = SerializerMethodField()
     vote_summary = SerializerMethodField()
+    resolutions = SerializerMethodField()
 
     def get_titre(self, obj):
         return _value(obj, "titre", "title", "objet", "libelle") or f"Assemblée générale #{obj.id}"
@@ -491,6 +602,12 @@ class CoproprietaireAGSerializer(Serializer):
             "total": qs.count(),
             "par_choix": counts,
         }
+
+    def get_resolutions(self, obj):
+        lot_ids = self.context.get("lot_ids", [])
+        qs = _resolution_qs_for_ag(obj).order_by("ordre", "id")
+
+        return [_resolution_payload(resolution, lot_ids) for resolution in qs]
 
 
 class CoproprietaireAssembleesAPIView(APIView):
@@ -766,4 +883,176 @@ class CoproprietairePresenceAPIView(APIView):
                 },
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class CoproprietaireVoteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, resolution_id: int):
+        resolution = (
+            Resolution.objects.select_related("ag", "ag__copropriete")
+            .filter(pk=resolution_id)
+            .first()
+        )
+
+        if not resolution:
+            raise ValidationError({"detail": "Résolution introuvable."})
+
+        _assert_resolution_vote_writable(resolution)
+
+        ag = resolution.ag
+
+        coproprietaire = _get_current_coproprietaire(
+            request.user,
+            copropriete_id=ag.copropriete_id,
+        )
+
+        if not coproprietaire:
+            raise PermissionDenied(
+                "Aucun profil copropriétaire actif ne correspond à cette assemblée générale."
+            )
+
+        choix = _as_upper(request.data.get("choix"))
+
+        if choix not in VOTE_CHOICES:
+            raise ValidationError(
+                {
+                    "choix": (
+                        "Choix de vote invalide. Valeurs attendues : "
+                        "POUR, CONTRE ou ABSTENTION."
+                    )
+                }
+            )
+
+        lot_id = request.data.get("lot_id") or request.data.get("lot")
+
+        owner_lots = _get_active_owner_lots(coproprietaire)
+
+        if _model_has_field(ProprietaireLot, "lot"):
+            owner_lots = owner_lots.filter(lot__copropriete_id=ag.copropriete_id)
+
+        if lot_id:
+            owner_lots = owner_lots.filter(lot_id=lot_id)
+
+        owner_lots = owner_lots.select_related("lot").order_by(
+            "-principal",
+            "lot__reference",
+            "lot_id",
+            "-date_debut",
+            "-id",
+        )
+
+        if not owner_lots.exists():
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Aucun lot actif rattaché à votre compte ne permet "
+                        "de voter sur cette résolution."
+                    )
+                }
+            )
+
+        if not lot_id and owner_lots.count() > 1:
+            raise ValidationError(
+                {
+                    "lot_id": (
+                        "Vous possédez plusieurs lots. Veuillez préciser le lot "
+                        "concerné par ce vote."
+                    )
+                }
+            )
+
+        owner_lot = owner_lots.first()
+        lot = getattr(owner_lot, "lot", None)
+
+        if not lot:
+            raise ValidationError({"detail": "Lot introuvable pour ce vote."})
+
+        presence = PresenceLot.objects.filter(
+            ag=ag,
+            lot=lot,
+            present_ou_represente=True,
+        ).first()
+
+        if not presence:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Votre lot doit être marqué présent ou représenté "
+                        "avant de pouvoir voter."
+                    )
+                }
+            )
+
+        client_ip = _get_client_ip(request)
+        user_agent = str(request.META.get("HTTP_USER_AGENT") or "")[:2000]
+
+        try:
+            with transaction.atomic():
+                locked_resolution = (
+                    Resolution.objects.select_for_update()
+                    .select_related("ag", "ag__copropriete")
+                    .get(pk=resolution.pk)
+                )
+
+                _assert_resolution_vote_writable(locked_resolution)
+
+                existing_vote = (
+                    Vote.objects.select_for_update()
+                    .filter(
+                        resolution=locked_resolution,
+                        lot=lot,
+                    )
+                    .first()
+                )
+
+                if existing_vote:
+                    raise ValidationError(
+                        {
+                            "detail": (
+                                "Un vote a déjà été enregistré pour ce lot "
+                                "sur cette résolution. Le vote est unique et verrouillé."
+                            ),
+                            "vote": _vote_payload(existing_vote),
+                        }
+                    )
+
+                vote = Vote(
+                    resolution=locked_resolution,
+                    lot=lot,
+                    choix=choix,
+                    coproprietaire=coproprietaire,
+                    created_by=request.user,
+                    source="ESPACE_COPROPRIETAIRE",
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    locked=True,
+                    locked_at=timezone.now(),
+                    locked_by=request.user,
+                )
+                vote.refresh_tantiemes()
+                vote.save()
+
+        except IntegrityError:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Un vote existe déjà pour ce lot sur cette résolution. "
+                        "Le vote est unique par lot et par résolution."
+                    )
+                }
+            )
+
+        lot_ids = _get_lot_ids(_get_active_owner_lots(coproprietaire))
+
+        return Response(
+            {
+                "detail": "Votre vote a été enregistré et verrouillé avec succès.",
+                "ag_id": ag.id,
+                "resolution_id": resolution.id,
+                "vote": _vote_payload(vote),
+                "vote_summary": _resolution_vote_summary(resolution, lot_ids),
+            },
+            status=status.HTTP_201_CREATED,
         )

@@ -401,3 +401,54 @@ export async function confirmerPresenceAgCoproprietaire(
 
   return response.data;
 }
+
+export type CoproprietaireVoteChoix = "POUR" | "CONTRE" | "ABSTENTION";
+
+export type CoproprietaireVoteLot = {
+  id: number | string | null;
+  label: string;
+  reference: string;
+  numero: string;
+};
+
+export type CoproprietaireVoteItem = {
+  id: number | string;
+  resolution_id: number | string;
+  lot: CoproprietaireVoteLot;
+  choix: CoproprietaireVoteChoix | string;
+  choix_label: string;
+  tantiemes: string;
+  source: string;
+  locked: boolean | string;
+  locked_at: string | null;
+  created_at: string | null;
+};
+
+export type CoproprietaireVoteSummary = {
+  total: number;
+  par_choix: Record<string, number>;
+  votes: CoproprietaireVoteItem[];
+};
+
+export type CoproprietaireVoteResponse = {
+  detail: string;
+  ag_id: number;
+  resolution_id: number;
+  vote: CoproprietaireVoteItem;
+  vote_summary: CoproprietaireVoteSummary;
+};
+
+export async function voterResolutionAgCoproprietaire(
+  resolutionId: number | string,
+  payload: {
+    lot_id: number | string;
+    choix: CoproprietaireVoteChoix;
+  },
+) {
+  const response = await api.post<CoproprietaireVoteResponse>(
+    `/api/ag/coproprietaire/resolutions/${resolutionId}/vote/`,
+    payload,
+  );
+
+  return response.data;
+}
