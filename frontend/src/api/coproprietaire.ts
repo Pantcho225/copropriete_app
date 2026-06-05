@@ -293,3 +293,52 @@ export async function restoreDocumentCoproprietaire(documentId: string) {
 
   return response.data;
 }
+
+export type GeneratedDocumentCoproprietaire = {
+  id: number;
+  copropriete: number;
+  document_type: string;
+  document_type_label: string;
+  title: string;
+  reference: string;
+  file: string;
+  file_url: string;
+  filename: string;
+  file_hash: string;
+  related_owner: number | null;
+  related_owner_label: string;
+  related_lot: number | null;
+  related_lot_label: string;
+  related_ag: number | null;
+  related_ag_label: string;
+  related_dossier_impaye: number | null;
+  related_relance: number | null;
+  is_visible_to_owner: boolean;
+  status: string;
+  status_label: string;
+  metadata: Record<string, unknown>;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GenerateMandatAgCoproprietaireResponse = {
+  detail: string;
+  document: GeneratedDocumentCoproprietaire;
+};
+
+export async function generateMandatAgCoproprietaire(
+  agId: number | string,
+  payload?: {
+    lot_id?: number | string;
+    mandataire_nom?: string;
+    mandataire_telephone?: string;
+  },
+) {
+  const response = await api.post<GenerateMandatAgCoproprietaireResponse>(
+    `/api/documents/coproprietaire/ag/${agId}/mandat/`,
+    payload ?? {},
+  );
+
+  return response.data;
+}

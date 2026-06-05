@@ -83,6 +83,32 @@ def _lot_label(lot) -> str:
     )
 
 
+def _lot_building_label(lot) -> str:
+    if not lot:
+        return ""
+
+    parts = []
+
+    batiment = _value(lot, "batiment")
+    escalier = _value(lot, "escalier")
+    etage = _value(lot, "etage")
+    porte = _value(lot, "porte")
+
+    if batiment:
+        parts.append(f"Bâtiment {batiment}")
+
+    if escalier:
+        parts.append(f"Escalier {escalier}")
+
+    if etage:
+        parts.append(f"Étage {etage}")
+
+    if porte:
+        parts.append(f"Porte {porte}")
+
+    return " / ".join(parts)
+
+
 def _copro_name(copropriete) -> str:
     return (
         _value(copropriete, "nom")
@@ -107,6 +133,17 @@ def _copro_phone(copropriete) -> str:
 
 def _copro_email(copropriete) -> str:
     return _value(copropriete, "email", "contact_email")
+
+
+def _cell(value: str | None) -> str:
+    if value is None:
+        return "&nbsp;"
+
+    cleaned = str(value).strip()
+    if not cleaned:
+        return "&nbsp;"
+
+    return escape(cleaned)
 
 
 def _html_base(*, title: str, copropriete, reference: str, body_html: str) -> str:
@@ -402,12 +439,21 @@ def generate_mandat_ag_pdf_bytes(
     ag,
     reference: str,
     request=None,
+    mandant=None,
+    lot=None,
+    mandataire_nom: str = "",
+    mandataire_telephone: str = "",
 ) -> bytes:
     copropriete = ag.copropriete
 
     ag_title = escape(getattr(ag, "titre", "") or f"Assemblée Générale #{ag.id}")
     ag_date = escape(_date(getattr(ag, "date_ag", None)))
     ag_lieu = escape(getattr(ag, "lieu", "") or "")
+
+    mandant_name = _owner_name(mandant) if mandant else ""
+    mandant_phone = _value(mandant, "telephone", "phone", "contact_phone")
+    lot_label = _lot_label(lot) if lot else ""
+    lot_building = _lot_building_label(lot)
 
     body = f"""
   <div class="section">
@@ -436,27 +482,27 @@ def generate_mandat_ag_pdf_bytes(
     <table class="grid">
       <tr>
         <td class="label">Nom et prénom du mandant</td>
-        <td>&nbsp;</td>
+        <td>{_cell(mandant_name)}</td>
       </tr>
       <tr>
         <td class="label">Lot / Appartement</td>
-        <td>&nbsp;</td>
+        <td>{_cell(lot_label)}</td>
       </tr>
       <tr>
         <td class="label">Bâtiment / Étage</td>
-        <td>&nbsp;</td>
+        <td>{_cell(lot_building)}</td>
       </tr>
       <tr>
         <td class="label">Téléphone du mandant</td>
-        <td>&nbsp;</td>
+        <td>{_cell(mandant_phone)}</td>
       </tr>
       <tr>
         <td class="label">Nom et prénom du mandataire</td>
-        <td>&nbsp;</td>
+        <td>{_cell(mandataire_nom)}</td>
       </tr>
       <tr>
         <td class="label">Téléphone du mandataire</td>
-        <td>&nbsp;</td>
+        <td>{_cell(mandataire_telephone)}</td>
       </tr>
     </table>
 

@@ -1,4 +1,3 @@
-# Create your views here.
 # apps/documents/views.py
 from __future__ import annotations
 
@@ -8,7 +7,7 @@ from django.utils import timezone
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -247,7 +246,7 @@ class GenerateAgMandatAPIView(APIView):
     """
     POST /api/documents/generate/ag/:ag_id/mandat/
 
-    Génère un modèle PDF de mandat/procuration lié à une AG.
+    Génère un modèle PDF de mandat/procuration lié à une AG côté admin/syndic.
     """
 
     permission_classes = [IsAuthenticated]
@@ -305,6 +304,146 @@ class GenerateAgMandatAPIView(APIView):
         return Response(
             {
                 "detail": "Mandat AG généré avec succès.",
+                "document": GeneratedDocumentSerializer(
+                    generated_document,
+                    context={"request": request},
+                ).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CoproprietaireGenerateAgMandatAPIView(APIView):
+    """
+    POST /api/documents/coproprietaire/ag/:ag_id/mandat/
+
+    Génère un mandat AG pré-rempli pour le copropriétaire connecté.
+    Le document est visible dans son espace documentaire.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ag_id: int):
+        from apps.ag.models import AssembleeGenerale
+
+        ag = (
+            AssembleeGenerale.objects.select_related("copropriete")
+            .filter(pk=ag_id)
+            .first()
+        )
+
+        if not ag:
+            raise NotFound("Assemblée Générale introuvable.")
+
+        if ag.statut in {"CLOTUREE", "ANNULEE", "ARCHIVEE"}:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Cette assemblée est clôturée, annulée ou archivée : "
+                        "la génération d’un mandat copropriétaire n’est plus disponible."
+                    )
+                }
+            )
+
+        has_membership = CoproMembre.objects.filter(
+            user=request.user,
+            copropriete=ag.copropriete,
+            is_active=True,
+            role=CoproMembre.Role.COPROPRIETAIRE,
+        ).exists()
+
+        if not has_membership:
+            raise PermissionDenied(
+                "Vous n’avez pas accès aux documents de cette assemblée générale."
+            )
+
+        lot_id = request.data.get("lot_id") or request.data.get("lot")
+
+        liens_qs = (
+            ProprietaireLot.objects.filter(
+                copropriete=ag.copropriete,
+                coproprietaire__user_account=request.user,
+                date_fin__isnull=True,
+            )
+            .select_related("coproprietaire", "lot", "copropriete")
+            .order_by("-principal", "lot__reference", "lot_id", "-date_debut", "-id")
+        )
+
+        if lot_id:
+            liens_qs = liens_qs.filter(lot_id=lot_id)
+
+        lien = liens_qs.first()
+
+        if not lien:
+            if lot_id:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Le lot sélectionné n’est pas rattaché à votre compte copropriétaire."
+                        )
+                    }
+                )
+
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Aucun lot actif rattaché à votre compte ne permet de générer ce mandat."
+                    )
+                }
+            )
+
+        mandataire_nom = str(request.data.get("mandataire_nom") or "").strip()
+        mandataire_telephone = str(
+            request.data.get("mandataire_telephone") or ""
+        ).strip()
+
+        owner = lien.coproprietaire
+        lot = lien.lot
+
+        reference = make_reference("MANDAT-COPRO-AG", ag.id)
+
+        pdf_bytes = generate_mandat_ag_pdf_bytes(
+            ag=ag,
+            reference=reference,
+            request=request,
+            mandant=owner,
+            lot=lot,
+            mandataire_nom=mandataire_nom,
+            mandataire_telephone=mandataire_telephone,
+        )
+
+        title = f"Mon mandat de représentation - {ag.titre}"
+
+        generated_document = save_generated_document(
+            copropriete=ag.copropriete,
+            document_type=GeneratedDocument.Type.MANDAT_AG,
+            title=title,
+            reference=reference,
+            pdf_bytes=pdf_bytes,
+            created_by=request.user,
+            related_owner=owner,
+            related_lot=lot,
+            related_ag=ag,
+            is_visible_to_owner=True,
+            metadata={
+                "source": "ag_coproprietaire",
+                "ag_id": ag.id,
+                "ag_titre": ag.titre,
+                "ag_date": ag.date_ag.isoformat() if ag.date_ag else None,
+                "ag_lieu": ag.lieu,
+                "owner_id": owner.id,
+                "owner_label": owner.display_name,
+                "lot_id": lot.id,
+                "lot_label": getattr(lot, "reference", "") or getattr(lot, "numero", ""),
+                "mandataire_nom": mandataire_nom,
+                "mandataire_telephone": mandataire_telephone,
+                "generated_at": timezone.now().isoformat(),
+            },
+        )
+
+        return Response(
+            {
+                "detail": "Mandat AG copropriétaire généré avec succès.",
                 "document": GeneratedDocumentSerializer(
                     generated_document,
                     context={"request": request},

@@ -3,6 +3,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    CoproprietaireGenerateAgMandatAPIView,
     CoproprietaireGeneratedDocumentsAPIView,
     GenerateAgMandatAPIView,
     GenerateRelanceLetterAPIView,
@@ -39,6 +40,11 @@ urlpatterns = [
         "coproprietaire/documents/restaurer/",
         CoproprietaireRestaurerDocumentAPIView.as_view(),
         name="coproprietaire-documents-restaurer",
+    ),
+    path(
+        "coproprietaire/ag/<int:ag_id>/mandat/",
+        CoproprietaireGenerateAgMandatAPIView.as_view(),
+        name="coproprietaire-generate-ag-mandat",
     ),
     path(
         "generate/relance/<int:dossier_id>/",

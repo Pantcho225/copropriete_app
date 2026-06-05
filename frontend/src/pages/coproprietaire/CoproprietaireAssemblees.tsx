@@ -1,5 +1,5 @@
 // frontend/src/pages/coproprietaire/CoproprietaireAssemblees.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import {
@@ -7,9 +7,11 @@ import {
   type CoproprietaireAG,
   type CoproprietaireAGResponse,
 } from "../../api/coproprietaireAg";
+import { generateMandatAgCoproprietaire } from "../../api/coproprietaire";
 
 type StatTone = "blue" | "green" | "amber" | "slate" | "indigo";
 type StatusFilter = "" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE" | "ANNULEE";
+type FlashKind = "success" | "error" | "info";
 
 const emptyResponse: CoproprietaireAGResponse = {
   count: 0,
@@ -27,8 +29,10 @@ export default function CoproprietaireAssemblees() {
   const [data, setData] = useState<CoproprietaireAGResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(null);
   const [search, setSearch] = useState("");
   const [statut, setStatut] = useState<StatusFilter>("");
+  const [generatingMandatAgId, setGeneratingMandatAgId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -73,6 +77,59 @@ export default function CoproprietaireAssemblees() {
     return assemblees.filter((ag) => ag.has_pv).length;
   }, [assemblees]);
 
+  const showFlash = useCallback((kind: FlashKind, text: string) => {
+    setFlash({ kind, text });
+
+    window.setTimeout(() => {
+      setFlash((current) => (current?.text === text ? null : current));
+    }, 4500);
+  }, []);
+
+  const handleGenerateMandat = useCallback(
+    async (ag: CoproprietaireAG) => {
+      if (!canGenerateMandat(ag)) {
+        showFlash(
+          "info",
+          "Le mandat n’est disponible que pour les assemblées convoquées ou ouvertes.",
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        "Télécharger votre mandat de représentation pré-rempli pour cette assemblée générale ?",
+      );
+
+      if (!confirmed) return;
+
+      try {
+        setGeneratingMandatAgId(ag.id);
+
+        const response = await generateMandatAgCoproprietaire(ag.id);
+        const fileUrl = response.document?.file_url || response.document?.file;
+
+        showFlash(
+          "success",
+          `Mandat généré avec succès. Référence : ${response.document?.reference || "—"}.`,
+        );
+
+        if (fileUrl) {
+          window.open(fileUrl, "_blank", "noopener,noreferrer");
+        }
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(
+            err,
+            "Impossible de générer votre mandat pour cette assemblée.",
+          ),
+        );
+      } finally {
+        setGeneratingMandatAgId(null);
+      }
+    },
+    [showFlash],
+  );
+
   if (loading) {
     return (
       <div style={styles.loadingCard}>
@@ -97,7 +154,8 @@ export default function CoproprietaireAssemblees() {
 
           <p style={styles.heroText}>
             Consultez les assemblées accessibles à vos lots : convocations,
-            quorum, présence, résolutions, votes et procès-verbaux disponibles.
+            quorum, présence, résolutions, votes, procurations et procès-verbaux
+            disponibles.
           </p>
 
           <div style={styles.heroMeta}>
@@ -122,6 +180,8 @@ export default function CoproprietaireAssemblees() {
           </p>
         </div>
       </section>
+
+      {flash ? <FlashBox kind={flash.kind}>{flash.text}</FlashBox> : null}
 
       <section style={styles.statsGrid}>
         <StatCard
@@ -162,8 +222,9 @@ export default function CoproprietaireAssemblees() {
             <p style={styles.sectionEyebrow}>Assemblées</p>
             <h3 style={styles.sectionTitle}>Liste de vos assemblées générales</h3>
             <p style={styles.sectionText}>
-              Recherchez une assemblée par titre, lieu ou statut, puis ouvrez le
-              procès-verbal lorsqu’il est disponible.
+              Recherchez une assemblée par titre, lieu ou statut. Vous pouvez
+              ouvrir le procès-verbal lorsqu’il est disponible et télécharger
+              votre mandat de représentation pour les AG encore actives.
             </p>
           </div>
 
@@ -206,7 +267,12 @@ export default function CoproprietaireAssemblees() {
         {!error && assemblees.length > 0 ? (
           <div style={styles.list}>
             {assemblees.map((ag) => (
-              <AGCard key={ag.id} ag={ag} />
+              <AGCard
+                key={ag.id}
+                ag={ag}
+                generatingMandat={generatingMandatAgId === ag.id}
+                onGenerateMandat={handleGenerateMandat}
+              />
             ))}
           </div>
         ) : null}
@@ -215,10 +281,19 @@ export default function CoproprietaireAssemblees() {
   );
 }
 
-function AGCard({ ag }: { ag: CoproprietaireAG }) {
+function AGCard({
+  ag,
+  generatingMandat,
+  onGenerateMandat,
+}: {
+  ag: CoproprietaireAG;
+  generatingMandat: boolean;
+  onGenerateMandat: (ag: CoproprietaireAG) => void;
+}) {
   const pvUrl = ag.pv_signed_url || ag.pv_url;
   const presence = ag.presence_coproprietaire;
   const votesTotal = ag.vote_summary?.total ?? 0;
+  const mandatAvailable = canGenerateMandat(ag);
 
   return (
     <article style={styles.agCard}>
@@ -264,6 +339,25 @@ function AGCard({ ag }: { ag: CoproprietaireAG }) {
             {pvUrl ? "Ouvrir le PV" : "PV indisponible"}
           </button>
 
+          <button
+            type="button"
+            disabled={!mandatAvailable || generatingMandat}
+            onClick={() => onGenerateMandat(ag)}
+            title={
+              mandatAvailable
+                ? "Télécharger votre mandat de représentation pré-rempli"
+                : "Mandat indisponible pour une AG clôturée, archivée ou annulée"
+            }
+            style={{
+              ...styles.mandatButton,
+              ...(!mandatAvailable || generatingMandat
+                ? styles.mandatButtonDisabled
+                : {}),
+            }}
+          >
+            {generatingMandat ? "Génération..." : "Télécharger mon mandat"}
+          </button>
+
           {ag.has_pv ? (
             <span style={styles.pvHint}>
               {ag.pv_signed_url ? "PV signé disponible" : "PV disponible"}
@@ -271,6 +365,12 @@ function AGCard({ ag }: { ag: CoproprietaireAG }) {
           ) : (
             <span style={styles.pvHintMuted}>Aucun PV disponible</span>
           )}
+
+          <span style={mandatAvailable ? styles.mandatHint : styles.mandatHintMuted}>
+            {mandatAvailable
+              ? "Mandat disponible pour représentation"
+              : "Mandat indisponible pour cette AG"}
+          </span>
         </div>
       </div>
 
@@ -338,6 +438,40 @@ function Badge({
   return <span style={{ ...styles.badge, ...style }}>{children}</span>;
 }
 
+function FlashBox({ kind, children }: { kind: FlashKind; children: ReactNode }) {
+  const tone =
+    kind === "success"
+      ? {
+          background: "#ecfdf5",
+          borderColor: "#a7f3d0",
+          color: "#047857",
+        }
+      : kind === "error"
+        ? {
+            background: "#fff1f2",
+            borderColor: "#fecdd3",
+            color: "#be123c",
+          }
+        : {
+            background: "#eff6ff",
+            borderColor: "#bfdbfe",
+            color: "#1d4ed8",
+          };
+
+  return (
+    <div
+      style={{
+        ...styles.flash,
+        background: tone.background,
+        borderColor: tone.borderColor,
+        color: tone.color,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function EmptyState({ title, text }: { title: string; text: string }) {
   return (
     <div style={styles.emptyState}>
@@ -346,6 +480,46 @@ function EmptyState({ title, text }: { title: string; text: string }) {
       <p style={styles.emptyText}>{text}</p>
     </div>
   );
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: {
+      data?: {
+        detail?: string;
+        message?: string;
+        non_field_errors?: string[];
+        [key: string]: unknown;
+      };
+    };
+    message?: string;
+  };
+
+  const data = err.response?.data;
+
+  if (typeof data?.detail === "string" && data.detail.trim()) {
+    return data.detail;
+  }
+
+  if (typeof data?.message === "string" && data.message.trim()) {
+    return data.message;
+  }
+
+  if (Array.isArray(data?.non_field_errors) && data.non_field_errors.length > 0) {
+    return data.non_field_errors.join("\n");
+  }
+
+  if (data && typeof data === "object") {
+    for (const value of Object.values(data)) {
+      if (typeof value === "string" && value.trim()) return value;
+
+      if (Array.isArray(value) && typeof value[0] === "string") {
+        return value[0];
+      }
+    }
+  }
+
+  return err.message || fallback;
 }
 
 function formatDate(value: string | null): string {
@@ -374,6 +548,14 @@ function formatNumber(value: number | string | null | undefined) {
 
 function normalize(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function canGenerateMandat(ag: CoproprietaireAG): boolean {
+  const value = normalize(ag.statut);
+
+  return !["CLOTUREE", "CLÔTURÉE", "ARCHIVEE", "ARCHIVÉE", "ANNULEE", "ANNULÉE"].includes(
+    value,
+  );
 }
 
 function getStatusStyle(statut: string | null | undefined): CSSProperties {
@@ -619,145 +801,163 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.6,
   },
 
+  flash: {
+    border: "1px solid",
+    borderRadius: 18,
+    padding: "14px 16px",
+    fontSize: 13,
+    fontWeight: 750,
+    lineHeight: 1.55,
+    whiteSpace: "pre-wrap",
+  },
+
   statsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-    gap: 16,
+    gap: 14,
   },
 
   statCard: {
-    border: "1px solid",
-    borderRadius: 26,
-    padding: 19,
-    boxShadow: "0 16px 44px rgba(15,23,42,0.06)",
-    minHeight: 134,
+    border: "1px solid #e2e8f0",
+    borderRadius: 24,
+    padding: 18,
+    boxShadow: "0 14px 35px rgba(15,23,42,0.06)",
   },
 
   statLabel: {
     margin: 0,
-    fontSize: 11,
-    fontWeight: 950,
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
     color: "#64748b",
+    fontSize: 12,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
   },
 
   statValue: {
-    margin: "12px 0 0",
-    fontSize: 30,
-    lineHeight: 1.1,
+    margin: "10px 0 0",
+    fontSize: 28,
     fontWeight: 950,
+    lineHeight: 1,
   },
 
   statHint: {
     margin: "8px 0 0",
-    fontSize: 12,
     color: "#64748b",
-    lineHeight: 1.55,
-    fontWeight: 650,
+    fontSize: 13,
+    lineHeight: 1.45,
   },
 
   card: {
-    borderRadius: 30,
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid rgba(226,232,240,0.95)",
-    boxShadow: "0 20px 64px rgba(15,23,42,0.08)",
-    padding: 24,
+    border: "1px solid #e2e8f0",
+    borderRadius: 28,
+    background: "#ffffff",
+    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
+    padding: 22,
   },
 
   sectionHeader: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 18,
+    gap: 16,
     alignItems: "flex-start",
+    flexWrap: "wrap",
+    marginBottom: 18,
   },
 
   sectionEyebrow: {
     margin: 0,
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: 950,
-    color: "#2563eb",
-    letterSpacing: "0.14em",
     textTransform: "uppercase",
+    letterSpacing: "0.12em",
   },
 
   sectionTitle: {
-    margin: "7px 0 0",
-    fontSize: 21,
-    lineHeight: 1.2,
-    fontWeight: 950,
+    margin: "6px 0 0",
     color: "#0f172a",
-    letterSpacing: "-0.02em",
+    fontSize: 22,
+    fontWeight: 950,
+    letterSpacing: "-0.03em",
   },
 
   sectionText: {
     margin: "8px 0 0",
-    maxWidth: 760,
-    fontSize: 13,
-    lineHeight: 1.6,
     color: "#64748b",
-    fontWeight: 650,
+    fontSize: 14,
+    lineHeight: 1.6,
+    maxWidth: 820,
   },
 
   resultPill: {
     borderRadius: 999,
-    padding: "10px 13px",
-    background: "#eef2ff",
-    border: "1px solid #c7d2fe",
-    color: "#4f46e5",
+    padding: "8px 12px",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    color: "#475569",
     fontSize: 12,
-    fontWeight: 950,
-    whiteSpace: "nowrap",
+    fontWeight: 900,
   },
 
   filters: {
-    marginTop: 20,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 240px",
+    gridTemplateColumns: "minmax(0, 1fr) 220px",
     gap: 12,
-    alignItems: "center",
+    marginBottom: 18,
   },
 
   input: {
-    border: "1px solid #e2e8f0",
-    borderRadius: 18,
-    padding: "13px 15px",
+    width: "100%",
+    border: "1px solid #dbe3ef",
+    borderRadius: 16,
+    padding: "12px 14px",
+    color: "#0f172a",
     fontSize: 14,
     outline: "none",
-    color: "#0f172a",
-    background: "#f8fafc",
+    boxSizing: "border-box",
   },
 
   select: {
-    border: "1px solid #e2e8f0",
-    borderRadius: 18,
-    padding: "13px 15px",
+    width: "100%",
+    border: "1px solid #dbe3ef",
+    borderRadius: 16,
+    padding: "12px 14px",
+    color: "#0f172a",
     fontSize: 14,
     outline: "none",
-    color: "#0f172a",
-    background: "#f8fafc",
+    background: "#ffffff",
+    boxSizing: "border-box",
+  },
+
+  error: {
+    border: "1px solid #fecdd3",
+    background: "#fff1f2",
+    color: "#be123c",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    fontSize: 13,
+    fontWeight: 750,
   },
 
   list: {
-    marginTop: 20,
     display: "grid",
     gap: 14,
   },
 
   agCard: {
-    borderRadius: 26,
-    padding: 20,
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96))",
     border: "1px solid #e2e8f0",
-    boxShadow: "0 16px 44px rgba(15,23,42,0.06)",
+    borderRadius: 24,
+    background: "#ffffff",
+    padding: 18,
+    boxShadow: "0 14px 36px rgba(15,23,42,0.05)",
   },
 
   agHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 240px",
     gap: 18,
+    alignItems: "start",
   },
 
   agMain: {
@@ -768,6 +968,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexWrap: "wrap",
     gap: 8,
+    marginBottom: 10,
   },
 
   badge: {
@@ -775,192 +976,200 @@ const styles: Record<string, CSSProperties> = {
     alignItems: "center",
     border: "1px solid",
     borderRadius: 999,
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 950,
+    padding: "5px 9px",
+    fontSize: 11,
+    fontWeight: 900,
     whiteSpace: "nowrap",
   },
 
   agTitle: {
-    margin: "14px 0 0",
-    fontSize: 20,
-    lineHeight: 1.25,
-    fontWeight: 950,
+    margin: 0,
     color: "#0f172a",
+    fontSize: 19,
+    fontWeight: 950,
     letterSpacing: "-0.02em",
+    lineHeight: 1.2,
   },
 
   agMeta: {
-    marginTop: 8,
     display: "flex",
     flexWrap: "wrap",
-    gap: 16,
+    gap: 12,
+    marginTop: 8,
+    color: "#475569",
     fontSize: 13,
-    color: "#64748b",
-    fontWeight: 700,
+    fontWeight: 750,
   },
 
   description: {
     margin: "10px 0 0",
-    maxWidth: 900,
-    fontSize: 14,
-    lineHeight: 1.65,
-    color: "#475569",
-    fontWeight: 600,
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.6,
   },
 
   agActions: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
-    alignItems: "flex-end",
-    flexShrink: 0,
+    gap: 9,
+    alignItems: "stretch",
   },
 
   pvButton: {
-    border: "none",
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
     borderRadius: 16,
-    padding: "11px 15px",
-    background: "#0f172a",
-    color: "white",
+    padding: "11px 14px",
     fontSize: 13,
-    fontWeight: 950,
+    fontWeight: 900,
     cursor: "pointer",
-    boxShadow: "0 12px 30px rgba(15,23,42,0.18)",
-    whiteSpace: "nowrap",
   },
 
   pvButtonDisabled: {
-    background: "#e2e8f0",
+    borderColor: "#e2e8f0",
+    background: "#f8fafc",
     color: "#94a3b8",
     cursor: "not-allowed",
-    boxShadow: "none",
+  },
+
+  mandatButton: {
+    border: "1px solid #c7d2fe",
+    background: "#eef2ff",
+    color: "#4338ca",
+    borderRadius: 16,
+    padding: "11px 14px",
+    fontSize: 13,
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+
+  mandatButtonDisabled: {
+    borderColor: "#e2e8f0",
+    background: "#f8fafc",
+    color: "#94a3b8",
+    cursor: "not-allowed",
   },
 
   pvHint: {
-    color: "#059669",
+    color: "#047857",
     fontSize: 12,
-    fontWeight: 850,
+    fontWeight: 800,
+    textAlign: "center",
   },
 
   pvHintMuted: {
     color: "#94a3b8",
     fontSize: 12,
-    fontWeight: 850,
+    fontWeight: 800,
+    textAlign: "center",
+  },
+
+  mandatHint: {
+    color: "#4338ca",
+    fontSize: 12,
+    fontWeight: 800,
+    textAlign: "center",
+  },
+
+  mandatHintMuted: {
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: 800,
+    textAlign: "center",
   },
 
   cardStats: {
-    marginTop: 18,
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 12,
+    gap: 10,
+    marginTop: 16,
   },
 
   smallStat: {
     borderRadius: 18,
-    padding: 14,
     background: "#f8fafc",
     border: "1px solid #e2e8f0",
+    padding: 12,
   },
 
   smallStatLabel: {
     margin: 0,
-    fontSize: 11,
-    fontWeight: 950,
-    letterSpacing: "0.13em",
-    textTransform: "uppercase",
     color: "#64748b",
+    fontSize: 11,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
   },
 
   smallStatValue: {
-    margin: "8px 0 0",
+    margin: "6px 0 0",
+    color: "#0f172a",
     fontSize: 16,
     fontWeight: 950,
-    color: "#0f172a",
-  },
-
-  error: {
-    marginTop: 18,
-    borderRadius: 22,
-    padding: 16,
-    background: "#fff1f2",
-    border: "1px solid #fecdd3",
-    color: "#be123c",
-    fontSize: 14,
-    fontWeight: 850,
   },
 
   emptyState: {
-    marginTop: 20,
-    borderRadius: 26,
     border: "1px dashed #cbd5e1",
-    background: "#f8fafc",
-    padding: 30,
+    borderRadius: 24,
+    padding: 26,
     textAlign: "center",
+    background: "#f8fafc",
   },
 
   emptyIcon: {
-    width: 48,
-    height: 48,
-    margin: "0 auto 12px",
-    borderRadius: 18,
-    background: "#eef2ff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
+    fontSize: 30,
+    marginBottom: 10,
   },
 
   emptyTitle: {
     margin: 0,
+    color: "#0f172a",
     fontSize: 17,
     fontWeight: 950,
-    color: "#0f172a",
   },
 
   emptyText: {
-    maxWidth: 640,
     margin: "8px auto 0",
-    fontSize: 14,
-    lineHeight: 1.65,
+    maxWidth: 620,
     color: "#64748b",
-    fontWeight: 600,
+    fontSize: 14,
+    lineHeight: 1.6,
   },
 
   loadingCard: {
+    border: "1px solid #e2e8f0",
     borderRadius: 28,
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid rgba(226,232,240,0.95)",
-    boxShadow: "0 18px 60px rgba(15,23,42,0.08)",
-    padding: 24,
+    background: "#ffffff",
+    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
+    padding: 28,
     display: "flex",
+    gap: 16,
     alignItems: "center",
-    gap: 14,
   },
 
   loadingIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 18,
-    background: "#eef2ff",
+    width: 52,
+    height: 52,
+    borderRadius: 20,
+    background: "#eff6ff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 20,
-    flexShrink: 0,
+    fontSize: 24,
   },
 
   loadingTitle: {
     margin: 0,
-    fontSize: 16,
-    fontWeight: 950,
     color: "#0f172a",
+    fontSize: 17,
+    fontWeight: 950,
   },
 
   muted: {
-    margin: "8px 0 0",
-    fontSize: 13,
+    margin: "6px 0 0",
     color: "#64748b",
-    fontWeight: 600,
+    fontSize: 14,
+    lineHeight: 1.5,
   },
 };
