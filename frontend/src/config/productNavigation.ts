@@ -23,6 +23,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: "Vie de la copropriété",
     items: [
       { label: "Assemblées générales", to: "/ag" },
+      { label: "Procurations AG", to: "/ag/procurations" },
       { label: "Travaux", to: "/travaux/dossiers" },
       { label: "Ressources humaines", to: "/rh" },
     ],
@@ -125,6 +126,7 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/ag") return "Vue d’ensemble Assemblées générales";
   if (pathname === "/ag/assemblees") return "Liste des assemblées";
   if (pathname === "/ag/assemblees/nouveau") return "Nouvelle assemblée";
+  if (pathname === "/ag/procurations") return "Procurations AG";
   if (pathname === "/ag/resolutions") return "Résolutions";
 
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
@@ -316,6 +318,9 @@ export function getPageSubtitle(pathname: string): string {
   }
   if (pathname === "/ag/assemblees/nouveau") {
     return "Renseignez les informations nécessaires pour préparer une nouvelle assemblée générale.";
+  }
+  if (pathname === "/ag/procurations") {
+    return "Consultez les procurations transmises par les copropriétaires, puis validez-les ou rejetez-les avec traçabilité.";
   }
   if (pathname === "/ag/resolutions") {
     return "Consultez et pilotez les résolutions rattachées aux assemblées générales.";
