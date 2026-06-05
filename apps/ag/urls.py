@@ -5,9 +5,12 @@ from rest_framework.routers import DefaultRouter
 from .coproprietaire_views import (
     CoproprietaireAssembleesAPIView,
     CoproprietairePresenceAPIView,
+    CoproprietaireProcurationAnnulerAPIView,
+    CoproprietaireProcurationsAPIView,
     CoproprietaireVoteAPIView,
 )
 from .views import (
+    AGProcurationViewSet,
     AssembleeGeneraleViewSet,
     PresenceLotViewSet,
     ResolutionViewSet,
@@ -27,6 +30,11 @@ router.register(r"ags", AssembleeGeneraleViewSet, basename="ag")
 # Présences
 # =========================
 router.register(r"presences", PresenceLotViewSet, basename="presence")
+
+# =========================
+# Procurations AG
+# =========================
+router.register(r"procurations", AGProcurationViewSet, basename="ag-procuration")
 
 # =========================
 # Résolutions
@@ -49,6 +57,16 @@ urlpatterns = [
         "coproprietaire/assemblees/<int:ag_id>/presence/",
         CoproprietairePresenceAPIView.as_view(),
         name="coproprietaire-assemblee-presence",
+    ),
+    path(
+        "coproprietaire/procurations/",
+        CoproprietaireProcurationsAPIView.as_view(),
+        name="coproprietaire-procurations",
+    ),
+    path(
+        "coproprietaire/procurations/<int:procuration_id>/annuler/",
+        CoproprietaireProcurationAnnulerAPIView.as_view(),
+        name="coproprietaire-procuration-annuler",
     ),
     path(
         "coproprietaire/resolutions/<int:resolution_id>/vote/",

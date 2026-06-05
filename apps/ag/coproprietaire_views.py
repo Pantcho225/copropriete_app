@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -12,7 +13,8 @@ from rest_framework.response import Response
 from rest_framework.serializers import IntegerField, Serializer, SerializerMethodField
 from rest_framework.views import APIView
 
-from apps.ag.models import AssembleeGenerale, PresenceLot, Resolution, Vote
+from apps.ag.models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
+from apps.ag.serializers import AGProcurationSerializer
 from apps.owners.models import Coproprietaire, ProprietaireLot
 
 
@@ -117,6 +119,16 @@ def _absolute_file_url(request, value: Any) -> str | None:
         return request.build_absolute_uri(url)
 
     return url
+
+
+def _raise_drf_validation(error):
+    if hasattr(error, "message_dict"):
+        raise ValidationError(error.message_dict)
+
+    if hasattr(error, "messages"):
+        raise ValidationError({"detail": error.messages})
+
+    raise ValidationError({"detail": str(error)})
 
 
 def _get_current_coproprietaire(
@@ -742,6 +754,231 @@ class CoproprietaireAssembleesAPIView(APIView):
                 "stats": stats,
                 "assemblees": assemblees,
             }
+        )
+
+
+class CoproprietaireProcurationsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        owner_ids = list(
+            Coproprietaire.objects.filter(
+                user_account=request.user,
+                actif=True,
+            ).values_list("id", flat=True)
+        )
+
+        if not owner_ids:
+            return Response({"count": 0, "procurations": []}, status=status.HTTP_200_OK)
+
+        qs = (
+            AGProcuration.objects.select_related(
+                "ag",
+                "coproprietaire",
+                "lot",
+                "document",
+                "created_by",
+                "validated_by",
+                "rejected_by",
+            )
+            .filter(coproprietaire_id__in=owner_ids)
+            .exclude(ag__titre__startswith="[ARCHIVE TEST]")
+            .order_by("-created_at", "-id")
+        )
+
+        ag_id = request.query_params.get("ag")
+        if ag_id:
+            qs = qs.filter(ag_id=ag_id)
+
+        statut = request.query_params.get("statut")
+        if statut:
+            qs = qs.filter(statut=str(statut).strip().upper())
+
+        serializer = AGProcurationSerializer(
+            qs,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(
+            {
+                "count": qs.count(),
+                "procurations": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        ag_id = request.data.get("ag") or request.data.get("ag_id")
+        lot_id = request.data.get("lot") or request.data.get("lot_id")
+
+        if not ag_id:
+            raise ValidationError({"ag": "L’assemblée générale est obligatoire."})
+
+        ag = (
+            AssembleeGenerale.objects.select_related("copropriete")
+            .filter(pk=ag_id)
+            .exclude(titre__startswith="[ARCHIVE TEST]")
+            .first()
+        )
+
+        if not ag:
+            raise ValidationError({"ag": "Assemblée générale introuvable."})
+
+        if ag.statut not in {"CONVOQUEE", "CONVOQUÉE", "OUVERTE"}:
+            raise ValidationError(
+                {
+                    "ag": (
+                        "Une procuration ne peut être créée que pour une AG "
+                        "convoquée ou ouverte."
+                    )
+                }
+            )
+
+        if ag.is_closed() or ag.pv_locked:
+            raise ValidationError(
+                {"ag": "AG clôturée ou PV verrouillé : procuration interdite."}
+            )
+
+        coproprietaire = _get_current_coproprietaire(
+            request.user,
+            copropriete_id=ag.copropriete_id,
+        )
+
+        if not coproprietaire:
+            raise PermissionDenied(
+                "Aucun profil copropriétaire actif ne correspond à cette assemblée générale."
+            )
+
+        owner_lots = _get_active_owner_lots(coproprietaire)
+
+        if _model_has_field(ProprietaireLot, "lot"):
+            owner_lots = owner_lots.filter(lot__copropriete_id=ag.copropriete_id)
+
+        if lot_id:
+            owner_lots = owner_lots.filter(lot_id=lot_id)
+
+        owner_lots = owner_lots.select_related("lot").order_by(
+            "-principal",
+            "lot__reference",
+            "lot_id",
+            "-date_debut",
+            "-id",
+        )
+
+        if not owner_lots.exists():
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Aucun lot actif rattaché à votre compte ne permet "
+                        "de créer une procuration pour cette assemblée."
+                    )
+                }
+            )
+
+        if not lot_id and owner_lots.count() > 1:
+            raise ValidationError(
+                {
+                    "lot_id": (
+                        "Vous possédez plusieurs lots. Veuillez préciser le lot "
+                        "concerné par cette procuration."
+                    )
+                }
+            )
+
+        owner_lot = owner_lots.first()
+        lot = getattr(owner_lot, "lot", None)
+
+        if not lot:
+            raise ValidationError({"lot": "Lot introuvable pour cette procuration."})
+
+        payload = {
+            "ag": ag.id,
+            "coproprietaire": coproprietaire.id,
+            "lot": lot.id,
+            "mandataire_nom": str(request.data.get("mandataire_nom") or "").strip(),
+            "mandataire_telephone": str(
+                request.data.get("mandataire_telephone") or ""
+            ).strip(),
+            "mandataire_email": str(
+                request.data.get("mandataire_email") or ""
+            ).strip(),
+        }
+
+        serializer = AGProcurationSerializer(
+            data=payload,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            procuration = serializer.save(
+                created_by=request.user,
+                ip_address=_get_client_ip(request),
+                user_agent=str(request.META.get("HTTP_USER_AGENT") or "")[:255],
+            )
+        except IntegrityError:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Une procuration active existe déjà pour ce lot et cette AG. "
+                        "Annulez-la ou attendez son traitement avant d’en créer une nouvelle."
+                    )
+                }
+            )
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        return Response(
+            {
+                "detail": "Votre demande de procuration a été enregistrée.",
+                "procuration": AGProcurationSerializer(
+                    procuration,
+                    context={"request": request},
+                ).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CoproprietaireProcurationAnnulerAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, procuration_id: int):
+        procuration = (
+            AGProcuration.objects.select_related(
+                "ag",
+                "coproprietaire",
+                "lot",
+                "document",
+                "created_by",
+                "validated_by",
+                "rejected_by",
+            )
+            .filter(
+                pk=procuration_id,
+                coproprietaire__user_account=request.user,
+            )
+            .first()
+        )
+
+        if not procuration:
+            raise ValidationError({"detail": "Procuration introuvable."})
+
+        try:
+            procuration = procuration.annuler(user=request.user)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        return Response(
+            {
+                "detail": "Procuration annulée avec succès.",
+                "procuration": AGProcurationSerializer(
+                    procuration,
+                    context={"request": request},
+                ).data,
+            },
+            status=status.HTTP_200_OK,
         )
 
 

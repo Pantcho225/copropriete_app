@@ -19,9 +19,10 @@ from rest_framework.response import Response
 
 from apps.lots.models import Lot
 
-from .models import AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
 from .permissions import IsSyndicOrAdmin
 from .serializers import (
+    AGProcurationSerializer,
     AssembleeGeneraleSerializer,
     PresenceLotSerializer,
     ResolutionSerializer,
@@ -83,6 +84,16 @@ def _assert_ag_open_and_writable(ag: AssembleeGenerale, *, what: str):
         raise ValidationError({"detail": f"AG clôturée : {what} interdit."})
     if getattr(ag, "pv_locked", False):
         raise ValidationError({"detail": f"PV verrouillé : {what} interdit."})
+
+
+def _raise_drf_validation(error):
+    if hasattr(error, "message_dict"):
+        raise ValidationError(error.message_dict)
+
+    if hasattr(error, "messages"):
+        raise ValidationError({"detail": error.messages})
+
+    raise ValidationError({"detail": str(error)})
 
 
 def _get_ag_closing_blockers(ag: AssembleeGenerale) -> list[str]:
@@ -832,6 +843,158 @@ class PresenceLotViewSet(viewsets.ModelViewSet):
         _assert_same_copro(self.request, instance.ag)
         _assert_ag_open_and_writable(instance.ag, what="suppression des présences")
         super().perform_destroy(instance)
+
+
+class AGProcurationViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsSyndicOrAdmin]
+    serializer_class = AGProcurationSerializer
+    queryset = (
+        AGProcuration.objects.select_related(
+            "ag",
+            "coproprietaire",
+            "lot",
+            "document",
+            "created_by",
+            "validated_by",
+            "rejected_by",
+        )
+        .all()
+        .order_by("-created_at", "-id")
+    )
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+
+        qs = super().get_queryset().filter(ag__copropriete_id=copro_id)
+
+        include_archives = str(
+            self.request.query_params.get("include_archives", "")
+        ).lower() in {"1", "true", "yes", "on"}
+
+        if not include_archives:
+            qs = qs.exclude(ag__titre__startswith="[ARCHIVE TEST]")
+
+        ag_id = self.request.query_params.get("ag")
+        if ag_id:
+            qs = qs.filter(ag_id=ag_id)
+
+        statut = self.request.query_params.get("statut")
+        if statut:
+            qs = qs.filter(statut=str(statut).strip().upper())
+
+        lot_id = self.request.query_params.get("lot")
+        if lot_id:
+            qs = qs.filter(lot_id=lot_id)
+
+        coproprietaire_id = self.request.query_params.get("coproprietaire")
+        if coproprietaire_id:
+            qs = qs.filter(coproprietaire_id=coproprietaire_id)
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        ag = serializer.validated_data.get("ag")
+        lot = serializer.validated_data.get("lot")
+        coproprietaire = serializer.validated_data.get("coproprietaire")
+
+        if not ag:
+            raise ValidationError({"ag": "L’assemblée générale est obligatoire."})
+
+        if str(ag.copropriete_id) != str(copro_id):
+            raise ValidationError({"ag": "AG hors périmètre de la copropriété courante."})
+
+        if lot and str(lot.copropriete_id) != str(copro_id):
+            raise ValidationError({"lot": "Lot hors périmètre de la copropriété courante."})
+
+        if coproprietaire and str(coproprietaire.copropriete_id) != str(copro_id):
+            raise ValidationError(
+                {
+                    "coproprietaire": (
+                        "Copropriétaire hors périmètre de la copropriété courante."
+                    )
+                }
+            )
+
+        try:
+            serializer.save(
+                created_by=self.request.user,
+                ip_address=_client_ip(self.request),
+                user_agent=(self.request.META.get("HTTP_USER_AGENT") or "")[:255],
+            )
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        _assert_same_copro(self.request, instance.ag)
+
+        if instance.statut != AGProcuration.Statut.EN_ATTENTE:
+            raise ValidationError(
+                {"detail": "Seule une procuration en attente peut être modifiée."}
+            )
+
+        try:
+            serializer.save()
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+    def perform_destroy(self, instance):
+        raise ValidationError(
+            {
+                "detail": (
+                    "La suppression d’une procuration est désactivée. "
+                    "Utilisez l’annulation ou le rejet pour conserver la traçabilité."
+                )
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="valider")
+    def valider(self, request, pk=None):
+        procuration = self.get_object()
+        _assert_same_copro(request, procuration.ag)
+
+        try:
+            procuration = procuration.valider(user=request.user)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        serializer = self.get_serializer(procuration)
+
+        return Response(
+            {
+                "detail": "Procuration validée avec succès.",
+                "procuration": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="rejeter")
+    def rejeter(self, request, pk=None):
+        procuration = self.get_object()
+        _assert_same_copro(request, procuration.ag)
+
+        motif = str(
+            request.data.get("motif_rejet")
+            or request.data.get("motif")
+            or ""
+        ).strip()
+
+        try:
+            procuration = procuration.rejeter(user=request.user, motif=motif)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        serializer = self.get_serializer(procuration)
+
+        return Response(
+            {
+                "detail": "Procuration rejetée avec succès.",
+                "procuration": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ResolutionViewSet(viewsets.ModelViewSet):

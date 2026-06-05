@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
 from .services.results import compute_resolution_result
 
 
@@ -285,6 +285,244 @@ class PresenceLotSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         obj = PresenceLot(**validated_data)
         obj.refresh_tantiemes()
+        obj.save()
+        return obj
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+class AGProcurationSerializer(serializers.ModelSerializer):
+    ag_titre = serializers.CharField(source="ag.titre", read_only=True)
+    ag_date_ag = serializers.DateTimeField(source="ag.date_ag", read_only=True)
+    coproprietaire_label = serializers.SerializerMethodField(read_only=True)
+    lot_reference = serializers.CharField(source="lot.reference", read_only=True)
+    lot_numero = serializers.CharField(source="lot.numero", read_only=True)
+    lot_label = serializers.SerializerMethodField(read_only=True)
+    document_url = serializers.SerializerMethodField(read_only=True)
+    document_reference = serializers.CharField(source="document.reference", read_only=True)
+    document_title = serializers.CharField(source="document.title", read_only=True)
+    statut_label = serializers.CharField(source="get_statut_display", read_only=True)
+    created_by_label = serializers.SerializerMethodField(read_only=True)
+    validated_by_label = serializers.SerializerMethodField(read_only=True)
+    rejected_by_label = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = AGProcuration
+        fields = [
+            "id",
+            "ag",
+            "ag_titre",
+            "ag_date_ag",
+            "coproprietaire",
+            "coproprietaire_label",
+            "lot",
+            "lot_reference",
+            "lot_numero",
+            "lot_label",
+            "mandataire_nom",
+            "mandataire_telephone",
+            "mandataire_email",
+            "document",
+            "document_url",
+            "document_reference",
+            "document_title",
+            "statut",
+            "statut_label",
+            "motif_rejet",
+            "created_by",
+            "created_by_label",
+            "validated_by",
+            "validated_by_label",
+            "validated_at",
+            "rejected_by",
+            "rejected_by_label",
+            "rejected_at",
+            "ip_address",
+            "user_agent",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "ag_titre",
+            "ag_date_ag",
+            "coproprietaire_label",
+            "lot_reference",
+            "lot_numero",
+            "lot_label",
+            "document",
+            "document_url",
+            "document_reference",
+            "document_title",
+            "statut",
+            "statut_label",
+            "motif_rejet",
+            "created_by",
+            "created_by_label",
+            "validated_by",
+            "validated_by_label",
+            "validated_at",
+            "rejected_by",
+            "rejected_by_label",
+            "rejected_at",
+            "ip_address",
+            "user_agent",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_coproprietaire_label(self, obj):
+        owner = getattr(obj, "coproprietaire", None)
+        if not owner:
+            return ""
+        return getattr(owner, "display_name", "") or str(owner)
+
+    def get_lot_label(self, obj):
+        lot = getattr(obj, "lot", None)
+        if not lot:
+            return ""
+
+        return (
+            getattr(lot, "reference", "")
+            or getattr(lot, "numero", "")
+            or f"Lot #{getattr(lot, 'id', '')}"
+        )
+
+    def get_document_url(self, obj):
+        document = getattr(obj, "document", None)
+        if not document:
+            return None
+
+        file_obj = getattr(document, "file", None)
+        if not file_obj:
+            return None
+
+        try:
+            url = file_obj.url
+        except Exception:
+            return None
+
+        request = self.context.get("request")
+        if request is not None and isinstance(url, str) and url.startswith("/"):
+            return request.build_absolute_uri(url)
+
+        return url
+
+    def _user_label(self, user):
+        if not user:
+            return ""
+
+        full_name = ""
+        try:
+            full_name = user.get_full_name()
+        except Exception:
+            full_name = ""
+
+        return full_name or getattr(user, "username", "") or getattr(user, "email", "") or str(user)
+
+    def get_created_by_label(self, obj):
+        return self._user_label(getattr(obj, "created_by", None))
+
+    def get_validated_by_label(self, obj):
+        return self._user_label(getattr(obj, "validated_by", None))
+
+    def get_rejected_by_label(self, obj):
+        return self._user_label(getattr(obj, "rejected_by", None))
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+
+        if instance and getattr(instance, "statut", None) != AGProcuration.Statut.EN_ATTENTE:
+            raise serializers.ValidationError(
+                "Seule une procuration en attente peut être modifiée."
+            )
+
+        ag = attrs.get("ag") or (instance.ag if instance else None)
+        lot = attrs.get("lot") or (instance.lot if instance else None)
+        coproprietaire = attrs.get("coproprietaire") or (
+            instance.coproprietaire if instance else None
+        )
+
+        if not ag:
+            raise serializers.ValidationError({"ag": "L’assemblée générale est obligatoire."})
+
+        if not lot:
+            raise serializers.ValidationError({"lot": "Le lot est obligatoire."})
+
+        if not coproprietaire:
+            raise serializers.ValidationError(
+                {"coproprietaire": "Le copropriétaire est obligatoire."}
+            )
+
+        if getattr(ag, "statut", None) not in {"CONVOQUEE", "OUVERTE"}:
+            raise serializers.ValidationError(
+                {
+                    "ag": (
+                        "Une procuration ne peut être créée ou modifiée que pour "
+                        "une AG convoquée ou ouverte."
+                    )
+                }
+            )
+
+        if _is_ag_closed(ag) or _is_ag_locked(ag):
+            raise serializers.ValidationError(
+                {"ag": "AG clôturée ou PV verrouillé : procuration interdite."}
+            )
+
+        if str(getattr(lot, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
+            raise serializers.ValidationError(
+                {"lot": "Le lot doit appartenir à la même copropriété que l’AG."}
+            )
+
+        if str(getattr(coproprietaire, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
+            raise serializers.ValidationError(
+                {
+                    "coproprietaire": (
+                        "Le copropriétaire doit appartenir à la même copropriété "
+                        "que l’AG."
+                    )
+                }
+            )
+
+        try:
+            from apps.owners.models import ProprietaireLot
+
+            has_active_link = ProprietaireLot.objects.filter(
+                copropriete_id=ag.copropriete_id,
+                coproprietaire=coproprietaire,
+                lot=lot,
+                date_fin__isnull=True,
+            ).exists()
+        except Exception:
+            has_active_link = True
+
+        if not has_active_link:
+            raise serializers.ValidationError(
+                {
+                    "lot": (
+                        "Ce lot n’est pas rattaché activement au copropriétaire "
+                        "sélectionné."
+                    )
+                }
+            )
+
+        mandataire_nom = str(attrs.get("mandataire_nom") or "").strip()
+        if not mandataire_nom and instance is not None:
+            mandataire_nom = str(getattr(instance, "mandataire_nom", "") or "").strip()
+
+        if not mandataire_nom:
+            raise serializers.ValidationError(
+                {"mandataire_nom": "Le nom du mandataire est obligatoire."}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        obj = AGProcuration(**validated_data)
         obj.save()
         return obj
 

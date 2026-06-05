@@ -369,6 +369,276 @@ class PresenceLot(models.Model):
         super().save(*args, **kwargs)
 
 
+class AGProcuration(models.Model):
+    class Statut(models.TextChoices):
+        EN_ATTENTE = "EN_ATTENTE", "En attente"
+        VALIDEE = "VALIDEE", "Validée"
+        REJETEE = "REJETEE", "Rejetée"
+        ANNULEE = "ANNULEE", "Annulée"
+
+    ag = models.ForeignKey(
+        AssembleeGenerale,
+        on_delete=models.CASCADE,
+        related_name="procurations",
+    )
+    coproprietaire = models.ForeignKey(
+        "owners.Coproprietaire",
+        on_delete=models.PROTECT,
+        related_name="procurations_ag",
+    )
+    lot = models.ForeignKey(
+        "lots.Lot",
+        on_delete=models.PROTECT,
+        related_name="procurations_ag",
+    )
+
+    mandataire_nom = models.CharField(max_length=160)
+    mandataire_telephone = models.CharField(max_length=40, blank=True)
+    mandataire_email = models.EmailField(blank=True)
+
+    document = models.ForeignKey(
+        "documents.GeneratedDocument",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="procurations_ag",
+    )
+
+    statut = models.CharField(
+        max_length=20,
+        choices=Statut.choices,
+        default=Statut.EN_ATTENTE,
+        db_index=True,
+    )
+    motif_rejet = models.TextField(blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ag_procurations_creees",
+    )
+    validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ag_procurations_validees",
+    )
+    validated_at = models.DateTimeField(null=True, blank=True)
+
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ag_procurations_rejetees",
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ag", "lot"],
+                condition=models.Q(statut__in=["EN_ATTENTE", "VALIDEE"]),
+                name="uniq_ag_procuration_active_par_lot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["ag", "statut"]),
+            models.Index(fields=["coproprietaire", "statut"]),
+            models.Index(fields=["lot", "statut"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Procuration AG={self.ag_id} lot={self.lot_id} statut={self.statut}"
+
+    def clean(self):
+        super().clean()
+
+        if self.ag_id:
+            if self.ag.statut not in {"CONVOQUEE", "OUVERTE"}:
+                raise ValidationError(
+                    {
+                        "ag": (
+                            "Une procuration ne peut être créée que pour une AG "
+                            "convoquée ou ouverte."
+                        )
+                    }
+                )
+
+            if self.ag.is_closed() or self.ag.pv_locked:
+                raise ValidationError(
+                    {"ag": "AG clôturée ou PV verrouillé : procuration interdite."}
+                )
+
+        if self.ag_id and self.lot_id:
+            if self.lot.copropriete_id != self.ag.copropriete_id:
+                raise ValidationError(
+                    {"lot": "Le lot doit appartenir à la même copropriété que l’AG."}
+                )
+
+        if self.coproprietaire_id and self.ag_id:
+            if self.coproprietaire.copropriete_id != self.ag.copropriete_id:
+                raise ValidationError(
+                    {
+                        "coproprietaire": (
+                            "Le copropriétaire doit appartenir à la même copropriété "
+                            "que l’AG."
+                        )
+                    }
+                )
+
+        if not self.mandataire_nom or not self.mandataire_nom.strip():
+            raise ValidationError(
+                {"mandataire_nom": "Le nom du mandataire est obligatoire."}
+            )
+
+        if self.mandataire_nom:
+            self.mandataire_nom = self.mandataire_nom.strip()
+
+        if self.mandataire_telephone:
+            self.mandataire_telephone = self.mandataire_telephone.strip()
+
+        if self.mandataire_email:
+            self.mandataire_email = self.mandataire_email.strip().lower()
+
+        if self.motif_rejet:
+            self.motif_rejet = self.motif_rejet.strip()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def valider(self, *, user=None):
+        if self.statut == self.Statut.VALIDEE:
+            return self
+
+        if self.statut == self.Statut.REJETEE:
+            raise ValidationError(
+                {"statut": "Une procuration rejetée ne peut pas être validée."}
+            )
+
+        if self.statut == self.Statut.ANNULEE:
+            raise ValidationError(
+                {"statut": "Une procuration annulée ne peut pas être validée."}
+            )
+
+        with transaction.atomic():
+            procuration = (
+                AGProcuration.objects.select_for_update()
+                .select_related("ag", "lot")
+                .get(pk=self.pk)
+            )
+
+            if procuration.statut == procuration.Statut.VALIDEE:
+                return procuration
+
+            if procuration.statut in {
+                procuration.Statut.REJETEE,
+                procuration.Statut.ANNULEE,
+            }:
+                raise ValidationError(
+                    {"statut": "Cette procuration ne peut plus être validée."}
+                )
+
+            procuration.statut = procuration.Statut.VALIDEE
+            procuration.validated_by = (
+                user if user and getattr(user, "is_authenticated", False) else None
+            )
+            procuration.validated_at = timezone.now()
+            procuration.rejected_by = None
+            procuration.rejected_at = None
+            procuration.motif_rejet = ""
+            procuration.save(
+                update_fields=[
+                    "statut",
+                    "validated_by",
+                    "validated_at",
+                    "rejected_by",
+                    "rejected_at",
+                    "motif_rejet",
+                    "updated_at",
+                ]
+            )
+
+            presence, _ = PresenceLot.objects.get_or_create(
+                ag=procuration.ag,
+                lot=procuration.lot,
+                defaults={
+                    "present_ou_represente": True,
+                    "representant_nom": procuration.mandataire_nom,
+                    "commentaire": "Présence par procuration validée par le syndic.",
+                },
+            )
+
+            presence.present_ou_represente = True
+            presence.representant_nom = procuration.mandataire_nom
+            presence.commentaire = "Présence par procuration validée par le syndic."
+            presence.refresh_tantiemes()
+            presence.save()
+
+            return procuration
+
+    def rejeter(self, *, user=None, motif: str = ""):
+        if self.statut == self.Statut.VALIDEE:
+            raise ValidationError(
+                {"statut": "Une procuration validée ne peut pas être rejetée."}
+            )
+
+        if self.statut == self.Statut.ANNULEE:
+            raise ValidationError(
+                {"statut": "Une procuration annulée ne peut pas être rejetée."}
+            )
+
+        motif = str(motif or "").strip()
+
+        if not motif:
+            raise ValidationError({"motif_rejet": "Le motif de rejet est obligatoire."})
+
+        self.statut = self.Statut.REJETEE
+        self.rejected_by = user if user and getattr(user, "is_authenticated", False) else None
+        self.rejected_at = timezone.now()
+        self.validated_by = None
+        self.validated_at = None
+        self.motif_rejet = motif
+        self.save(
+            update_fields=[
+                "statut",
+                "rejected_by",
+                "rejected_at",
+                "validated_by",
+                "validated_at",
+                "motif_rejet",
+                "updated_at",
+            ]
+        )
+
+        return self
+
+    def annuler(self, *, user=None):
+        if self.statut == self.Statut.VALIDEE:
+            raise ValidationError(
+                {"statut": "Une procuration validée ne peut pas être annulée."}
+            )
+
+        if self.statut == self.Statut.ANNULEE:
+            return self
+
+        self.statut = self.Statut.ANNULEE
+        self.save(update_fields=["statut", "updated_at"])
+        return self
+
+
 class Resolution(models.Model):
     MAJORITE_CHOICES = [
         ("SIMPLE", "Majorité simple (POUR > CONTRE)"),
