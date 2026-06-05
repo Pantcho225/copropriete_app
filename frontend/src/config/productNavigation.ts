@@ -12,79 +12,39 @@ export type NavSection = {
 
 export const SIDEBAR_SECTIONS: NavSection[] = [
   {
-    title: "Comptabilité",
+    title: "Gestion financière",
     items: [
-      { label: "Vue d’ensemble", to: "/compta" },
-      { label: "Importer un relevé", to: "/compta/import" },
-      { label: "Historique des imports", to: "/compta/imports" },
-      { label: "Mouvements", to: "/compta/mouvements" },
-      { label: "Statistiques", to: "/compta/stats" },
+      { label: "Comptabilité", to: "/compta" },
+      { label: "Relances & impayés", to: "/relances" },
+      { label: "Facturation", to: "/billing" },
     ],
   },
   {
-    title: "Relances",
+    title: "Vie de la copropriété",
     items: [
-      { label: "Vue d’ensemble", to: "/relances" },
-      { label: "Dossiers impayés", to: "/relances/dossiers" },
-      { label: "Historique des relances", to: "/relances/historique" },
-      { label: "Avis de régularisation", to: "/relances/avis" },
+      { label: "Assemblées générales", to: "/ag" },
+      { label: "Travaux", to: "/travaux/dossiers" },
+      { label: "Ressources humaines", to: "/rh" },
     ],
   },
   {
-    title: "Ressources humaines",
+    title: "Référentiel",
     items: [
-      { label: "Vue d’ensemble", to: "/rh" },
-      { label: "Employés", to: "/rh/employes" },
-      { label: "Contrats", to: "/rh/contrats" },
-    ],
-  },
-  {
-    title: "Lots",
-    items: [
-      { label: "Liste des lots", to: "/lots" },
-      { label: "Nouveau lot", to: "/lots/nouveau" },
-    ],
-  },
-  {
-    title: "Travaux",
-    items: [
-      { label: "Dossiers de travaux", to: "/travaux/dossiers" },
-      { label: "Prestataires", to: "/travaux/fournisseurs" },
-    ],
-  },
-  {
-    title: "Assemblées générales",
-    items: [
-      { label: "Vue d’ensemble", to: "/ag" },
-      { label: "Liste des assemblées", to: "/ag/assemblees" },
-      { label: "Nouvelle assemblée", to: "/ag/assemblees/nouveau" },
-      { label: "Résolutions", to: "/ag/resolutions" },
-    ],
-  },
-  {
-    title: "Facturation",
-    items: [
-      { label: "Vue d’ensemble", to: "/billing" },
-      { label: "Factures", to: "/billing/factures" },
-      { label: "Abonnement", to: "/billing/abonnement" },
+      { label: "Lots privatifs", to: "/lots" },
+      {
+        label: "Référentiel copropriété",
+        to: "/platform-admin/referentiel-copropriete",
+      },
     ],
   },
   {
     title: "Plateforme",
     items: [
-      { label: "Vue d’ensemble", to: "/platform-admin" },
+      { label: "Administration plateforme", to: "/platform-admin" },
       { label: "Copropriétés", to: "/platform-admin/coproprietes" },
-      {
-        label: "Nouvelle copropriété",
-        to: "/platform-admin/coproprietes/nouveau",
-      },
       {
         label: "Utilisateurs & rôles",
         to: "/platform-admin/utilisateurs-roles",
-      },
-      {
-        label: "Référentiel copropriété",
-        to: "/platform-admin/referentiel-copropriete",
       },
     ],
   },

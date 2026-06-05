@@ -86,7 +86,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside style={sidebarStyle}>
+    <aside style={sidebarStyle} translate="no" className="notranslate">
       <div style={brandSection}>
         <div style={brandRow}>
           <div style={brandIcon}>C</div>
