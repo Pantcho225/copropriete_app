@@ -7,6 +7,13 @@ import AdminLayout from "./layout/AdminLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 
+// Gestion administrative
+import GestionAdministrativeHome from "./pages/administration/GestionAdministrativeHome";
+import CoproprieteAdministrativeOverview from "./pages/administration/CoproprieteAdministrativeOverview";
+import ReunionsRencontres from "./pages/administration/ReunionsRencontres";
+import ReglementTextesApplicables from "./pages/administration/ReglementTextesApplicables";
+import DocumentsAdministratifs from "./pages/administration/DocumentsAdministratifs";
+
 // Comptabilité
 import ComptaHome from "./pages/compta/ComptaHome";
 import ImportCSV from "./pages/compta/ImportCSV";
@@ -116,6 +123,27 @@ export default function App() {
           {/* Tableau de bord */}
           <Route index element={<Dashboard />} />
 
+          {/* Gestion administrative */}
+          <Route path="gestion-administrative">
+            <Route index element={<GestionAdministrativeHome />} />
+            <Route
+              path="copropriete"
+              element={<CoproprieteAdministrativeOverview />}
+            />
+            <Route
+              path="reunions-rencontres"
+              element={<ReunionsRencontres />}
+            />
+            <Route
+              path="reglement-textes"
+              element={<ReglementTextesApplicables />}
+            />
+            <Route
+              path="documents"
+              element={<DocumentsAdministratifs />}
+            />
+          </Route>
+
           {/* Comptabilité */}
           <Route path="compta">
             <Route index element={<ComptaHome />} />
@@ -184,7 +212,7 @@ export default function App() {
             <Route path="assemblees/:id/votes" element={<AGVotes />} />
             <Route path="assemblees/:id/pv" element={<AGPV />} />
 
-            {/* Procurations */}
+            {/* Mandats de représentation */}
             <Route path="procurations" element={<AGProcurations />} />
 
             {/* Résolutions */}

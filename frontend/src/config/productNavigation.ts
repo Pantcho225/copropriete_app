@@ -12,30 +12,50 @@ export type NavSection = {
 
 export const SIDEBAR_SECTIONS: NavSection[] = [
   {
-    title: "Gestion financière",
+    title: "Gestion administrative",
     items: [
-      { label: "Comptabilité", to: "/compta" },
-      { label: "Relances & impayés", to: "/relances" },
-      { label: "Facturation", to: "/billing" },
-    ],
-  },
-  {
-    title: "Vie de la copropriété",
-    items: [
-      { label: "Assemblées générales", to: "/ag" },
-      { label: "Procurations AG", to: "/ag/procurations" },
-      { label: "Travaux", to: "/travaux/dossiers" },
-      { label: "Ressources humaines", to: "/rh" },
-    ],
-  },
-  {
-    title: "Référentiel",
-    items: [
-      { label: "Lots", to: "/lots" },
+      { label: "Vue d’ensemble", to: "/gestion-administrative" },
+      { label: "Copropriété", to: "/gestion-administrative/copropriete" },
       {
-        label: "Référentiel copropriété",
+        label: "Copropriétaires & occupants",
+        to: "/platform-admin/referentiel-copropriete/coproprietaires",
+      },
+      {
+        label: "Lots & tantièmes",
         to: "/platform-admin/referentiel-copropriete",
       },
+      { label: "Assemblées générales", to: "/ag" },
+      { label: "Mandats de représentation", to: "/ag/procurations" },
+      {
+        label: "Réunions & rencontres",
+        to: "/gestion-administrative/reunions-rencontres",
+      },
+      {
+        label: "Règlement & textes applicables",
+        to: "/gestion-administrative/reglement-textes",
+      },
+      {
+        label: "Documents administratifs",
+        to: "/gestion-administrative/documents",
+      },
+    ],
+  },
+  {
+    title: "Gestion financière",
+    items: [
+      { label: "Cotisations mensuelles", to: "/billing/factures" },
+      { label: "Paiements & facturation", to: "/billing" },
+      { label: "Entrées / Sorties", to: "/compta/mouvements" },
+      { label: "Comptabilité", to: "/compta" },
+      { label: "Relances & impayés", to: "/relances" },
+    ],
+  },
+  {
+    title: "Travaux & exploitation",
+    items: [
+      { label: "Travaux", to: "/travaux/dossiers" },
+      { label: "Prestataires", to: "/travaux/fournisseurs" },
+      { label: "Ressources humaines", to: "/rh" },
     ],
   },
   {
@@ -54,6 +74,23 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Tableau de bord";
 
+  // Gestion administrative
+  if (pathname === "/gestion-administrative") {
+    return "Vue d’ensemble Gestion administrative";
+  }
+  if (pathname === "/gestion-administrative/copropriete") {
+    return "Copropriété";
+  }
+  if (pathname === "/gestion-administrative/reunions-rencontres") {
+    return "Réunions & rencontres";
+  }
+  if (pathname === "/gestion-administrative/reglement-textes") {
+    return "Règlement & textes applicables";
+  }
+  if (pathname === "/gestion-administrative/documents") {
+    return "Documents administratifs";
+  }
+
   // Comptabilité
   if (pathname === "/compta") return "Vue d’ensemble Comptabilité";
   if (pathname === "/compta/import") return "Importer un relevé";
@@ -61,7 +98,7 @@ export function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/compta/imports/") && pathname.endsWith("/lignes")) {
     return "Lignes importées";
   }
-  if (pathname === "/compta/mouvements") return "Mouvements comptables";
+  if (pathname === "/compta/mouvements") return "Entrées / Sorties";
   if (pathname === "/compta/stats") return "Statistiques comptables";
 
   // Relances
@@ -126,7 +163,7 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/ag") return "Vue d’ensemble Assemblées générales";
   if (pathname === "/ag/assemblees") return "Liste des assemblées";
   if (pathname === "/ag/assemblees/nouveau") return "Nouvelle assemblée";
-  if (pathname === "/ag/procurations") return "Procurations AG";
+  if (pathname === "/ag/procurations") return "Mandats de représentation";
   if (pathname === "/ag/resolutions") return "Résolutions";
 
   if (pathname.startsWith("/ag/assemblees/") && pathname.endsWith("/presences")) {
@@ -153,7 +190,7 @@ export function getPageTitle(pathname: string): string {
 
   // Facturation
   if (pathname === "/billing") return "Vue d’ensemble Facturation";
-  if (pathname === "/billing/factures") return "Factures";
+  if (pathname === "/billing/factures") return "Cotisations mensuelles";
   if (pathname === "/billing/abonnement") return "Abonnement";
 
   // Plateforme / Super Admin
@@ -183,10 +220,10 @@ export function getPageTitle(pathname: string): string {
     return "Utilisateurs & rôles";
   }
   if (pathname === "/platform-admin/referentiel-copropriete") {
-    return "Référentiel copropriété";
+    return "Lots & tantièmes";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
-    return "Copropriétaires";
+    return "Copropriétaires & occupants";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/lots") {
     return "Lots du référentiel";
@@ -203,6 +240,23 @@ export function getPageSubtitle(pathname: string): string {
     return "Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire, centralisée et professionnelle.";
   }
 
+  // Gestion administrative
+  if (pathname === "/gestion-administrative") {
+    return "Centralisez les informations institutionnelles : copropriété, copropriétaires, lots, assemblées, mandats, réunions, textes applicables et documents administratifs.";
+  }
+  if (pathname === "/gestion-administrative/copropriete") {
+    return "Consultez l’identité de la copropriété, sa structure, ses règles de référence et les informations administratives utiles au syndic.";
+  }
+  if (pathname === "/gestion-administrative/reunions-rencontres") {
+    return "Historisez les rencontres importantes avec les autorités, partenaires, promoteurs ou responsables institutionnels, puis informez les copropriétaires.";
+  }
+  if (pathname === "/gestion-administrative/reglement-textes") {
+    return "Regroupez les rappels de règlement intérieur, textes applicables et repères juridiques à faire valider avant usage officiel.";
+  }
+  if (pathname === "/gestion-administrative/documents") {
+    return "Centralisez les documents administratifs utiles à la vie institutionnelle de la copropriété.";
+  }
+
   // Comptabilité
   if (pathname === "/compta") {
     return "Suivez les flux financiers, les imports bancaires, les rapprochements et les principaux indicateurs comptables.";
@@ -217,7 +271,7 @@ export function getPageSubtitle(pathname: string): string {
     return "Traitez les lignes importées, rapprochez-les ou marquez-les selon leur statut métier.";
   }
   if (pathname === "/compta/mouvements") {
-    return "Consultez les mouvements comptables, leur statut de rapprochement et l’activité enregistrée pour la copropriété active.";
+    return "Consultez les entrées et sorties de trésorerie, les mouvements comptables, leur statut de rapprochement et les justificatifs associés.";
   }
   if (pathname === "/compta/stats") {
     return "Analysez les principaux indicateurs comptables et la dynamique bancaire de la copropriété.";
@@ -311,7 +365,7 @@ export function getPageSubtitle(pathname: string): string {
 
   // Assemblées générales
   if (pathname === "/ag") {
-    return "Pilotez les assemblées générales, les présences, les résolutions, les votes et les procès-verbaux.";
+    return "Pilotez les assemblées générales comme actes administratifs majeurs : convocations, présences, résolutions, votes, mandats de représentation et procès-verbaux.";
   }
   if (pathname === "/ag/assemblees") {
     return "Consultez les assemblées, leur statut et les principales actions disponibles.";
@@ -320,7 +374,7 @@ export function getPageSubtitle(pathname: string): string {
     return "Renseignez les informations nécessaires pour préparer une nouvelle assemblée générale.";
   }
   if (pathname === "/ag/procurations") {
-    return "Consultez les procurations transmises par les copropriétaires, puis validez-les ou rejetez-les avec traçabilité.";
+    return "Consultez les mandats de représentation transmis par les copropriétaires, puis validez-les ou rejetez-les avec traçabilité.";
   }
   if (pathname === "/ag/resolutions") {
     return "Consultez et pilotez les résolutions rattachées aux assemblées générales.";
@@ -349,10 +403,10 @@ export function getPageSubtitle(pathname: string): string {
 
   // Facturation
   if (pathname === "/billing") {
-    return "Suivez les éléments de facturation, les statuts d’abonnement et les informations économiques déjà disponibles.";
+    return "Suivez les éléments de facturation, les paiements, les appels et les informations économiques déjà disponibles.";
   }
   if (pathname === "/billing/factures") {
-    return "Consultez les factures émises et leur statut de traitement.";
+    return "Suivez les cotisations mensuelles, les montants dus, les paiements reçus, les restes à payer et les statuts de règlement.";
   }
   if (pathname === "/billing/abonnement") {
     return "Suivez le plan actif, les échéances et les informations de souscription.";
@@ -385,13 +439,13 @@ export function getPageSubtitle(pathname: string): string {
     return "Gérez les rattachements utilisateurs, les rôles locaux et les accès aux copropriétés.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete") {
-    return "Pilotez le référentiel métier : copropriétaires, lots, tantièmes et affectations nécessaires aux modules opérationnels.";
+    return "Pilotez les lots, les tantièmes, les copropriétaires et les affectations nécessaires aux modules opérationnels.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
-    return "Créez et maintenez les copropriétaires rattachés à la copropriété active.";
+    return "Créez et maintenez les copropriétaires, occupants et contacts rattachés à la copropriété active.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/lots") {
-    return "Créez et maintenez les lots de référence, leurs caractéristiques et leur rattachement à la copropriété.";
+    return "Créez et maintenez les lots de référence, leurs caractéristiques, leur bâtiment, leur étage et leur rattachement à la copropriété.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/tantiemes") {
     return "Paramétrez les catégories et valeurs de tantièmes utilisées pour les répartitions, les votes et les appels de fonds.";
