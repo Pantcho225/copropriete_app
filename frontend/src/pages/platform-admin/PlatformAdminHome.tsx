@@ -1,3 +1,4 @@
+// frontend/src/pages/platform-admin/PlatformAdminHome.tsx
 import type { CSSProperties, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -42,7 +43,7 @@ function SectionTitle(props: {
               color: "#6b7280",
               marginTop: 6,
               lineHeight: 1.5,
-              maxWidth: 920,
+              maxWidth: 980,
             }}
           >
             {props.subtitle}
@@ -205,47 +206,6 @@ function SmallButton(props: {
   );
 }
 
-function EmptyState(props: {
-  title: string;
-  text: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <div
-      style={{
-        border: "1px dashed #d1d5db",
-        borderRadius: 16,
-        padding: 18,
-        background: "#f9fafb",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 800,
-          color: "#111827",
-          marginBottom: 6,
-        }}
-      >
-        {props.title}
-      </div>
-
-      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
-        {props.text}
-      </div>
-
-      {props.actionLabel && props.onAction ? (
-        <div style={{ marginTop: 12 }}>
-          <SmallButton onClick={props.onAction} primary>
-            {props.actionLabel}
-          </SmallButton>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function QuickActionCard(props: {
   title: string;
   text: string;
@@ -343,14 +303,24 @@ function InfoBox(props: { title: string; children: ReactNode }) {
   );
 }
 
+function getActiveCoproId() {
+  return (
+    localStorage.getItem("coproprieteId") ||
+    localStorage.getItem("copropriete_id") ||
+    localStorage.getItem("activeCoproprieteId") ||
+    ""
+  );
+}
+
 export default function PlatformAdminHome() {
   const navigate = useNavigate();
+  const activeCoproId = getActiveCoproId();
 
   return (
     <PageShell>
       <SectionTitle
         title="Administration plateforme"
-        subtitle="Supervisez les copropriétés, les accès principaux, les affectations de rôles et les futurs indicateurs SaaS depuis une interface React dédiée au Super Admin."
+        subtitle="Pilotez la plateforme, les copropriétés clientes, les accès utilisateurs et le référentiel opérationnel de la copropriété active depuis l’Admin React."
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <SmallButton onClick={() => navigate("/")}>
@@ -366,121 +336,193 @@ export default function PlatformAdminHome() {
 
       <div className="platform-stat-grid">
         <StatCard
-          title="Copropriétés"
-          value="—"
-          sub="Nombre de copropriétés supervisées par la plateforme."
+          title="Copropriété active"
+          value={activeCoproId ? `#${activeCoproId}` : "—"}
+          sub="Contexte actuellement chargé dans l’Admin React."
           tone="blue"
         />
 
         <StatCard
-          title="Rôles principaux"
-          value="—"
-          sub="Administrateurs, syndics et gestionnaires affectés."
+          title="Référentiel"
+          value="Disponible"
+          sub="Copropriétaires, lots, résidents et tantièmes accessibles."
           tone="green"
         />
 
         <StatCard
-          title="Supervision"
-          value="Prévue"
-          sub="Base fonctionnelle destinée au pilotage global du SaaS."
-          tone="yellow"
+          title="Super Admin"
+          value="React"
+          sub="L’exploitation courante ne dépend plus du Django Admin."
+          tone="neutral"
         />
 
         <StatCard
-          title="Exploitation"
-          value="React"
-          sub="L’exploitation normale ne dépendra pas du Django Admin."
-          tone="neutral"
+          title="SaaS"
+          value="En cours"
+          sub="Supervision, abonnements et indicateurs globaux à enrichir."
+          tone="yellow"
         />
       </div>
 
       <div className="platform-main-grid">
         <Card
-          title="Vision produit du module"
-          right={<Badge text="Back-office Super Admin" tone="blue" />}
+          title="Cockpit Super Admin"
+          right={<Badge text="Back-office React" tone="blue" />}
           minHeight={250}
         >
           <div style={{ display: "grid", gap: 14 }}>
             <div style={paragraph}>
-              L’administration plateforme doit devenir le point d’entrée officiel
-              du Super Admin pour piloter le logiciel en mode SaaS. Le Django
-              Admin doit rester un outil technique de secours, pas l’interface
-              d’exploitation normale.
+              Cette page sert de point d’entrée au Super Admin. Elle ne remplace
+              pas les écrans métier détaillés, mais donne un accès direct aux
+              blocs essentiels : copropriétés clientes, utilisateurs, rôles et
+              référentiel de la copropriété active.
             </div>
 
-            <div style={paragraph}>À terme, ce module devra permettre de :</div>
+            <div style={paragraph}>
+              Le Django Admin doit rester un outil technique de secours. La
+              gestion quotidienne doit se faire dans l’interface React.
+            </div>
 
             <div style={bulletList}>
               <div style={bulletItem}>• créer et consulter les copropriétés clientes</div>
-              <div style={bulletItem}>• affecter les administrateurs, syndics et gestionnaires</div>
-              <div style={bulletItem}>• superviser l’activité globale de la plateforme</div>
-              <div style={bulletItem}>• suivre les statuts d’abonnement et de facturation</div>
-              <div style={bulletItem}>• préparer l’exploitation commerciale du produit</div>
+              <div style={bulletItem}>• gérer les utilisateurs et les rôles locaux</div>
+              <div style={bulletItem}>• accéder au référentiel de la copropriété active</div>
+              <div style={bulletItem}>• préparer les indicateurs de supervision SaaS</div>
+              <div style={bulletItem}>• structurer l’exploitation commerciale du produit</div>
             </div>
           </div>
         </Card>
 
         <Card
-          title="État actuel"
+          title="Référentiel copropriété actif"
           minHeight={250}
-          right={<Badge text="Pré-intégration UI OK" tone="green" />}
+          right={<Badge text="Opérationnel" tone="green" />}
         >
-          <EmptyState
-            title="Back-office métier à construire"
-            text="Le module est visible dans la navigation principale. La prochaine étape consistera à créer les écrans réels : copropriétés, affectations de rôles, supervision plateforme et indicateurs SaaS."
-            actionLabel="Retour au tableau de bord"
-            onAction={() => navigate("/")}
-          />
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={paragraph}>
+              Le référentiel est désormais exploitable depuis l’Admin React. Le
+              Super Admin peut accéder rapidement aux données structurantes de la
+              copropriété active : copropriétaires, lots, résidents, tantièmes et
+              accès utilisateurs.
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <SmallButton
+                onClick={() =>
+                  navigate("/platform-admin/referentiel-copropriete")
+                }
+                primary
+              >
+                Ouvrir le référentiel
+              </SmallButton>
+
+              <SmallButton
+                onClick={() =>
+                  navigate("/platform-admin/referentiel-copropriete/coproprietaires")
+                }
+              >
+                Copropriétaires
+              </SmallButton>
+
+              <SmallButton
+                onClick={() =>
+                  navigate("/platform-admin/referentiel-copropriete/occupants")
+                }
+              >
+                Résidents des lots
+              </SmallButton>
+            </div>
+          </div>
         </Card>
       </div>
+
+      <Card title="Référentiel copropriété actif" minHeight={120}>
+        <div className="platform-referentiel-grid">
+          <QuickActionCard
+            title="Copropriétaires"
+            text="Créez, consultez et maintenez les propriétaires juridiques rattachés à la copropriété active."
+            actionLabel="Ouvrir les copropriétaires"
+            onAction={() =>
+              navigate("/platform-admin/referentiel-copropriete/coproprietaires")
+            }
+          />
+
+          <QuickActionCard
+            title="Lots & tantièmes"
+            text="Gérez les lots, surfaces, étages, nombre de pièces, catégories et valeurs de tantièmes."
+            actionLabel="Ouvrir les lots"
+            onAction={() =>
+              navigate("/platform-admin/referentiel-copropriete/lots")
+            }
+          />
+
+          <QuickActionCard
+            title="Résidents des lots"
+            text="Suivez les personnes qui occupent réellement les lots : propriétaire occupant, locataire ou ayant droit."
+            actionLabel="Ouvrir les résidents"
+            onAction={() =>
+              navigate("/platform-admin/referentiel-copropriete/occupants")
+            }
+          />
+
+          <QuickActionCard
+            title="Tantièmes"
+            text="Paramétrez les catégories et valeurs utilisées pour les répartitions, votes et appels de fonds."
+            actionLabel="Ouvrir les tantièmes"
+            onAction={() =>
+              navigate("/platform-admin/referentiel-copropriete/tantiemes")
+            }
+          />
+        </div>
+      </Card>
 
       <Card title="Accès rapides Administration plateforme" minHeight={120}>
         <div className="platform-quick-grid">
           <QuickActionCard
+            title="Copropriétés"
+            text="Créez, consultez et administrez les copropriétés clientes de la plateforme."
+            actionLabel="Ouvrir les copropriétés"
+            onAction={() => navigate("/platform-admin/coproprietes")}
+          />
+
+          <QuickActionCard
+            title="Utilisateurs & rôles"
+            text="Gérez les rattachements utilisateurs, les rôles locaux et les accès aux copropriétés."
+            actionLabel="Ouvrir les rôles"
+            onAction={() => navigate("/platform-admin/utilisateurs-roles")}
+          />
+
+          <QuickActionCard
             title="Tableau de bord"
-            text="Accédez rapidement à la vue de pilotage globale de la copropriété active."
+            text="Accédez à la vue de pilotage globale de la copropriété active."
             actionLabel="Ouvrir le tableau de bord"
             onAction={() => navigate("/")}
           />
 
           <QuickActionCard
             title="Facturation"
-            text="Consultez la couche économique déjà préparée pour les factures et les abonnements."
+            text="Consultez la couche économique déjà préparée pour les factures, paiements et abonnements."
             actionLabel="Ouvrir Facturation"
             onAction={() => navigate("/billing")}
-          />
-
-          <QuickActionCard
-            title="Ressources humaines"
-            text="Consultez les écrans RH consolidés pendant la phase de cohérence produit."
-            actionLabel="Ouvrir RH"
-            onAction={() => navigate("/rh")}
-          />
-
-          <QuickActionCard
-            title="Lots"
-            text="Consultez le référentiel des lots, utile pour la cohérence métier transverse."
-            actionLabel="Ouvrir Lots"
-            onAction={() => navigate("/lots")}
           />
         </div>
       </Card>
 
-      <Card title="Prochaine structuration métier" minHeight={120}>
+      <Card title="Structuration métier disponible" minHeight={120}>
         <div className="platform-info-grid">
-          <InfoBox title="Copropriétés">
-            Création, consultation, édition et supervision des copropriétés
-            clientes directement depuis le frontend React.
+          <InfoBox title="Copropriétés clientes">
+            Le Super Admin dispose d’un accès dédié pour créer, consulter et
+            administrer les copropriétés depuis le frontend React.
           </InfoBox>
 
-          <InfoBox title="Affectations">
-            Affectation des rôles principaux : administrateur de copropriété,
-            syndic, gestionnaire ou responsable local.
+          <InfoBox title="Référentiel de la copropriété active">
+            Les copropriétaires, lots, tantièmes et résidents des lots sont
+            désormais accessibles sans passer par le Django Admin.
           </InfoBox>
 
-          <InfoBox title="Supervision SaaS">
-            Suivi global des modules, de la facturation, des accès et des
-            indicateurs d’exploitation plateforme.
+          <InfoBox title="Supervision SaaS à enrichir">
+            Les prochaines évolutions devront consolider les indicateurs
+            d’exploitation, les abonnements, les accès et la facturation plateforme.
           </InfoBox>
         </div>
       </Card>
@@ -498,6 +540,12 @@ export default function PlatformAdminHome() {
           gap: 14px;
         }
 
+        .platform-referentiel-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+        }
+
         .platform-quick-grid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -511,6 +559,7 @@ export default function PlatformAdminHome() {
         }
 
         @media (max-width: 1280px) {
+          .platform-referentiel-grid,
           .platform-quick-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -535,6 +584,7 @@ export default function PlatformAdminHome() {
             grid-template-columns: 1fr;
           }
 
+          .platform-referentiel-grid,
           .platform-quick-grid {
             grid-template-columns: 1fr;
           }
