@@ -24,6 +24,7 @@ class Lot(TimeStampedModel):
     - activation / désactivation ;
     - affectation des propriétaires ;
     - rattachement des tantièmes ;
+    - suivi de l'occupant principal ;
     - exploitation AG, appels de fonds, relances et votes.
     """
 
@@ -42,7 +43,6 @@ class Lot(TimeStampedModel):
         EN_TRAVAUX = "EN_TRAVAUX", "En travaux"
         INACTIF = "INACTIF", "Inactif"
 
-    # Compatibilité avec les anciens usages éventuels.
     TYPE_CHOICES = TypeLot.choices
 
     copropriete = models.ForeignKey(
@@ -84,6 +84,16 @@ class Lot(TimeStampedModel):
     etage = models.CharField(max_length=20, blank=True, db_index=True)
     porte = models.CharField(max_length=30, blank=True, db_index=True)
 
+    nombre_pieces = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=(
+            "Nombre de pièces du logement. Champ optionnel, surtout utile pour "
+            "les appartements."
+        ),
+    )
+
     description = models.TextField(blank=True)
 
     surface = models.DecimalField(
@@ -113,6 +123,7 @@ class Lot(TimeStampedModel):
             models.Index(fields=["copropriete", "type_lot"]),
             models.Index(fields=["copropriete", "statut"]),
             models.Index(fields=["batiment", "etage"]),
+            models.Index(fields=["nombre_pieces"]),
         ]
 
     def __str__(self) -> str:
@@ -145,6 +156,11 @@ class Lot(TimeStampedModel):
         if self.surface is not None and self.surface < 0:
             raise ValidationError(
                 {"surface": "La surface doit être supérieure ou égale à 0."}
+            )
+
+        if self.nombre_pieces is not None and self.nombre_pieces < 0:
+            raise ValidationError(
+                {"nombre_pieces": "Le nombre de pièces ne peut pas être négatif."}
             )
 
         if self.statut == self.Statut.INACTIF:
@@ -216,6 +232,36 @@ class Lot(TimeStampedModel):
             return ""
 
         return affectation.coproprietaire.display_name
+
+    @property
+    def occupant_principal(self):
+        """
+        Retourne l'occupant principal actif du lot.
+
+        Le modèle réel est dans apps.owners.LotOccupant.
+        On passe par le related_name 'occupants'.
+        """
+        try:
+            return (
+                self.occupants.filter(
+                    actif=True,
+                    occupant_principal=True,
+                    date_sortie__isnull=True,
+                )
+                .order_by("-date_entree", "-id")
+                .first()
+            )
+        except Exception:
+            return None
+
+    @property
+    def occupant_principal_display(self) -> str:
+        occupant = self.occupant_principal
+
+        if not occupant:
+            return ""
+
+        return occupant.display_name
 
 
 class TantiemeCategorie(TimeStampedModel):

@@ -51,6 +51,8 @@ export const ENDPOINTS = {
     `/api/owners/coproprietaires/${id}/desactiver/`,
   coproprietaireLots: (id: number | string) =>
     `/api/owners/coproprietaires/${id}/lots/`,
+  coproprietaireOccupants: (id: number | string) =>
+    `/api/owners/coproprietaires/${id}/occupants/`,
 
   // =========================
   // OWNERS / AFFECTATIONS LOTS ↔ COPROPRIÉTAIRES
@@ -62,6 +64,17 @@ export const ENDPOINTS = {
     `/api/owners/proprietaires-lots/${id}/cloturer/`,
   proprietaireLotRouvrir: (id: number | string) =>
     `/api/owners/proprietaires-lots/${id}/rouvrir/`,
+
+  // =========================
+  // OWNERS / OCCUPANTS & HABITANTS DES LOTS
+  // =========================
+  occupantsLots: "/api/owners/occupants-lots/",
+  occupantLotDetail: (id: number | string) =>
+    `/api/owners/occupants-lots/${id}/`,
+  occupantLotCloturer: (id: number | string) =>
+    `/api/owners/occupants-lots/${id}/cloturer/`,
+  occupantLotRouvrir: (id: number | string) =>
+    `/api/owners/occupants-lots/${id}/rouvrir/`,
 
   // =========================
   // COMPTA — Imports / relevés
@@ -257,6 +270,16 @@ export const ENDPOINTS = {
       `/api/owners/coproprietaires/${id}/desactiver/`,
     coproprietaireLots: (id: number | string) =>
       `/api/owners/coproprietaires/${id}/lots/`,
+    coproprietaireOccupants: (id: number | string) =>
+      `/api/owners/coproprietaires/${id}/occupants/`,
+
+    occupantsLots: "/api/owners/occupants-lots/",
+    occupantLotDetail: (id: number | string) =>
+      `/api/owners/occupants-lots/${id}/`,
+    occupantLotCloturer: (id: number | string) =>
+      `/api/owners/occupants-lots/${id}/cloturer/`,
+    occupantLotRouvrir: (id: number | string) =>
+      `/api/owners/occupants-lots/${id}/rouvrir/`,
 
     lots: "/api/lots/",
     lotsStats: "/api/lots/stats/",

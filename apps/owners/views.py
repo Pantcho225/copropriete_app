@@ -18,10 +18,12 @@ from rest_framework.views import APIView
 
 from apps.core.models import CoproMembre, UserSecurityProfile
 
-from .models import Coproprietaire, ProprietaireLot
+from .models import Coproprietaire, LotOccupant, ProprietaireLot
 from .serializers import (
     CoproprietaireListSerializer,
     CoproprietaireSerializer,
+    LotOccupantListSerializer,
+    LotOccupantSerializer,
     ProprietaireLotListSerializer,
     ProprietaireLotSerializer,
 )
@@ -259,6 +261,7 @@ class CoproprietaireMesLotsAPIView(APIView):
                 date_fin__isnull=True,
             )
             .select_related("copropriete", "lot", "coproprietaire")
+            .prefetch_related("lot__occupants")
             .order_by("-principal", "lot__reference", "lot__numero", "id")
         )
 
@@ -266,6 +269,7 @@ class CoproprietaireMesLotsAPIView(APIView):
 
         for lien in liens:
             lot = lien.lot
+            occupant = getattr(lot, "occupant_principal", None)
 
             reference = (
                 getattr(lot, "reference", None)
@@ -287,7 +291,11 @@ class CoproprietaireMesLotsAPIView(APIView):
                     "numero": numero,
                     "reference": reference,
                     "type_lot": type_lot,
+                    "batiment": getattr(lot, "batiment", "") or "",
+                    "escalier": getattr(lot, "escalier", "") or "",
                     "etage": etage,
+                    "porte": getattr(lot, "porte", "") or "",
+                    "nombre_pieces": getattr(lot, "nombre_pieces", None),
                     "surface": str(surface) if surface is not None else None,
                     "description": description,
                     "type_droit": (
@@ -296,6 +304,21 @@ class CoproprietaireMesLotsAPIView(APIView):
                         else "Copropriétaire"
                     ),
                     "quote_part": str(lien.quote_part or "0.00"),
+                    "occupant_principal": (
+                        {
+                            "id": occupant.id,
+                            "display_name": occupant.display_name,
+                            "telephone": occupant.telephone,
+                            "email": occupant.email,
+                            "statut_occupation": occupant.statut_occupation,
+                            "statut_occupation_label": (
+                                occupant.get_statut_occupation_display()
+                            ),
+                            "nombre_occupants": occupant.nombre_occupants,
+                        }
+                        if occupant
+                        else None
+                    ),
                     "copropriete": {
                         "id": coproprietaire.copropriete_id,
                         "nom": coproprietaire.copropriete.nom,
@@ -334,6 +357,7 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
     - POST /api/owners/coproprietaires/<id>/activer/
     - POST /api/owners/coproprietaires/<id>/desactiver/
     - GET  /api/owners/coproprietaires/<id>/lots/
+    - GET  /api/owners/coproprietaires/<id>/occupants/
     - POST /api/owners/coproprietaires/<id>/create-user-access/
     """
 
@@ -378,7 +402,7 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
         qs = (
             Coproprietaire.objects.all()
             .select_related("copropriete", "user_account")
-            .prefetch_related("lots_possedes")
+            .prefetch_related("lots_possedes", "occupants_declares")
             .order_by("nom", "prenom", "id")
         )
 
@@ -487,16 +511,6 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
         return Response(output.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
-        """
-        Pas de suppression physique depuis React.
-
-        On désactive le copropriétaire afin de conserver :
-        - l'historique des lots ;
-        - les paiements ;
-        - les appels ;
-        - les relances ;
-        - les présences AG.
-        """
         instance = self.get_object()
 
         _require_manage_referentiel(request.user, instance.copropriete_id)
@@ -547,6 +561,24 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
         )
 
         serializer = ProprietaireLotListSerializer(qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"])
+    def occupants(self, request, pk=None):
+        """
+        Occupants rattachés à ce copropriétaire de référence.
+        """
+        instance = self.get_object()
+
+        _require_read_copropriete(request.user, instance.copropriete_id)
+
+        qs = (
+            LotOccupant.objects.filter(coproprietaire=instance)
+            .select_related("copropriete", "lot", "coproprietaire")
+            .order_by("lot__reference", "-occupant_principal", "-date_entree", "-id")
+        )
+
+        serializer = LotOccupantListSerializer(qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
@@ -910,11 +942,6 @@ class ProprietaireLotViewSet(viewsets.ModelViewSet):
         return Response(output.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
-        """
-        Pas de suppression physique.
-
-        On clôture l'affectation de propriété à la date du jour.
-        """
         instance = self.get_object()
 
         _require_manage_referentiel(request.user, instance.copropriete_id)
@@ -950,4 +977,246 @@ class ProprietaireLotViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["date_fin", "updated_at"])
 
         output = ProprietaireLotSerializer(instance)
+        return Response(output.data, status=status.HTTP_200_OK)
+
+
+class LotOccupantViewSet(viewsets.ModelViewSet):
+    """
+    API des occupants / habitants de lots.
+
+    Routes prévues :
+    - GET    /api/owners/occupants-lots/
+    - POST   /api/owners/occupants-lots/
+    - GET    /api/owners/occupants-lots/<id>/
+    - PUT    /api/owners/occupants-lots/<id>/
+    - PATCH  /api/owners/occupants-lots/<id>/
+    - DELETE /api/owners/occupants-lots/<id>/    -> clôture logique
+
+    Actions :
+    - POST /api/owners/occupants-lots/<id>/cloturer/
+    - POST /api/owners/occupants-lots/<id>/rouvrir/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    filter_backends = [
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+
+    search_fields = [
+        "nom",
+        "prenom",
+        "telephone",
+        "email",
+        "contact_urgence_nom",
+        "contact_urgence_telephone",
+        "lot__reference",
+        "lot__numero",
+        "lot__batiment",
+        "lot__porte",
+        "coproprietaire__nom",
+        "coproprietaire__prenom",
+        "coproprietaire__raison_sociale",
+        "copropriete__nom",
+    ]
+
+    ordering_fields = [
+        "id",
+        "nom",
+        "prenom",
+        "statut_occupation",
+        "occupant_principal",
+        "nombre_occupants",
+        "date_entree",
+        "date_sortie",
+        "actif",
+        "created_at",
+        "updated_at",
+    ]
+
+    ordering = ["lot__reference", "-occupant_principal", "-date_entree", "-id"]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        qs = (
+            LotOccupant.objects.all()
+            .select_related(
+                "copropriete",
+                "lot",
+                "coproprietaire",
+                "coproprietaire__user_account",
+            )
+            .order_by("lot__reference", "-occupant_principal", "-date_entree", "-id")
+        )
+
+        if not _is_platform_admin(user):
+            allowed_copro_ids = CoproMembre.objects.filter(
+                user=user,
+                is_active=True,
+                role__in=_referentiel_admin_roles(),
+            ).values_list("copropriete_id", flat=True)
+
+            qs = qs.filter(copropriete_id__in=allowed_copro_ids)
+
+        copropriete_id = self.request.query_params.get("copropriete")
+        if copropriete_id:
+            qs = qs.filter(copropriete_id=copropriete_id)
+
+        lot_id = self.request.query_params.get("lot")
+        if lot_id:
+            qs = qs.filter(lot_id=lot_id)
+
+        coproprietaire_id = self.request.query_params.get("coproprietaire")
+        if coproprietaire_id:
+            qs = qs.filter(coproprietaire_id=coproprietaire_id)
+
+        statut_occupation = self.request.query_params.get("statut_occupation")
+        if statut_occupation:
+            qs = qs.filter(statut_occupation=statut_occupation)
+
+        occupant_principal = _parse_bool_param(
+            self.request.query_params.get("occupant_principal")
+        )
+        if occupant_principal is not None:
+            qs = qs.filter(occupant_principal=occupant_principal)
+
+        actif = _parse_bool_param(self.request.query_params.get("actif"))
+        if actif is not None:
+            if actif:
+                qs = qs.filter(actif=True, date_sortie__isnull=True)
+            else:
+                qs = qs.filter(Q(actif=False) | Q(date_sortie__isnull=False))
+
+        q = self.request.query_params.get("q")
+        if q:
+            q = q.strip()
+            qs = qs.filter(
+                Q(nom__icontains=q)
+                | Q(prenom__icontains=q)
+                | Q(telephone__icontains=q)
+                | Q(email__icontains=q)
+                | Q(contact_urgence_nom__icontains=q)
+                | Q(contact_urgence_telephone__icontains=q)
+                | Q(lot__reference__icontains=q)
+                | Q(lot__numero__icontains=q)
+                | Q(lot__batiment__icontains=q)
+                | Q(lot__porte__icontains=q)
+                | Q(coproprietaire__nom__icontains=q)
+                | Q(coproprietaire__prenom__icontains=q)
+                | Q(coproprietaire__raison_sociale__icontains=q)
+                | Q(copropriete__nom__icontains=q)
+            )
+
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return LotOccupantListSerializer
+
+        return LotOccupantSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        _require_read_copropriete(request.user, instance.copropriete_id)
+
+        serializer = LotOccupantSerializer(instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        data = _inject_copropriete_from_scope(request)
+        copropriete_id = data.get("copropriete")
+
+        if not copropriete_id:
+            raise ValidationError(
+                {
+                    "copropriete": (
+                        "La copropriété est obligatoire. Envoyez copropriete "
+                        "dans le payload ou le header X-Copropriete-Id."
+                    )
+                }
+            )
+
+        _require_manage_referentiel(request.user, copropriete_id)
+
+        serializer = LotOccupantSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+
+        target_copropriete = serializer.validated_data["copropriete"]
+        _require_manage_referentiel(request.user, target_copropriete.id)
+
+        instance = serializer.save()
+
+        output = LotOccupantSerializer(instance)
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+
+        _require_manage_referentiel(request.user, instance.copropriete_id)
+
+        data = _inject_copropriete_from_scope(request)
+
+        serializer = LotOccupantSerializer(
+            instance,
+            data=data,
+            partial=partial,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        target_copropriete = serializer.validated_data.get(
+            "copropriete",
+            instance.copropriete,
+        )
+
+        _require_manage_referentiel(request.user, target_copropriete.id)
+
+        instance = serializer.save()
+
+        output = LotOccupantSerializer(instance)
+        return Response(output.data, status=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        _require_manage_referentiel(request.user, instance.copropriete_id)
+
+        if instance.date_sortie is None:
+            instance.date_sortie = timezone.now().date()
+
+        instance.actif = False
+        instance.save(update_fields=["date_sortie", "actif", "updated_at"])
+
+        output = LotOccupantSerializer(instance)
+        return Response(output.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def cloturer(self, request, pk=None):
+        instance = self.get_object()
+
+        _require_manage_referentiel(request.user, instance.copropriete_id)
+
+        date_sortie = request.data.get("date_sortie") or timezone.now().date()
+
+        instance.date_sortie = date_sortie
+        instance.actif = False
+        instance.save(update_fields=["date_sortie", "actif", "updated_at"])
+
+        output = LotOccupantSerializer(instance)
+        return Response(output.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def rouvrir(self, request, pk=None):
+        instance = self.get_object()
+
+        _require_manage_referentiel(request.user, instance.copropriete_id)
+
+        instance.date_sortie = None
+        instance.actif = True
+        instance.save(update_fields=["date_sortie", "actif", "updated_at"])
+
+        output = LotOccupantSerializer(instance)
         return Response(output.data, status=status.HTTP_200_OK)

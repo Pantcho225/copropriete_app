@@ -19,6 +19,10 @@ type Coproprietaire = {
   pays?: string;
   actif: boolean;
   lots_actifs_count?: number;
+  occupants_declares_count?: number;
+  has_user_access?: boolean;
+  user_account_email?: string | null;
+  user_account_username?: string | null;
 };
 
 type FormState = {
@@ -101,7 +105,7 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: "-0.04em",
   },
   heroText: {
-    maxWidth: 900,
+    maxWidth: 960,
     margin: "14px 0 0",
     color: "rgba(239, 246, 255, 0.92)",
     fontSize: 14,
@@ -374,7 +378,7 @@ const styles: Record<string, CSSProperties> = {
   },
   table: {
     width: "100%",
-    minWidth: 940,
+    minWidth: 1120,
     borderCollapse: "collapse",
     fontSize: 13,
   },
@@ -448,6 +452,12 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid #bbf7d0",
     borderRadius: 26,
     background: "#ecfdf5",
+    padding: 20,
+  },
+  sideCardAmber: {
+    border: "1px solid #fde68a",
+    borderRadius: 26,
+    background: "#fffbeb",
     padding: 20,
   },
   sideEyebrow: {
@@ -624,7 +634,9 @@ export default function PlatformCoproprietaires() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+  const [accessLoadingId, setAccessLoadingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const activeCoproId = getActiveCoproId();
 
@@ -634,12 +646,18 @@ export default function PlatformCoproprietaires() {
     const lots = rows.reduce((total, item) => {
       return total + (item.lots_actifs_count ?? 0);
     }, 0);
+    const residents = rows.reduce((total, item) => {
+      return total + (item.occupants_declares_count ?? 0);
+    }, 0);
+    const acces = rows.filter((item) => item.has_user_access).length;
 
     return {
       total: rows.length,
       actifs,
       inactifs,
       lots,
+      residents,
+      acces,
     };
   }, [rows]);
 
@@ -655,7 +673,10 @@ export default function PlatformCoproprietaires() {
         includesText(item.telephone, query) ||
         includesText(item.ville, query) ||
         includesText(item.pays, query) ||
-        includesText(item.actif ? "actif" : "inactif", query)
+        includesText(item.lots_actifs_count, query) ||
+        includesText(item.occupants_declares_count, query) ||
+        includesText(item.actif ? "actif" : "inactif", query) ||
+        includesText(item.has_user_access ? "accès" : "sans accès", query)
       );
     });
   }, [q, rows]);
@@ -719,6 +740,7 @@ export default function PlatformCoproprietaires() {
   }
 
   function edit(item: Coproprietaire) {
+    setNotice("");
     setForm({
       id: item.id,
       type_personne: item.type_personne === "MORALE" ? "MORALE" : "PHYSIQUE",
@@ -748,6 +770,7 @@ export default function PlatformCoproprietaires() {
 
     setSaving(true);
     setError("");
+    setNotice("");
 
     try {
       const payload = {
@@ -765,10 +788,35 @@ export default function PlatformCoproprietaires() {
         ...(activeCoproId ? { copropriete: activeCoproId } : {}),
       };
 
+      let savedId = form.id;
+
       if (form.id) {
         await api.patch(ENDPOINTS.platform.coproprietaireDetail(form.id), payload);
       } else {
-        await api.post(ENDPOINTS.platform.coproprietaires, payload);
+        const response = await api.post(ENDPOINTS.platform.coproprietaires, payload);
+        const created = response.data as { id?: number };
+        savedId = created.id;
+      }
+
+      if (form.create_user_access && savedId) {
+        const accessResponse = await api.post(
+          `${ENDPOINTS.platform.coproprietaireDetail(savedId)}create-user-access/`,
+        );
+
+        const data = accessResponse.data as {
+          temporary_password?: string;
+          user?: { username?: string; email?: string };
+        };
+
+        if (data.temporary_password) {
+          setNotice(
+            `Accès créé. Identifiant : ${
+              data.user?.username || data.user?.email || "voir réponse API"
+            } · Mot de passe temporaire : ${data.temporary_password}`,
+          );
+        } else {
+          setNotice("Accès utilisateur copropriétaire créé avec succès.");
+        }
       }
 
       setForm(initialForm);
@@ -783,6 +831,7 @@ export default function PlatformCoproprietaires() {
   async function toggle(item: Coproprietaire) {
     setActionLoadingId(item.id);
     setError("");
+    setNotice("");
 
     try {
       const endpoint = item.actif
@@ -798,6 +847,39 @@ export default function PlatformCoproprietaires() {
     }
   }
 
+  async function createAccess(item: Coproprietaire) {
+    setAccessLoadingId(item.id);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await api.post(
+        `${ENDPOINTS.platform.coproprietaireDetail(item.id)}create-user-access/`,
+      );
+
+      const data = response.data as {
+        temporary_password?: string;
+        user?: { username?: string; email?: string };
+      };
+
+      if (data.temporary_password) {
+        setNotice(
+          `Accès créé pour ${getDisplayName(item)}. Identifiant : ${
+            data.user?.username || data.user?.email || "voir réponse API"
+          } · Mot de passe temporaire : ${data.temporary_password}`,
+        );
+      } else {
+        setNotice(`Accès utilisateur créé pour ${getDisplayName(item)}.`);
+      }
+
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setAccessLoadingId(null);
+    }
+  }
+
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
@@ -808,8 +890,9 @@ export default function PlatformCoproprietaires() {
               <h1 style={styles.title}>Copropriétaires</h1>
               <p style={styles.heroText}>
                 Créez et maintenez les copropriétaires rattachés à la copropriété
-                active. Cette page prépare aussi la future création d’accès
-                utilisateur pour l’espace copropriétaire.
+                active. Cette page gère le propriétaire juridique du lot. Les
+                résidents réellement présents dans les logements sont suivis dans
+                une page dédiée.
               </p>
             </div>
           </div>
@@ -838,7 +921,19 @@ export default function PlatformCoproprietaires() {
             <div style={styles.statCard}>
               <p style={styles.statLabel}>Lots liés</p>
               <p style={styles.statValue}>{formatNumber(stats.lots)}</p>
-              <p style={styles.statHint}>Lecture rapide des lots actifs</p>
+              <p style={styles.statHint}>Lots actifs rattachés</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.statLabel}>Résidents</p>
+              <p style={styles.statValue}>{formatNumber(stats.residents)}</p>
+              <p style={styles.statHint}>Résidents actifs déclarés</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.statLabel}>Accès</p>
+              <p style={styles.statValue}>{formatNumber(stats.acces)}</p>
+              <p style={styles.statHint}>Comptes copropriétaires créés</p>
             </div>
           </div>
         </div>
@@ -853,9 +948,9 @@ export default function PlatformCoproprietaires() {
                     {form.id ? "Modifier un copropriétaire" : "Nouveau copropriétaire"}
                   </h2>
                   <p style={styles.cardSubtitle}>
-                    Renseignez la fiche métier du copropriétaire. L’accès
-                    utilisateur reste préparé côté interface et sera branché au
-                    backend dédié ensuite.
+                    Renseignez la fiche du propriétaire juridique. Le résident réel
+                    du logement sera géré dans le registre des résidents afin de
+                    conserver une séparation claire.
                   </p>
                 </div>
 
@@ -866,6 +961,7 @@ export default function PlatformCoproprietaires() {
 
               <div style={styles.cardBody}>
                 {error ? <div style={styles.error}>{error}</div> : null}
+                {notice ? <div style={styles.notice}>{notice}</div> : null}
 
                 <form onSubmit={(event) => void submit(event)}>
                   <div style={styles.formGrid}>
@@ -1018,12 +1114,12 @@ export default function PlatformCoproprietaires() {
                       />
                       <span>
                         <strong style={{ color: "#064e3b", fontSize: 14 }}>
-                          Préparer un accès utilisateur pour ce copropriétaire
+                          Créer l’accès utilisateur après l’enregistrement
                         </strong>
                         <p style={{ ...styles.helpText, color: "#047857" }}>
-                          Version cible : génération d’un mot de passe temporaire,
-                          obligation de changement à la première connexion, puis
-                          accès limité à l’espace copropriétaire.
+                          Le backend génère un mot de passe temporaire, rattache
+                          le rôle COPROPRIETAIRE et impose le changement du mot
+                          de passe à la première connexion.
                         </p>
                       </span>
                     </label>
@@ -1058,11 +1154,8 @@ export default function PlatformCoproprietaires() {
                     ) : null}
 
                     <div style={styles.notice}>
-                      Cette section est préparée côté interface. Le backend dédié
-                      devra ensuite créer le compte utilisateur, affecter le rôle
-                      <strong> COPROPRIETAIRE</strong>, définir{" "}
-                      <strong>must_change_password=true</strong> et bloquer l’accès
-                      aux routes Admin.
+                      Conservez le mot de passe temporaire affiché après création :
+                      il n’est retourné qu’une seule fois par l’API.
                     </div>
                   </div>
 
@@ -1134,7 +1227,7 @@ export default function PlatformCoproprietaires() {
                 <input
                   value={q}
                   onChange={(event) => setQ(event.target.value)}
-                  placeholder="Rechercher par nom, email, téléphone, ville ou statut..."
+                  placeholder="Rechercher par nom, email, téléphone, ville, lots ou résidents..."
                   style={styles.searchInput}
                 />
               </div>
@@ -1146,8 +1239,10 @@ export default function PlatformCoproprietaires() {
                       <tr>
                         <th style={styles.th}>Nom</th>
                         <th style={styles.th}>Contact</th>
-                        <th style={styles.th}>Ville</th>
+                        <th style={styles.th}>Ville / Pays</th>
                         <th style={styles.th}>Lots actifs</th>
+                        <th style={styles.th}>Résidents</th>
+                        <th style={styles.th}>Accès</th>
                         <th style={styles.th}>Statut</th>
                         <th style={styles.thRight}>Actions</th>
                       </tr>
@@ -1156,19 +1251,20 @@ export default function PlatformCoproprietaires() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td style={styles.empty} colSpan={6}>
+                          <td style={styles.empty} colSpan={8}>
                             Chargement des copropriétaires...
                           </td>
                         </tr>
                       ) : filteredRows.length === 0 ? (
                         <tr>
-                          <td style={styles.empty} colSpan={6}>
+                          <td style={styles.empty} colSpan={8}>
                             Aucun copropriétaire trouvé.
                           </td>
                         </tr>
                       ) : (
                         filteredRows.map((item) => {
                           const actionBusy = actionLoadingId === item.id;
+                          const accessBusy = accessLoadingId === item.id;
 
                           return (
                             <tr key={item.id}>
@@ -1183,17 +1279,55 @@ export default function PlatformCoproprietaires() {
 
                               <td style={styles.td}>
                                 <p style={styles.rowTitle}>
-                                  {item.email || "Email non renseigné"}
+                                  {item.telephone || "Téléphone non renseigné"}
                                 </p>
                                 <p style={styles.muted}>
-                                  {item.telephone || "Téléphone non renseigné"}
+                                  {item.email || "Email non renseigné"}
                                 </p>
                               </td>
 
-                              <td style={styles.td}>{item.ville || "—"}</td>
+                              <td style={styles.td}>
+                                <p style={styles.rowTitle}>
+                                  {item.ville?.trim() || "Ville non renseignée"}
+                                </p>
+                                <p style={styles.muted}>
+                                  {item.pays?.trim() || "Côte d'Ivoire"}
+                                </p>
+                              </td>
 
                               <td style={styles.td}>
-                                {formatNumber(item.lots_actifs_count ?? 0)}
+                                <span style={badgeStyle("info")}>
+                                  {formatNumber(item.lots_actifs_count ?? 0)}
+                                </span>
+                              </td>
+
+                              <td style={styles.td}>
+                                <span
+                                  style={badgeStyle(
+                                    (item.occupants_declares_count ?? 0) > 0
+                                      ? "success"
+                                      : "neutral",
+                                  )}
+                                >
+                                  {formatNumber(item.occupants_declares_count ?? 0)}
+                                </span>
+                              </td>
+
+                              <td style={styles.td}>
+                                <span
+                                  style={badgeStyle(
+                                    item.has_user_access ? "success" : "warning",
+                                  )}
+                                >
+                                  {item.has_user_access ? "Créé" : "À créer"}
+                                </span>
+                                {item.user_account_username ||
+                                item.user_account_email ? (
+                                  <p style={styles.muted}>
+                                    {item.user_account_username ||
+                                      item.user_account_email}
+                                  </p>
+                                ) : null}
                               </td>
 
                               <td style={styles.td}>
@@ -1225,6 +1359,27 @@ export default function PlatformCoproprietaires() {
                                     Modifier
                                   </button>
 
+                                  {!item.has_user_access ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void createAccess(item)}
+                                      disabled={accessBusy || !item.email}
+                                      style={{
+                                        ...styles.buttonNeutral,
+                                        minHeight: 34,
+                                        fontSize: 12,
+                                        opacity:
+                                          accessBusy || !item.email ? 0.65 : 1,
+                                        cursor:
+                                          accessBusy || !item.email
+                                            ? "not-allowed"
+                                            : "pointer",
+                                      }}
+                                    >
+                                      {accessBusy ? "Création..." : "Créer accès"}
+                                    </button>
+                                  ) : null}
+
                                   <button
                                     type="button"
                                     onClick={() => void toggle(item)}
@@ -1234,9 +1389,7 @@ export default function PlatformCoproprietaires() {
                                       minHeight: 34,
                                       fontSize: 12,
                                       opacity: actionBusy ? 0.65 : 1,
-                                      cursor: actionBusy
-                                        ? "not-allowed"
-                                        : "pointer",
+                                      cursor: actionBusy ? "not-allowed" : "pointer",
                                     }}
                                   >
                                     {actionBusy
@@ -1261,58 +1414,60 @@ export default function PlatformCoproprietaires() {
           <aside style={styles.side}>
             <div style={styles.sideCard}>
               <p style={styles.sideEyebrow}>Lecture métier</p>
-              <h2 style={styles.sideTitle}>Copropriétaire ≠ utilisateur</h2>
+              <h2 style={styles.sideTitle}>Propriétaire ≠ résident</h2>
               <p style={styles.sideText}>
-                La fiche copropriétaire représente le propriétaire métier. Le
-                compte utilisateur servira plus tard à ouvrir l’espace personnel
-                du copropriétaire avec des droits limités.
+                Le copropriétaire est le propriétaire juridique du lot. Le résident
+                est la personne qui habite réellement le logement : propriétaire
+                occupant, locataire, ayant droit ou autre personne déclarée.
               </p>
             </div>
 
             <div style={styles.sideCardBlue}>
-              <p style={{ ...styles.sideEyebrow, color: "#4f46e5" }}>
-                Espace dédié
-              </p>
-              <h3 style={{ ...styles.sideTitle, color: "#312e81" }}>
-                Pas d’accès Admin
-              </h3>
-              <p style={{ ...styles.sideText, color: "#4338ca" }}>
-                Les copropriétaires ne devront pas voir le Super Admin ni les
-                modules d’administration. Leur accès cible sera limité à leurs
-                lots, charges, paiements, reçus, documents et AG.
+              <p style={styles.sideEyebrow}>Référentiel enrichi</p>
+              <h2 style={styles.sideTitle}>Informations utiles au syndic</h2>
+
+              <div style={styles.checklist}>
+                <div style={styles.checklistItem}>
+                  <span style={styles.checklistLabel}>Identité propriétaire</span>
+                  <span style={styles.checklistValue}>Oui</span>
+                </div>
+                <div style={styles.checklistItem}>
+                  <span style={styles.checklistLabel}>Contacts</span>
+                  <span style={styles.checklistValue}>Oui</span>
+                </div>
+                <div style={styles.checklistItem}>
+                  <span style={styles.checklistLabel}>Lots actifs</span>
+                  <span style={styles.checklistValue}>Oui</span>
+                </div>
+                <div style={styles.checklistItem}>
+                  <span style={styles.checklistLabel}>Résidents déclarés</span>
+                  <span style={styles.checklistValue}>Oui</span>
+                </div>
+                <div style={styles.checklistItem}>
+                  <span style={styles.checklistLabel}>Accès copropriétaire</span>
+                  <span style={styles.checklistValue}>Oui</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.sideCardAmber}>
+              <p style={styles.sideEyebrow}>Suite du sprint</p>
+              <h2 style={styles.sideTitle}>Registre des résidents</h2>
+              <p style={styles.sideText}>
+                La page dédiée aux résidents permet de gérer le lot occupé, le
+                statut d’occupation, le contact, le nombre de résidents, la date
+                d’entrée, la date de sortie et le contact d’urgence.
               </p>
             </div>
 
             <div style={styles.sideCardGreen}>
-              <p style={{ ...styles.sideEyebrow, color: "#047857" }}>
-                Synthèse rapide
+              <p style={styles.sideEyebrow}>Sécurité</p>
+              <h2 style={styles.sideTitle}>Accès limité</h2>
+              <p style={styles.sideText}>
+                Les comptes créés depuis cette page doivent rester limités à
+                l’espace copropriétaire et ne jamais donner accès au back-office
+                Admin React.
               </p>
-              <h3 style={{ ...styles.sideTitle, color: "#064e3b" }}>
-                {formatNumber(stats.actifs)} actif{stats.actifs > 1 ? "s" : ""}
-              </h3>
-
-              <div style={styles.checklist}>
-                <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Total</span>
-                  <span style={styles.checklistValue}>
-                    {formatNumber(stats.total)}
-                  </span>
-                </div>
-
-                <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Inactifs</span>
-                  <span style={styles.checklistValue}>
-                    {formatNumber(stats.inactifs)}
-                  </span>
-                </div>
-
-                <div style={{ ...styles.checklistItem, borderBottom: "none" }}>
-                  <span style={styles.checklistLabel}>Lots actifs lus</span>
-                  <span style={styles.checklistValue}>
-                    {formatNumber(stats.lots)}
-                  </span>
-                </div>
-              </div>
             </div>
           </aside>
         </div>

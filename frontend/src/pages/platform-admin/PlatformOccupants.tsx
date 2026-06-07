@@ -1,4 +1,4 @@
-// frontend/src/pages/platform-admin/PlatformLots.tsx
+// frontend/src/pages/platform-admin/PlatformOccupants.tsx
 import type { CSSProperties, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -10,50 +10,87 @@ type Lot = {
   reference: string;
   numero?: string;
   label?: string;
-  type_lot: string;
-  statut?: string;
   batiment?: string;
   escalier?: string;
   etage?: string;
   porte?: string;
-  nombre_pieces?: number | null;
-  surface?: string | number | null;
   actif: boolean;
-  total_tantiemes_value?: string | number | null;
-  proprietaire_principal_display?: string;
-  occupant_principal_display?: string;
+};
+
+type Coproprietaire = {
+  id: number;
+  display_name?: string;
+  nom: string;
+  prenom?: string;
+  raison_sociale?: string;
+  type_personne?: string;
+  actif: boolean;
+};
+
+type Occupant = {
+  id: number;
+  copropriete?: number;
+  lot: number;
+  lot_reference?: string;
+  lot_label?: string;
+  coproprietaire?: number | null;
+  coproprietaire_display?: string;
+  nom: string;
+  prenom?: string;
+  display_name?: string;
+  telephone?: string;
+  email?: string;
+  contact_label?: string;
+  statut_occupation: string;
+  statut_occupation_label?: string;
+  occupant_principal: boolean;
+  nombre_occupants?: number | null;
+  date_entree?: string | null;
+  date_sortie?: string | null;
+  contact_urgence_nom?: string;
+  contact_urgence_telephone?: string;
+  notes?: string;
+  actif: boolean;
+  is_active?: boolean;
+  periode_label?: string;
 };
 
 type FormState = {
   id?: number;
-  reference: string;
-  numero: string;
-  type_lot: string;
-  statut: string;
-  batiment: string;
-  escalier: string;
-  etage: string;
-  porte: string;
-  nombre_pieces: string;
-  description: string;
-  surface: string;
+  lot: string;
+  coproprietaire: string;
+  nom: string;
+  prenom: string;
+  telephone: string;
+  email: string;
+  statut_occupation: string;
+  occupant_principal: boolean;
+  nombre_occupants: string;
+  date_entree: string;
+  date_sortie: string;
+  contact_urgence_nom: string;
+  contact_urgence_telephone: string;
+  notes: string;
   actif: boolean;
 };
 
 type Tone = "success" | "warning" | "danger" | "neutral" | "info";
 
 const initialForm: FormState = {
-  reference: "",
-  numero: "",
-  type_lot: "APPARTEMENT",
-  statut: "OCCUPE",
-  batiment: "",
-  escalier: "",
-  etage: "",
-  porte: "",
-  nombre_pieces: "",
-  description: "",
-  surface: "",
+  lot: "",
+  coproprietaire: "",
+  nom: "",
+  prenom: "",
+  telephone: "",
+  email: "",
+  statut_occupation: "PROPRIETAIRE_OCCUPANT",
+  occupant_principal: true,
+  nombre_occupants: "",
+  date_entree: "",
+  date_sortie: "",
+  contact_urgence_nom: "",
+  contact_urgence_telephone: "",
+  notes: "",
   actif: true,
 };
 
@@ -100,7 +137,7 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: "-0.04em",
   },
   heroText: {
-    maxWidth: 940,
+    maxWidth: 960,
     margin: "14px 0 0",
     color: "rgba(239, 246, 255, 0.92)",
     fontSize: 14,
@@ -195,12 +232,12 @@ const styles: Record<string, CSSProperties> = {
   },
   formGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 16,
   },
   formGridTwo: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 16,
     marginTop: 16,
   },
@@ -225,17 +262,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 14,
     outline: "none",
   },
-  select: {
-    width: "100%",
-    minHeight: 46,
-    borderRadius: 16,
-    border: "1px solid #dbe3ef",
-    background: "#ffffff",
-    padding: "0 14px",
-    color: "#0f172a",
-    fontSize: 14,
-    outline: "none",
-  },
   textarea: {
     width: "100%",
     minHeight: 100,
@@ -247,6 +273,17 @@ const styles: Record<string, CSSProperties> = {
     color: "#0f172a",
     fontSize: 14,
     lineHeight: 1.6,
+    outline: "none",
+  },
+  select: {
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 16,
+    border: "1px solid #dbe3ef",
+    background: "#ffffff",
+    padding: "0 14px",
+    color: "#0f172a",
+    fontSize: 14,
     outline: "none",
   },
   softBox: {
@@ -366,7 +403,7 @@ const styles: Record<string, CSSProperties> = {
   },
   table: {
     width: "100%",
-    minWidth: 1280,
+    minWidth: 1220,
     borderCollapse: "collapse",
     fontSize: 13,
   },
@@ -552,47 +589,34 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(value);
 }
 
-function toNumber(value: string | number | null | undefined): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
-
-function getLotLabel(item: Lot): string {
+function displayLot(item: Lot): string {
   return item.label || item.reference || item.numero || `Lot #${item.id}`;
 }
 
-function typeLotLabel(value?: string | null): string {
-  if (value === "APPARTEMENT") return "Appartement";
-  if (value === "PARKING") return "Parking";
-  if (value === "CAVE") return "Cave";
-  if (value === "COMMERCE") return "Commerce";
-  if (value === "BUREAU") return "Bureau";
-  if (value === "DEPOT") return "Dépôt";
-  if (value === "AUTRE") return "Autre";
-  return value || "Non défini";
+function displayCoproprietaire(item: Coproprietaire): string {
+  if (item.display_name) return item.display_name;
+  if (item.type_personne === "MORALE") return item.raison_sociale || item.nom;
+  return `${item.prenom || ""} ${item.nom || ""}`.trim() || `#${item.id}`;
 }
 
-function statutLabel(value?: string | null): string {
-  if (value === "OCCUPE") return "Occupé";
-  if (value === "VACANT") return "Vacant";
-  if (value === "EN_TRAVAUX") return "En travaux";
-  if (value === "INACTIF") return "Inactif";
+function displayOccupant(item: Occupant): string {
+  return item.display_name || `${item.prenom || ""} ${item.nom || ""}`.trim();
+}
+
+function statutOccupationLabel(value?: string | null): string {
+  if (value === "PROPRIETAIRE_OCCUPANT") return "Propriétaire occupant";
+  if (value === "LOCATAIRE") return "Locataire";
+  if (value === "AYANT_DROIT") return "Ayant droit";
+  if (value === "AUTRE") return "Autre";
   return value || "Non défini";
 }
 
 function statutTone(value?: string | null, actif?: boolean): Tone {
   if (!actif) return "neutral";
-  if (value === "OCCUPE") return "success";
-  if (value === "VACANT") return "warning";
-  if (value === "EN_TRAVAUX") return "info";
-  if (value === "INACTIF") return "neutral";
-  return "info";
+  if (value === "PROPRIETAIRE_OCCUPANT") return "success";
+  if (value === "LOCATAIRE") return "info";
+  if (value === "AYANT_DROIT") return "warning";
+  return "neutral";
 }
 
 function badgeStyle(tone: Tone): CSSProperties {
@@ -652,11 +676,13 @@ function normalizeIntegerField(value: string): number | null {
 
   if (!Number.isFinite(parsed)) return null;
 
-  return Math.max(0, Math.trunc(parsed));
+  return Math.max(1, Math.trunc(parsed));
 }
 
-export default function PlatformLots() {
-  const [rows, setRows] = useState<Lot[]>([]);
+export default function PlatformOccupants() {
+  const [rows, setRows] = useState<Occupant[]>([]);
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [coproprietaires, setCoproprietaires] = useState<Coproprietaire[]>([]);
   const [form, setForm] = useState<FormState>(initialForm);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
@@ -667,23 +693,19 @@ export default function PlatformLots() {
   const activeCoproId = getActiveCoproId();
 
   const stats = useMemo(() => {
-    const actifs = rows.filter((item) => item.actif).length;
-    const inactifs = rows.filter((item) => !item.actif).length;
-    const totalSurface = rows.reduce((total, item) => total + toNumber(item.surface), 0);
-    const totalTantiemes = rows.reduce((total, item) => {
-      return total + toNumber(item.total_tantiemes_value);
+    const actifs = rows.filter((item) => item.actif && item.date_sortie == null).length;
+    const inactifs = rows.filter((item) => !item.actif || item.date_sortie).length;
+    const principaux = rows.filter((item) => item.occupant_principal).length;
+    const totalOccupantsDeclares = rows.reduce((total, item) => {
+      return total + (item.nombre_occupants ?? 0);
     }, 0);
-    const lotsAvecOccupant = rows.filter((item) =>
-      Boolean(item.occupant_principal_display),
-    ).length;
 
     return {
       total: rows.length,
       actifs,
       inactifs,
-      totalSurface,
-      totalTantiemes,
-      lotsAvecOccupant,
+      principaux,
+      totalOccupantsDeclares,
     };
   }, [rows]);
 
@@ -694,38 +716,43 @@ export default function PlatformLots() {
 
     return rows.filter((item) => {
       return (
-        includesText(getLotLabel(item), query) ||
-        includesText(item.reference, query) ||
-        includesText(item.numero, query) ||
-        includesText(typeLotLabel(item.type_lot), query) ||
-        includesText(statutLabel(item.statut), query) ||
-        includesText(item.batiment, query) ||
-        includesText(item.escalier, query) ||
-        includesText(item.etage, query) ||
-        includesText(item.porte, query) ||
-        includesText(item.nombre_pieces, query) ||
-        includesText(item.proprietaire_principal_display, query) ||
-        includesText(item.occupant_principal_display, query)
+        includesText(displayOccupant(item), query) ||
+        includesText(item.telephone, query) ||
+        includesText(item.email, query) ||
+        includesText(item.lot_reference, query) ||
+        includesText(item.lot_label, query) ||
+        includesText(item.coproprietaire_display, query) ||
+        includesText(item.statut_occupation_label, query) ||
+        includesText(statutOccupationLabel(item.statut_occupation), query) ||
+        includesText(item.contact_urgence_nom, query) ||
+        includesText(item.contact_urgence_telephone, query)
       );
     });
   }, [q, rows]);
 
   const canSubmit = useMemo(() => {
-    return form.reference.trim().length > 0;
-  }, [form.reference]);
+    return form.lot.trim().length > 0 && form.nom.trim().length > 0;
+  }, [form.lot, form.nom]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const response = await api.get(ENDPOINTS.platform.lots, {
-        params: {
-          ...(activeCoproId ? { copropriete: activeCoproId } : {}),
-        },
-      });
+      const params = {
+        ...(activeCoproId ? { copropriete: activeCoproId } : {}),
+      };
 
-      setRows(extractRows<Lot>(response.data));
+      const [occupantsResponse, lotsResponse, coproprietairesResponse] =
+        await Promise.all([
+          api.get(ENDPOINTS.platform.occupantsLots, { params }),
+          api.get(ENDPOINTS.platform.lots, { params }),
+          api.get(ENDPOINTS.platform.coproprietaires, { params }),
+        ]);
+
+      setRows(extractRows<Occupant>(occupantsResponse.data));
+      setLots(extractRows<Lot>(lotsResponse.data));
+      setCoproprietaires(extractRows<Coproprietaire>(coproprietairesResponse.data));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -745,23 +772,26 @@ export default function PlatformLots() {
     setForm(initialForm);
   }
 
-  function edit(item: Lot) {
+  function edit(item: Occupant) {
     setForm({
       id: item.id,
-      reference: item.reference || "",
-      numero: item.numero || "",
-      type_lot: item.type_lot || "APPARTEMENT",
-      statut: item.statut || "OCCUPE",
-      batiment: item.batiment || "",
-      escalier: item.escalier || "",
-      etage: item.etage || "",
-      porte: item.porte || "",
-      nombre_pieces:
-        item.nombre_pieces !== null && item.nombre_pieces !== undefined
-          ? String(item.nombre_pieces)
+      lot: item.lot ? String(item.lot) : "",
+      coproprietaire: item.coproprietaire ? String(item.coproprietaire) : "",
+      nom: item.nom || "",
+      prenom: item.prenom || "",
+      telephone: item.telephone || "",
+      email: item.email || "",
+      statut_occupation: item.statut_occupation || "PROPRIETAIRE_OCCUPANT",
+      occupant_principal: item.occupant_principal,
+      nombre_occupants:
+        item.nombre_occupants !== null && item.nombre_occupants !== undefined
+          ? String(item.nombre_occupants)
           : "",
-      description: "",
-      surface: item.surface ? String(item.surface) : "",
+      date_entree: item.date_entree || "",
+      date_sortie: item.date_sortie || "",
+      contact_urgence_nom: item.contact_urgence_nom || "",
+      contact_urgence_telephone: item.contact_urgence_telephone || "",
+      notes: item.notes || "",
       actif: item.actif,
     });
   }
@@ -770,7 +800,7 @@ export default function PlatformLots() {
     event.preventDefault();
 
     if (!canSubmit) {
-      setError("La référence du lot est obligatoire.");
+      setError("Le lot et le nom de l’occupant sont obligatoires.");
       return;
     }
 
@@ -779,25 +809,28 @@ export default function PlatformLots() {
 
     try {
       const payload = {
-        reference: form.reference.trim(),
-        numero: form.numero.trim(),
-        type_lot: form.type_lot,
-        statut: form.statut,
-        batiment: form.batiment.trim(),
-        escalier: form.escalier.trim(),
-        etage: form.etage.trim(),
-        porte: form.porte.trim(),
-        nombre_pieces: normalizeIntegerField(form.nombre_pieces),
-        description: form.description.trim(),
-        surface: form.surface ? form.surface : null,
+        lot: Number(form.lot),
+        coproprietaire: form.coproprietaire ? Number(form.coproprietaire) : null,
+        nom: form.nom.trim(),
+        prenom: form.prenom.trim(),
+        telephone: form.telephone.trim(),
+        email: form.email.trim(),
+        statut_occupation: form.statut_occupation,
+        occupant_principal: form.occupant_principal,
+        nombre_occupants: normalizeIntegerField(form.nombre_occupants),
+        date_entree: form.date_entree || null,
+        date_sortie: form.date_sortie || null,
+        contact_urgence_nom: form.contact_urgence_nom.trim(),
+        contact_urgence_telephone: form.contact_urgence_telephone.trim(),
+        notes: form.notes.trim(),
         actif: form.actif,
         ...(activeCoproId ? { copropriete: activeCoproId } : {}),
       };
 
       if (form.id) {
-        await api.patch(ENDPOINTS.platform.lotDetail(form.id), payload);
+        await api.patch(ENDPOINTS.platform.occupantLotDetail(form.id), payload);
       } else {
-        await api.post(ENDPOINTS.platform.lots, payload);
+        await api.post(ENDPOINTS.platform.occupantsLots, payload);
       }
 
       setForm(initialForm);
@@ -809,16 +842,26 @@ export default function PlatformLots() {
     }
   }
 
-  async function toggle(item: Lot) {
+  async function cloturer(item: Occupant) {
     setActionLoadingId(item.id);
     setError("");
 
     try {
-      const endpoint = item.actif
-        ? ENDPOINTS.platform.lotDesactiver(item.id)
-        : ENDPOINTS.platform.lotActiver(item.id);
+      await api.post(ENDPOINTS.platform.occupantLotCloturer(item.id));
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
 
-      await api.post(endpoint);
+  async function rouvrir(item: Occupant) {
+    setActionLoadingId(item.id);
+    setError("");
+
+    try {
+      await api.post(ENDPOINTS.platform.occupantLotRouvrir(item.id));
       await loadData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -834,41 +877,49 @@ export default function PlatformLots() {
           <div style={styles.heroTop}>
             <div>
               <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Lots & occupation</h1>
+              <h1 style={styles.title}>Occupants & habitants</h1>
               <p style={styles.heroText}>
-                Créez et maintenez les lots de référence. Les lots sont le socle
-                des tantièmes, des appels de charges, des relances, des votes en
-                assemblée générale, de l’espace copropriétaire et du suivi des
-                occupants réels.
+                Gérez les personnes qui habitent réellement les lots : propriétaire
+                occupant, locataire, ayant droit ou autre. Ce registre complète la
+                fiche propriétaire sans collecter inutilement le nom de tous les
+                membres du foyer.
               </p>
             </div>
           </div>
 
           <div style={styles.statsGrid}>
             <div style={styles.statCard}>
-              <p style={styles.statLabel}>Lots</p>
+              <p style={styles.statLabel}>Fiches occupants</p>
               <p style={styles.statValue}>{formatNumber(stats.total)}</p>
-              <p style={styles.statHint}>Unités référentielles enregistrées</p>
+              <p style={styles.statHint}>Occupations historisées</p>
             </div>
 
             <div style={styles.statCard}>
               <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>Actifs</p>
               <p style={styles.statValue}>{formatNumber(stats.actifs)}</p>
               <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                Exploitables dans les modules métier
+                Habitants actuellement déclarés
               </p>
             </div>
 
             <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#e2e8f0" }}>Inactifs</p>
+              <p style={{ ...styles.statLabel, color: "#e2e8f0" }}>Clôturés</p>
               <p style={styles.statValue}>{formatNumber(stats.inactifs)}</p>
-              <p style={styles.statHint}>Lots hors exploitation courante</p>
+              <p style={styles.statHint}>Sorties ou fiches inactives</p>
             </div>
 
             <div style={styles.statCard}>
-              <p style={styles.statLabel}>Occupants</p>
-              <p style={styles.statValue}>{formatNumber(stats.lotsAvecOccupant)}</p>
-              <p style={styles.statHint}>Lots avec occupant principal déclaré</p>
+              <p style={styles.statLabel}>Occupants principaux</p>
+              <p style={styles.statValue}>{formatNumber(stats.principaux)}</p>
+              <p style={styles.statHint}>Fiches principales par lot</p>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.statLabel}>Total déclaré</p>
+              <p style={styles.statValue}>
+                {formatNumber(stats.totalOccupantsDeclares)}
+              </p>
+              <p style={styles.statHint}>Nombre d’occupants déclaré</p>
             </div>
           </div>
         </div>
@@ -878,14 +929,14 @@ export default function PlatformLots() {
             <section style={styles.card}>
               <div style={styles.cardHeader}>
                 <div>
-                  <p style={styles.cardEyebrow}>Fiche lot</p>
+                  <p style={styles.cardEyebrow}>Fiche occupant</p>
                   <h2 style={styles.cardTitle}>
-                    {form.id ? "Modifier un lot" : "Nouveau lot"}
+                    {form.id ? "Modifier un occupant" : "Nouvel occupant"}
                   </h2>
                   <p style={styles.cardSubtitle}>
-                    Renseignez les caractéristiques du lot. Le propriétaire et
-                    l’occupant principal sont pilotés dans les écrans dédiés afin
-                    de conserver un historique propre.
+                    Renseignez l’occupant principal ou l’habitant de référence du
+                    lot. Pour la première version, on conserve le nombre total
+                    d’occupants sans lister toute la composition du foyer.
                   </p>
                 </div>
 
@@ -900,121 +951,159 @@ export default function PlatformLots() {
                 <form onSubmit={(event) => void submit(event)}>
                   <div style={styles.formGrid}>
                     <label style={styles.field}>
-                      <span style={styles.label}>Référence *</span>
+                      <span style={styles.label}>Lot occupé *</span>
+                      <select
+                        value={form.lot}
+                        onChange={(event) => update("lot", event.target.value)}
+                        required
+                        style={styles.select}
+                      >
+                        <option value="">Sélectionner un lot</option>
+                        {lots.map((lot) => (
+                          <option key={lot.id} value={lot.id}>
+                            {displayLot(lot)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Copropriétaire lié</span>
+                      <select
+                        value={form.coproprietaire}
+                        onChange={(event) =>
+                          update("coproprietaire", event.target.value)
+                        }
+                        style={styles.select}
+                      >
+                        <option value="">Aucun rattachement direct</option>
+                        {coproprietaires.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {displayCoproprietaire(item)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Statut d’occupation</span>
+                      <select
+                        value={form.statut_occupation}
+                        onChange={(event) =>
+                          update("statut_occupation", event.target.value)
+                        }
+                        style={styles.select}
+                      >
+                        <option value="PROPRIETAIRE_OCCUPANT">
+                          Propriétaire occupant
+                        </option>
+                        <option value="LOCATAIRE">Locataire</option>
+                        <option value="AYANT_DROIT">Ayant droit</option>
+                        <option value="AUTRE">Autre</option>
+                      </select>
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Nom *</span>
                       <input
-                        value={form.reference}
-                        onChange={(event) => update("reference", event.target.value)}
-                        placeholder="Ex. A101"
+                        value={form.nom}
+                        onChange={(event) => update("nom", event.target.value)}
+                        placeholder="Nom de l’occupant"
                         required
                         style={styles.input}
                       />
                     </label>
 
                     <label style={styles.field}>
-                      <span style={styles.label}>Numéro</span>
+                      <span style={styles.label}>Prénom</span>
                       <input
-                        value={form.numero}
-                        onChange={(event) => update("numero", event.target.value)}
-                        placeholder="Ex. 101"
+                        value={form.prenom}
+                        onChange={(event) => update("prenom", event.target.value)}
+                        placeholder="Prénom"
                         style={styles.input}
                       />
                     </label>
 
                     <label style={styles.field}>
-                      <span style={styles.label}>Type de lot</span>
-                      <select
-                        value={form.type_lot}
-                        onChange={(event) => update("type_lot", event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="APPARTEMENT">Appartement</option>
-                        <option value="PARKING">Parking</option>
-                        <option value="CAVE">Cave</option>
-                        <option value="COMMERCE">Commerce</option>
-                        <option value="BUREAU">Bureau</option>
-                        <option value="DEPOT">Dépôt</option>
-                        <option value="AUTRE">Autre</option>
-                      </select>
-                    </label>
-
-                    <label style={styles.field}>
-                      <span style={styles.label}>Statut du lot</span>
-                      <select
-                        value={form.statut}
-                        onChange={(event) => update("statut", event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="OCCUPE">Occupé</option>
-                        <option value="VACANT">Vacant</option>
-                        <option value="EN_TRAVAUX">En travaux</option>
-                        <option value="INACTIF">Inactif</option>
-                      </select>
-                    </label>
-
-                    <label style={styles.field}>
-                      <span style={styles.label}>Bâtiment / bloc</span>
+                      <span style={styles.label}>Téléphone</span>
                       <input
-                        value={form.batiment}
-                        onChange={(event) => update("batiment", event.target.value)}
-                        placeholder="Ex. Bâtiment A"
+                        value={form.telephone}
+                        onChange={(event) => update("telephone", event.target.value)}
+                        placeholder="+225 ..."
                         style={styles.input}
                       />
                     </label>
 
                     <label style={styles.field}>
-                      <span style={styles.label}>Escalier</span>
+                      <span style={styles.label}>Email</span>
                       <input
-                        value={form.escalier}
-                        onChange={(event) => update("escalier", event.target.value)}
-                        placeholder="Ex. Escalier 1"
+                        value={form.email}
+                        onChange={(event) => update("email", event.target.value)}
+                        placeholder="email@exemple.com"
+                        type="email"
                         style={styles.input}
                       />
                     </label>
 
                     <label style={styles.field}>
-                      <span style={styles.label}>Niveau / étage</span>
+                      <span style={styles.label}>Nombre d’occupants</span>
                       <input
-                        value={form.etage}
-                        onChange={(event) => update("etage", event.target.value)}
-                        placeholder="Ex. 2"
-                        style={styles.input}
-                      />
-                    </label>
-
-                    <label style={styles.field}>
-                      <span style={styles.label}>Porte</span>
-                      <input
-                        value={form.porte}
-                        onChange={(event) => update("porte", event.target.value)}
-                        placeholder="Ex. 12"
-                        style={styles.input}
-                      />
-                    </label>
-
-                    <label style={styles.field}>
-                      <span style={styles.label}>Surface m²</span>
-                      <input
-                        value={form.surface}
-                        onChange={(event) => update("surface", event.target.value)}
-                        placeholder="Ex. 85.5"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        style={styles.input}
-                      />
-                    </label>
-
-                    <label style={styles.field}>
-                      <span style={styles.label}>Nombre de pièces</span>
-                      <input
-                        value={form.nombre_pieces}
+                        value={form.nombre_occupants}
                         onChange={(event) =>
-                          update("nombre_pieces", event.target.value)
+                          update("nombre_occupants", event.target.value)
                         }
                         placeholder="Ex. 4"
                         type="number"
-                        min="0"
+                        min="1"
                         step="1"
+                        style={styles.input}
+                      />
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Date d’entrée</span>
+                      <input
+                        value={form.date_entree}
+                        onChange={(event) =>
+                          update("date_entree", event.target.value)
+                        }
+                        type="date"
+                        style={styles.input}
+                      />
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Date de sortie</span>
+                      <input
+                        value={form.date_sortie}
+                        onChange={(event) =>
+                          update("date_sortie", event.target.value)
+                        }
+                        type="date"
+                        style={styles.input}
+                      />
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Contact urgence</span>
+                      <input
+                        value={form.contact_urgence_nom}
+                        onChange={(event) =>
+                          update("contact_urgence_nom", event.target.value)
+                        }
+                        placeholder="Nom du contact"
+                        style={styles.input}
+                      />
+                    </label>
+
+                    <label style={styles.field}>
+                      <span style={styles.label}>Téléphone urgence</span>
+                      <input
+                        value={form.contact_urgence_telephone}
+                        onChange={(event) =>
+                          update("contact_urgence_telephone", event.target.value)
+                        }
+                        placeholder="+225 ..."
                         style={styles.input}
                       />
                     </label>
@@ -1022,20 +1111,38 @@ export default function PlatformLots() {
 
                   <div style={styles.formGridTwo}>
                     <label style={styles.field}>
-                      <span style={styles.label}>Description</span>
+                      <span style={styles.label}>Notes</span>
                       <textarea
-                        value={form.description}
-                        onChange={(event) =>
-                          update("description", event.target.value)
-                        }
-                        placeholder="Informations utiles : usage, particularités, observations..."
+                        value={form.notes}
+                        onChange={(event) => update("notes", event.target.value)}
+                        placeholder="Observations utiles au syndic..."
                         style={styles.textarea}
                       />
                     </label>
 
                     <div style={styles.softBox}>
-                      <p style={styles.cardEyebrow}>Statut référentiel</p>
+                      <p style={styles.cardEyebrow}>Statut de l’occupation</p>
+
                       <label style={styles.checkboxLine}>
+                        <input
+                          type="checkbox"
+                          checked={form.occupant_principal}
+                          onChange={(event) =>
+                            update("occupant_principal", event.target.checked)
+                          }
+                          style={styles.checkbox}
+                        />
+                        <span>
+                          <strong style={{ color: "#0f172a", fontSize: 14 }}>
+                            Occupant principal du lot
+                          </strong>
+                          <p style={styles.helpText}>
+                            Un seul occupant principal actif est autorisé par lot.
+                          </p>
+                        </span>
+                      </label>
+
+                      <label style={{ ...styles.checkboxLine, marginTop: 14 }}>
                         <input
                           type="checkbox"
                           checked={form.actif}
@@ -1044,19 +1151,17 @@ export default function PlatformLots() {
                         />
                         <span>
                           <strong style={{ color: "#0f172a", fontSize: 14 }}>
-                            Lot actif
+                            Fiche active
                           </strong>
                           <p style={styles.helpText}>
-                            Un lot inactif reste dans l’historique mais ne doit
-                            plus être utilisé dans les opérations courantes.
+                            Une fiche clôturée reste dans l’historique.
                           </p>
                         </span>
                       </label>
 
                       <div style={styles.notice}>
-                        L’occupant principal n’est pas saisi ici. Il sera géré
-                        dans le registre des occupants afin de distinguer le
-                        propriétaire juridique de l’habitant réel du lot.
+                        La date de sortie clôture automatiquement la fiche côté
+                        backend.
                       </div>
                     </div>
                   </div>
@@ -1091,7 +1196,7 @@ export default function PlatformLots() {
                           ? "Enregistrement..."
                           : form.id
                             ? "Enregistrer les modifications"
-                            : "Créer le lot"}
+                            : "Créer l’occupant"}
                       </button>
                     </div>
                   </div>
@@ -1102,11 +1207,11 @@ export default function PlatformLots() {
             <section style={styles.card}>
               <div style={styles.cardHeader}>
                 <div>
-                  <p style={styles.cardEyebrow}>Registre des lots</p>
-                  <h2 style={styles.cardTitle}>Lots existants</h2>
+                  <p style={styles.cardEyebrow}>Registre occupants</p>
+                  <h2 style={styles.cardTitle}>Occupants déclarés</h2>
                   <p style={styles.cardSubtitle}>
-                    {formatNumber(filteredRows.length)} lot
-                    {filteredRows.length > 1 ? "s" : ""} affiché
+                    {formatNumber(filteredRows.length)} fiche
+                    {filteredRows.length > 1 ? "s" : ""} affichée
                     {q.trim() ? " après filtrage" : ""}.
                   </p>
                 </div>
@@ -1129,7 +1234,7 @@ export default function PlatformLots() {
                 <input
                   value={q}
                   onChange={(event) => setQ(event.target.value)}
-                  placeholder="Rechercher par référence, type, statut, bâtiment, propriétaire, occupant..."
+                  placeholder="Rechercher par occupant, lot, statut, contact, copropriétaire..."
                   style={styles.searchInput}
                 />
               </div>
@@ -1139,14 +1244,14 @@ export default function PlatformLots() {
                   <table style={styles.table}>
                     <thead>
                       <tr>
+                        <th style={styles.th}>Occupant</th>
                         <th style={styles.th}>Lot</th>
-                        <th style={styles.th}>Type</th>
                         <th style={styles.th}>Statut</th>
-                        <th style={styles.th}>Surface</th>
-                        <th style={styles.th}>Pièces</th>
-                        <th style={styles.th}>Tantièmes</th>
-                        <th style={styles.th}>Propriétaire</th>
-                        <th style={styles.th}>Occupant principal</th>
+                        <th style={styles.th}>Contact</th>
+                        <th style={styles.th}>Copropriétaire lié</th>
+                        <th style={styles.th}>Nombre</th>
+                        <th style={styles.th}>Période</th>
+                        <th style={styles.th}>État</th>
                         <th style={styles.thRight}>Actions</th>
                       </tr>
                     </thead>
@@ -1155,69 +1260,85 @@ export default function PlatformLots() {
                       {loading ? (
                         <tr>
                           <td style={styles.empty} colSpan={9}>
-                            Chargement des lots...
+                            Chargement des occupants...
                           </td>
                         </tr>
                       ) : filteredRows.length === 0 ? (
                         <tr>
                           <td style={styles.empty} colSpan={9}>
-                            Aucun lot trouvé.
+                            Aucun occupant trouvé.
                           </td>
                         </tr>
                       ) : (
                         filteredRows.map((item) => {
+                          const active = item.actif && !item.date_sortie;
                           const actionBusy = actionLoadingId === item.id;
-                          const tantiemes = toNumber(item.total_tantiemes_value);
 
                           return (
                             <tr key={item.id}>
                               <td style={styles.td}>
-                                <p style={styles.rowTitle}>{getLotLabel(item)}</p>
+                                <p style={styles.rowTitle}>{displayOccupant(item)}</p>
                                 <p style={styles.muted}>
-                                  {item.batiment || "Bâtiment non renseigné"}
-                                  {item.escalier ? ` · Esc. ${item.escalier}` : ""}
-                                  {item.etage ? ` · Étage ${item.etage}` : ""}
-                                  {item.porte ? ` · Porte ${item.porte}` : ""}
+                                  {item.occupant_principal
+                                    ? "Occupant principal"
+                                    : "Occupant secondaire"}
                                 </p>
                               </td>
 
-                              <td style={styles.td}>{typeLotLabel(item.type_lot)}</td>
+                              <td style={styles.td}>
+                                <p style={styles.rowTitle}>
+                                  {item.lot_label || item.lot_reference || item.lot}
+                                </p>
+                                <p style={styles.muted}>Lot occupé</p>
+                              </td>
 
                               <td style={styles.td}>
-                                <span style={badgeStyle(statutTone(item.statut, item.actif))}>
-                                  {statutLabel(item.statut)}
+                                <span
+                                  style={badgeStyle(
+                                    statutTone(item.statut_occupation, active),
+                                  )}
+                                >
+                                  {item.statut_occupation_label ||
+                                    statutOccupationLabel(item.statut_occupation)}
                                 </span>
                               </td>
 
                               <td style={styles.td}>
-                                {item.surface ? `${item.surface} m²` : "—"}
+                                <p style={styles.rowTitle}>
+                                  {item.telephone || "Téléphone non renseigné"}
+                                </p>
+                                <p style={styles.muted}>
+                                  {item.email || "Email non renseigné"}
+                                </p>
                               </td>
 
                               <td style={styles.td}>
-                                {item.nombre_pieces !== null &&
-                                item.nombre_pieces !== undefined
-                                  ? formatNumber(item.nombre_pieces)
+                                <p style={styles.rowTitle}>
+                                  {item.coproprietaire_display || "Non rattaché"}
+                                </p>
+                                <p style={styles.muted}>Référence propriétaire</p>
+                              </td>
+
+                              <td style={styles.td}>
+                                {item.nombre_occupants
+                                  ? formatNumber(item.nombre_occupants)
                                   : "—"}
                               </td>
 
                               <td style={styles.td}>
-                                {tantiemes > 0 ? formatNumber(tantiemes) : "—"}
+                                <p style={styles.rowTitle}>
+                                  {item.periode_label || "Non renseignée"}
+                                </p>
+                                <p style={styles.muted}>
+                                  {item.date_entree || "—"} →{" "}
+                                  {item.date_sortie || "en cours"}
+                                </p>
                               </td>
 
                               <td style={styles.td}>
-                                <p style={styles.rowTitle}>
-                                  {item.proprietaire_principal_display ||
-                                    "Non affecté"}
-                                </p>
-                                <p style={styles.muted}>Propriétaire principal</p>
-                              </td>
-
-                              <td style={styles.td}>
-                                <p style={styles.rowTitle}>
-                                  {item.occupant_principal_display ||
-                                    "Non renseigné"}
-                                </p>
-                                <p style={styles.muted}>Habitant réel du lot</p>
+                                <span style={badgeStyle(active ? "success" : "neutral")}>
+                                  {active ? "Actif" : "Clôturé"}
+                                </span>
                               </td>
 
                               <td style={styles.tdRight}>
@@ -1241,26 +1362,41 @@ export default function PlatformLots() {
                                     Modifier
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => void toggle(item)}
-                                    disabled={actionBusy}
-                                    style={{
-                                      ...styles.buttonNeutral,
-                                      minHeight: 34,
-                                      fontSize: 12,
-                                      opacity: actionBusy ? 0.65 : 1,
-                                      cursor: actionBusy
-                                        ? "not-allowed"
-                                        : "pointer",
-                                    }}
-                                  >
-                                    {actionBusy
-                                      ? "Traitement..."
-                                      : item.actif
-                                        ? "Désactiver"
-                                        : "Activer"}
-                                  </button>
+                                  {active ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void cloturer(item)}
+                                      disabled={actionBusy}
+                                      style={{
+                                        ...styles.buttonNeutral,
+                                        minHeight: 34,
+                                        fontSize: 12,
+                                        opacity: actionBusy ? 0.65 : 1,
+                                        cursor: actionBusy
+                                          ? "not-allowed"
+                                          : "pointer",
+                                      }}
+                                    >
+                                      {actionBusy ? "Traitement..." : "Clôturer"}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => void rouvrir(item)}
+                                      disabled={actionBusy}
+                                      style={{
+                                        ...styles.buttonNeutral,
+                                        minHeight: 34,
+                                        fontSize: 12,
+                                        opacity: actionBusy ? 0.65 : 1,
+                                        cursor: actionBusy
+                                          ? "not-allowed"
+                                          : "pointer",
+                                      }}
+                                    >
+                                      {actionBusy ? "Traitement..." : "Rouvrir"}
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -1277,59 +1413,57 @@ export default function PlatformLots() {
           <aside style={styles.side}>
             <div style={styles.sideCard}>
               <p style={styles.sideEyebrow}>Lecture métier</p>
-              <h2 style={styles.sideTitle}>Lot ≠ occupant</h2>
+              <h2 style={styles.sideTitle}>Habitant réel du lot</h2>
               <p style={styles.sideText}>
-                Le lot représente l’unité immobilière. L’occupant principal
-                représente la personne qui habite réellement le logement. Cette
-                distinction évite de confondre propriétaire juridique, locataire
-                et ayant droit.
+                Cette page sert à identifier qui habite réellement dans le lot,
+                sans confondre cette personne avec le propriétaire juridique.
               </p>
             </div>
 
             <div style={styles.sideCardBlue}>
-              <p style={styles.sideEyebrow}>Informations utiles</p>
-              <h2 style={styles.sideTitle}>Fiche lot enrichie</h2>
+              <p style={styles.sideEyebrow}>Informations retenues</p>
+              <h2 style={styles.sideTitle}>Version équilibrée</h2>
 
               <div style={styles.checklist}>
                 <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Bâtiment / bloc</span>
+                  <span style={styles.checklistLabel}>Occupant principal</span>
                   <span style={styles.checklistValue}>Oui</span>
                 </div>
                 <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Escalier</span>
+                  <span style={styles.checklistLabel}>Statut occupation</span>
                   <span style={styles.checklistValue}>Oui</span>
                 </div>
                 <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Niveau / étage</span>
+                  <span style={styles.checklistLabel}>Contact</span>
                   <span style={styles.checklistValue}>Oui</span>
                 </div>
                 <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Surface</span>
+                  <span style={styles.checklistLabel}>Nombre occupants</span>
                   <span style={styles.checklistValue}>Oui</span>
                 </div>
                 <div style={styles.checklistItem}>
-                  <span style={styles.checklistLabel}>Nombre de pièces</span>
-                  <span style={styles.checklistValue}>Optionnel</span>
+                  <span style={styles.checklistLabel}>Tous les noms du foyer</span>
+                  <span style={styles.checklistValue}>Non</span>
                 </div>
               </div>
             </div>
 
             <div style={styles.sideCardAmber}>
-              <p style={styles.sideEyebrow}>Suite du sprint</p>
-              <h2 style={styles.sideTitle}>Occupants / habitants</h2>
+              <p style={styles.sideEyebrow}>Protection</p>
+              <h2 style={styles.sideTitle}>Pas trop intrusif</h2>
               <p style={styles.sideText}>
-                Après cette page, nous brancherons la gestion des occupants :
-                occupant principal, statut d’occupation, contact, nombre
-                d’occupants, date d’entrée et contact d’urgence.
+                Le SaaS conserve l’information utile au syndic sans devenir trop
+                intrusif : on enregistre l’occupant principal et le nombre total
+                d’occupants, pas toute la composition familiale.
               </p>
             </div>
 
             <div style={styles.sideCardGreen}>
-              <p style={styles.sideEyebrow}>Cohérence</p>
-              <h2 style={styles.sideTitle}>Tantièmes séparés</h2>
+              <p style={styles.sideEyebrow}>Utilité</p>
+              <h2 style={styles.sideTitle}>Interventions & communication</h2>
               <p style={styles.sideText}>
-                Les tantièmes restent pilotés dans l’écran dédié afin de garder
-                les calculs AG, charges et votes juridiquement propres.
+                Ces données serviront aux signalements, notifications, visites
+                techniques, urgences, travaux et communication quotidienne.
               </p>
             </div>
           </aside>

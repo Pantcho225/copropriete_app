@@ -6,7 +6,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.core.models import Copropriete
-from .models import Coproprietaire, ProprietaireLot
+from .models import Coproprietaire, LotOccupant, ProprietaireLot
 
 
 class CoproprieteLiteSerializer(serializers.ModelSerializer):
@@ -44,10 +44,18 @@ class LotLiteSerializer(serializers.Serializer):
     reference = serializers.CharField(read_only=True)
     numero = serializers.CharField(read_only=True)
     batiment = serializers.CharField(read_only=True)
+    escalier = serializers.CharField(read_only=True)
     etage = serializers.CharField(read_only=True)
     porte = serializers.CharField(read_only=True)
     type_lot = serializers.CharField(read_only=True)
     statut = serializers.CharField(read_only=True)
+    nombre_pieces = serializers.IntegerField(read_only=True)
+    surface = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+    )
     actif = serializers.BooleanField(read_only=True)
 
 
@@ -61,6 +69,7 @@ class CoproprietaireListSerializer(serializers.ModelSerializer):
     copropriete_nom = serializers.CharField(source="copropriete.nom", read_only=True)
 
     lots_actifs_count = serializers.SerializerMethodField()
+    occupants_declares_count = serializers.SerializerMethodField()
 
     user_account_id = serializers.SerializerMethodField()
     user_account_email = serializers.SerializerMethodField()
@@ -86,6 +95,7 @@ class CoproprietaireListSerializer(serializers.ModelSerializer):
             "pays",
             "actif",
             "lots_actifs_count",
+            "occupants_declares_count",
             "user_account_id",
             "user_account_email",
             "user_account_username",
@@ -100,6 +110,7 @@ class CoproprietaireListSerializer(serializers.ModelSerializer):
             "display_name",
             "contact_label",
             "lots_actifs_count",
+            "occupants_declares_count",
             "user_account_id",
             "user_account_email",
             "user_account_username",
@@ -111,6 +122,9 @@ class CoproprietaireListSerializer(serializers.ModelSerializer):
 
     def get_lots_actifs_count(self, obj):
         return obj.lots_possedes.filter(date_fin__isnull=True).count()
+
+    def get_occupants_declares_count(self, obj):
+        return obj.occupants_declares.filter(actif=True, date_sortie__isnull=True).count()
 
     def get_user_account_id(self, obj):
         return obj.user_account_id
@@ -149,6 +163,7 @@ class CoproprietaireSerializer(serializers.ModelSerializer):
 
     lots_actifs_count = serializers.SerializerMethodField()
     lots_historiques_count = serializers.SerializerMethodField()
+    occupants_declares_count = serializers.SerializerMethodField()
 
     user_account_id = serializers.SerializerMethodField()
     user_account_email = serializers.SerializerMethodField()
@@ -177,6 +192,7 @@ class CoproprietaireSerializer(serializers.ModelSerializer):
             "contact_label",
             "lots_actifs_count",
             "lots_historiques_count",
+            "occupants_declares_count",
             "user_account_id",
             "user_account_email",
             "user_account_username",
@@ -192,6 +208,7 @@ class CoproprietaireSerializer(serializers.ModelSerializer):
             "contact_label",
             "lots_actifs_count",
             "lots_historiques_count",
+            "occupants_declares_count",
             "user_account_id",
             "user_account_email",
             "user_account_username",
@@ -206,6 +223,9 @@ class CoproprietaireSerializer(serializers.ModelSerializer):
 
     def get_lots_historiques_count(self, obj):
         return obj.lots_possedes.count()
+
+    def get_occupants_declares_count(self, obj):
+        return obj.occupants_declares.filter(actif=True, date_sortie__isnull=True).count()
 
     def get_user_account_id(self, obj):
         return obj.user_account_id
@@ -474,8 +494,11 @@ class ProprietaireLotSerializer(serializers.ModelSerializer):
             "reference": getattr(lot, "reference", None),
             "numero": getattr(lot, "numero", None),
             "batiment": getattr(lot, "batiment", None),
+            "escalier": getattr(lot, "escalier", None),
             "etage": getattr(lot, "etage", None),
             "porte": getattr(lot, "porte", None),
+            "nombre_pieces": getattr(lot, "nombre_pieces", None),
+            "surface": getattr(lot, "surface", None),
             "type_lot": getattr(lot, "type_lot", None),
             "statut": getattr(lot, "statut", None),
             "actif": getattr(lot, "actif", None),
@@ -562,7 +585,6 @@ class ProprietaireLotSerializer(serializers.ModelSerializer):
             getattr(instance, "quote_part", Decimal("100.00")),
         )
 
-        # Si la copropriété n'est pas envoyée, on l'infère depuis le lot.
         if not copropriete and lot:
             copropriete = lot.copropriete
             attrs["copropriete"] = copropriete
@@ -649,6 +671,374 @@ class ProprietaireLotSerializer(serializers.ModelSerializer):
                         "quote_part": (
                             "La somme des quotes-parts actives du lot ne peut pas "
                             "dépasser 100%."
+                        )
+                    }
+                )
+
+        return attrs
+
+
+class LotOccupantListSerializer(serializers.ModelSerializer):
+    """
+    Version compacte pour les listes d'occupants / habitants de lots.
+    """
+
+    copropriete_nom = serializers.CharField(source="copropriete.nom", read_only=True)
+
+    lot_reference = serializers.SerializerMethodField()
+    lot_label = serializers.SerializerMethodField()
+
+    coproprietaire_display = serializers.SerializerMethodField()
+
+    display_name = serializers.CharField(read_only=True)
+    contact_label = serializers.CharField(read_only=True)
+    statut_occupation_label = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+    periode_label = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = LotOccupant
+        fields = (
+            "id",
+            "copropriete",
+            "copropriete_nom",
+            "lot",
+            "lot_reference",
+            "lot_label",
+            "coproprietaire",
+            "coproprietaire_display",
+            "nom",
+            "prenom",
+            "display_name",
+            "telephone",
+            "email",
+            "contact_label",
+            "statut_occupation",
+            "statut_occupation_label",
+            "occupant_principal",
+            "nombre_occupants",
+            "date_entree",
+            "date_sortie",
+            "contact_urgence_nom",
+            "contact_urgence_telephone",
+            "actif",
+            "is_active",
+            "periode_label",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "copropriete_nom",
+            "lot_reference",
+            "lot_label",
+            "coproprietaire_display",
+            "display_name",
+            "contact_label",
+            "statut_occupation_label",
+            "is_active",
+            "periode_label",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_lot_reference(self, obj):
+        return (
+            getattr(obj.lot, "reference", None)
+            or getattr(obj.lot, "numero", None)
+            or str(obj.lot_id)
+        )
+
+    def get_lot_label(self, obj):
+        lot = obj.lot
+
+        reference = (
+            getattr(lot, "reference", None)
+            or getattr(lot, "numero", None)
+            or str(obj.lot_id)
+        )
+
+        parts = [reference]
+
+        batiment = getattr(lot, "batiment", None)
+        etage = getattr(lot, "etage", None)
+        porte = getattr(lot, "porte", None)
+
+        if batiment:
+            parts.append(f"Bât. {batiment}")
+
+        if etage:
+            parts.append(f"Étage {etage}")
+
+        if porte:
+            parts.append(f"Porte {porte}")
+
+        return " · ".join(parts)
+
+    def get_coproprietaire_display(self, obj):
+        coproprietaire = getattr(obj, "coproprietaire", None)
+        return coproprietaire.display_name if coproprietaire else ""
+
+    def get_statut_occupation_label(self, obj):
+        return obj.get_statut_occupation_display()
+
+
+class LotOccupantSerializer(serializers.ModelSerializer):
+    """
+    Serializer complet pour l'occupant / habitant réel d'un lot.
+    """
+
+    copropriete_detail = CoproprieteLiteSerializer(
+        source="copropriete",
+        read_only=True,
+    )
+
+    coproprietaire_detail = CoproprietaireListSerializer(
+        source="coproprietaire",
+        read_only=True,
+    )
+
+    lot_detail = serializers.SerializerMethodField()
+
+    coproprietaire_display = serializers.SerializerMethodField()
+    lot_reference = serializers.SerializerMethodField()
+    lot_label = serializers.SerializerMethodField()
+
+    display_name = serializers.CharField(read_only=True)
+    contact_label = serializers.CharField(read_only=True)
+    statut_occupation_label = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+    periode_label = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = LotOccupant
+        fields = (
+            "id",
+            "copropriete",
+            "copropriete_detail",
+            "lot",
+            "lot_detail",
+            "lot_reference",
+            "lot_label",
+            "coproprietaire",
+            "coproprietaire_detail",
+            "coproprietaire_display",
+            "nom",
+            "prenom",
+            "display_name",
+            "telephone",
+            "email",
+            "contact_label",
+            "statut_occupation",
+            "statut_occupation_label",
+            "occupant_principal",
+            "nombre_occupants",
+            "date_entree",
+            "date_sortie",
+            "contact_urgence_nom",
+            "contact_urgence_telephone",
+            "notes",
+            "actif",
+            "is_active",
+            "periode_label",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "copropriete_detail",
+            "lot_detail",
+            "lot_reference",
+            "lot_label",
+            "coproprietaire_detail",
+            "coproprietaire_display",
+            "display_name",
+            "contact_label",
+            "statut_occupation_label",
+            "is_active",
+            "periode_label",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_lot_detail(self, obj):
+        lot = obj.lot
+
+        return {
+            "id": lot.id,
+            "reference": getattr(lot, "reference", None),
+            "numero": getattr(lot, "numero", None),
+            "batiment": getattr(lot, "batiment", None),
+            "escalier": getattr(lot, "escalier", None),
+            "etage": getattr(lot, "etage", None),
+            "porte": getattr(lot, "porte", None),
+            "nombre_pieces": getattr(lot, "nombre_pieces", None),
+            "surface": getattr(lot, "surface", None),
+            "type_lot": getattr(lot, "type_lot", None),
+            "statut": getattr(lot, "statut", None),
+            "actif": getattr(lot, "actif", None),
+        }
+
+    def get_lot_reference(self, obj):
+        return (
+            getattr(obj.lot, "reference", None)
+            or getattr(obj.lot, "numero", None)
+            or str(obj.lot_id)
+        )
+
+    def get_lot_label(self, obj):
+        lot = obj.lot
+
+        reference = (
+            getattr(lot, "reference", None)
+            or getattr(lot, "numero", None)
+            or str(obj.lot_id)
+        )
+
+        parts = [reference]
+
+        batiment = getattr(lot, "batiment", None)
+        etage = getattr(lot, "etage", None)
+        porte = getattr(lot, "porte", None)
+
+        if batiment:
+            parts.append(f"Bât. {batiment}")
+
+        if etage:
+            parts.append(f"Étage {etage}")
+
+        if porte:
+            parts.append(f"Porte {porte}")
+
+        return " · ".join(parts)
+
+    def get_coproprietaire_display(self, obj):
+        coproprietaire = getattr(obj, "coproprietaire", None)
+        return coproprietaire.display_name if coproprietaire else ""
+
+    def get_statut_occupation_label(self, obj):
+        return obj.get_statut_occupation_display()
+
+    def validate_nom(self, value):
+        value = (value or "").strip()
+
+        if not value:
+            raise serializers.ValidationError("Le nom de l’occupant est obligatoire.")
+
+        return value
+
+    def validate_prenom(self, value):
+        return (value or "").strip()
+
+    def validate_email(self, value):
+        return (value or "").strip().lower()
+
+    def validate_telephone(self, value):
+        return (value or "").strip()
+
+    def validate_contact_urgence_nom(self, value):
+        return (value or "").strip()
+
+    def validate_contact_urgence_telephone(self, value):
+        return (value or "").strip()
+
+    def validate_nombre_occupants(self, value):
+        if value is not None and value < 1:
+            raise serializers.ValidationError(
+                "Le nombre total d’occupants doit être au moins égal à 1."
+            )
+
+        return value
+
+    def validate(self, attrs):
+        instance = self.instance
+
+        lot = attrs.get("lot", getattr(instance, "lot", None))
+        coproprietaire = attrs.get(
+            "coproprietaire",
+            getattr(instance, "coproprietaire", None),
+        )
+        copropriete = attrs.get(
+            "copropriete",
+            getattr(instance, "copropriete", None),
+        )
+
+        date_entree = attrs.get(
+            "date_entree",
+            getattr(instance, "date_entree", None),
+        )
+        date_sortie = attrs.get(
+            "date_sortie",
+            getattr(instance, "date_sortie", None),
+        )
+
+        occupant_principal = attrs.get(
+            "occupant_principal",
+            getattr(instance, "occupant_principal", True),
+        )
+
+        actif = attrs.get(
+            "actif",
+            getattr(instance, "actif", True),
+        )
+
+        if not copropriete and lot:
+            copropriete = lot.copropriete
+            attrs["copropriete"] = copropriete
+
+        if not copropriete:
+            raise serializers.ValidationError(
+                {"copropriete": "La copropriété est obligatoire."}
+            )
+
+        if not lot:
+            raise serializers.ValidationError(
+                {"lot": "Le lot est obligatoire."}
+            )
+
+        if getattr(lot, "copropriete_id", None) != copropriete.id:
+            raise serializers.ValidationError(
+                {"lot": "Le lot doit appartenir à la même copropriété."}
+            )
+
+        if coproprietaire and coproprietaire.copropriete_id != copropriete.id:
+            raise serializers.ValidationError(
+                {
+                    "coproprietaire": (
+                        "Le copropriétaire rattaché doit appartenir à la même copropriété."
+                    )
+                }
+            )
+
+        if date_sortie and date_entree and date_sortie < date_entree:
+            raise serializers.ValidationError(
+                {
+                    "date_sortie": (
+                        "La date de sortie ne peut pas être antérieure à la date d’entrée."
+                    )
+                }
+            )
+
+        if date_sortie:
+            attrs["actif"] = False
+            actif = False
+
+        if occupant_principal and actif and not date_sortie:
+            qs = LotOccupant.objects.filter(
+                lot=lot,
+                occupant_principal=True,
+                actif=True,
+                date_sortie__isnull=True,
+            )
+
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {
+                        "occupant_principal": (
+                            "Un occupant principal actif existe déjà pour ce lot."
                         )
                     }
                 )

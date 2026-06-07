@@ -71,6 +71,7 @@ import PlatformCoproprieteForm from "./pages/platform-admin/PlatformCoproprieteF
 import PlatformCoproprieteDetail from "./pages/platform-admin/PlatformCoproprieteDetail";
 import PlatformCoproprietaires from "./pages/platform-admin/PlatformCoproprietaires";
 import PlatformLots from "./pages/platform-admin/PlatformLots";
+import PlatformOccupants from "./pages/platform-admin/PlatformOccupants";
 import PlatformTantiemes from "./pages/platform-admin/PlatformTantiemes";
 import PlatformUsersRoles from "./pages/platform-admin/PlatformUsersRoles";
 
@@ -138,10 +139,7 @@ export default function App() {
               path="reglement-textes"
               element={<ReglementTextesApplicables />}
             />
-            <Route
-              path="documents"
-              element={<DocumentsAdministratifs />}
-            />
+            <Route path="documents" element={<DocumentsAdministratifs />} />
           </Route>
 
           {/* Comptabilité */}
@@ -276,6 +274,10 @@ export default function App() {
             <Route
               path="referentiel-copropriete/lots"
               element={<PlatformLots />}
+            />
+            <Route
+              path="referentiel-copropriete/occupants"
+              element={<PlatformOccupants />}
             />
             <Route
               path="referentiel-copropriete/tantiemes"

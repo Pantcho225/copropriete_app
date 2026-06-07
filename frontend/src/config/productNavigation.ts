@@ -17,12 +17,20 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: "Vue d’ensemble", to: "/gestion-administrative" },
       { label: "Copropriété", to: "/gestion-administrative/copropriete" },
       {
-        label: "Copropriétaires & occupants",
+        label: "Référentiel copropriété",
+        to: "/platform-admin/referentiel-copropriete",
+      },
+      {
+        label: "Copropriétaires",
         to: "/platform-admin/referentiel-copropriete/coproprietaires",
       },
       {
         label: "Lots & tantièmes",
-        to: "/platform-admin/referentiel-copropriete",
+        to: "/platform-admin/referentiel-copropriete/lots",
+      },
+      {
+        label: "Résidents des lots",
+        to: "/platform-admin/referentiel-copropriete/occupants",
       },
       { label: "Assemblées générales", to: "/ag" },
       { label: "Mandats de représentation", to: "/ag/procurations" },
@@ -123,7 +131,7 @@ export function getPageTitle(pathname: string): string {
     return "Modifier un contrat";
   }
 
-  // Lots
+  // Lots opérationnels
   if (pathname === "/lots") return "Liste des lots";
   if (pathname === "/lots/nouveau") return "Nouveau lot";
   if (pathname.startsWith("/lots/") && pathname.endsWith("/modifier")) {
@@ -220,13 +228,16 @@ export function getPageTitle(pathname: string): string {
     return "Utilisateurs & rôles";
   }
   if (pathname === "/platform-admin/referentiel-copropriete") {
-    return "Lots & tantièmes";
+    return "Référentiel copropriété";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
-    return "Copropriétaires & occupants";
+    return "Copropriétaires";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/lots") {
-    return "Lots du référentiel";
+    return "Lots & tantièmes";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/occupants") {
+    return "Résidents des lots";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/tantiemes") {
     return "Tantièmes";
@@ -317,7 +328,7 @@ export function getPageSubtitle(pathname: string): string {
     return "Mettez à jour les informations du contrat sélectionné.";
   }
 
-  // Lots
+  // Lots opérationnels
   if (pathname === "/lots") {
     return "Consultez les lots de la copropriété et leurs principales informations de référence.";
   }
@@ -439,13 +450,16 @@ export function getPageSubtitle(pathname: string): string {
     return "Gérez les rattachements utilisateurs, les rôles locaux et les accès aux copropriétés.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete") {
-    return "Pilotez les lots, les tantièmes, les copropriétaires et les affectations nécessaires aux modules opérationnels.";
+    return "Pilotez le référentiel central : copropriétaires, résidents des lots, lots, tantièmes et affectations nécessaires aux modules opérationnels.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/coproprietaires") {
-    return "Créez et maintenez les copropriétaires, occupants et contacts rattachés à la copropriété active.";
+    return "Créez et maintenez les copropriétaires, leurs contacts, leurs accès et consultez le nombre de résidents déclarés sur leurs lots.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/lots") {
-    return "Créez et maintenez les lots de référence, leurs caractéristiques, leur bâtiment, leur étage et leur rattachement à la copropriété.";
+    return "Créez et maintenez les lots de référence, leurs caractéristiques, leur bâtiment, leur étage, leur surface et leur nombre de pièces.";
+  }
+  if (pathname === "/platform-admin/referentiel-copropriete/occupants") {
+    return "Gérez les résidents réellement rattachés aux lots : propriétaire occupant, locataire, ayant droit, contact, nombre d’occupants, date d’entrée et historique de sortie.";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/tantiemes") {
     return "Paramétrez les catégories et valeurs de tantièmes utilisées pour les répartitions, les votes et les appels de fonds.";

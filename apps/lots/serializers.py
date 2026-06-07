@@ -46,6 +46,7 @@ class LotListSerializer(serializers.ModelSerializer):
     )
 
     proprietaire_principal_display = serializers.CharField(read_only=True)
+    occupant_principal_display = serializers.CharField(read_only=True)
 
     class Meta:
         model = Lot
@@ -62,10 +63,12 @@ class LotListSerializer(serializers.ModelSerializer):
             "escalier",
             "etage",
             "porte",
+            "nombre_pieces",
             "surface",
             "actif",
             "total_tantiemes_value",
             "proprietaire_principal_display",
+            "occupant_principal_display",
             "created_at",
             "updated_at",
         )
@@ -75,6 +78,7 @@ class LotListSerializer(serializers.ModelSerializer):
             "label",
             "total_tantiemes_value",
             "proprietaire_principal_display",
+            "occupant_principal_display",
             "created_at",
             "updated_at",
         )
@@ -107,6 +111,8 @@ class LotSerializer(serializers.ModelSerializer):
     tantiemes_par_categorie = serializers.SerializerMethodField()
     proprietaire_principal_display = serializers.CharField(read_only=True)
     proprietaire_principal = serializers.SerializerMethodField()
+    occupant_principal_display = serializers.CharField(read_only=True)
+    occupant_principal = serializers.SerializerMethodField()
 
     class Meta:
         model = Lot
@@ -123,6 +129,7 @@ class LotSerializer(serializers.ModelSerializer):
             "escalier",
             "etage",
             "porte",
+            "nombre_pieces",
             "description",
             "surface",
             "actif",
@@ -130,6 +137,8 @@ class LotSerializer(serializers.ModelSerializer):
             "tantiemes_par_categorie",
             "proprietaire_principal",
             "proprietaire_principal_display",
+            "occupant_principal",
+            "occupant_principal_display",
             "created_at",
             "updated_at",
         )
@@ -141,6 +150,8 @@ class LotSerializer(serializers.ModelSerializer):
             "tantiemes_par_categorie",
             "proprietaire_principal",
             "proprietaire_principal_display",
+            "occupant_principal",
+            "occupant_principal_display",
             "created_at",
             "updated_at",
         )
@@ -169,6 +180,28 @@ class LotSerializer(serializers.ModelSerializer):
             "quote_part": affectation.quote_part,
         }
 
+    def get_occupant_principal(self, obj):
+        occupant = obj.occupant_principal
+
+        if not occupant:
+            return None
+
+        return {
+            "id": occupant.id,
+            "display_name": occupant.display_name,
+            "nom": occupant.nom,
+            "prenom": occupant.prenom,
+            "telephone": occupant.telephone,
+            "email": occupant.email,
+            "statut_occupation": occupant.statut_occupation,
+            "statut_occupation_label": occupant.get_statut_occupation_display(),
+            "nombre_occupants": occupant.nombre_occupants,
+            "date_entree": occupant.date_entree,
+            "date_sortie": occupant.date_sortie,
+            "actif": occupant.actif,
+            "contact_label": occupant.contact_label,
+        }
+
     def validate_reference(self, value):
         reference = (value or "").strip().upper()
 
@@ -186,6 +219,14 @@ class LotSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError(
                 "La surface doit être supérieure ou égale à 0."
+            )
+
+        return value
+
+    def validate_nombre_pieces(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError(
+                "Le nombre de pièces ne peut pas être négatif."
             )
 
         return value

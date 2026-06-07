@@ -5,7 +5,9 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 
 from apps.core.models import Copropriete, TimeStampedModel
 
@@ -86,7 +88,6 @@ class Coproprietaire(TimeStampedModel):
 
     actif = models.BooleanField(default=True, db_index=True)
 
-    # Compatibilité avec votre ancien modèle.
     date_creation = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
@@ -185,7 +186,6 @@ class ProprietaireLot(TimeStampedModel):
         db_index=True,
     )
 
-    # Important : pas d'import direct de Lot pour éviter les imports circulaires.
     lot = models.ForeignKey(
         "lots.Lot",
         on_delete=models.CASCADE,
@@ -293,8 +293,6 @@ class ProprietaireLot(TimeStampedModel):
                 {"quote_part": "La quote-part ne peut pas dépasser 100%."}
             )
 
-        # Un seul propriétaire principal actif par lot.
-        # On autorise plusieurs propriétaires actifs non principaux en cas d'indivision.
         if self.principal and not self.date_fin and self.lot_id:
             exists = (
                 ProprietaireLot.objects.filter(
@@ -315,7 +313,6 @@ class ProprietaireLot(TimeStampedModel):
                     }
                 )
 
-        # Contrôle simple : la somme des quotes-parts actives ne doit pas dépasser 100%.
         if self.lot_id and not self.date_fin:
             active_qs = ProprietaireLot.objects.filter(
                 lot_id=self.lot_id,
@@ -360,3 +357,241 @@ class ProprietaireLot(TimeStampedModel):
             return f"Du {self.date_debut} au {self.date_fin}"
 
         return f"Depuis le {self.date_debut}"
+
+
+class LotOccupant(TimeStampedModel):
+    """
+    Occupant ou habitant réel d'un lot.
+
+    Ce modèle complète le référentiel propriétaire/lot :
+    - le propriétaire juridique peut ne pas habiter le lot ;
+    - l'occupant réel peut être un locataire, un ayant droit ou autre ;
+    - on conserve l'historique par date d'entrée / date de sortie ;
+    - un seul occupant principal actif est autorisé par lot.
+    """
+
+    class StatutOccupation(models.TextChoices):
+        PROPRIETAIRE_OCCUPANT = (
+            "PROPRIETAIRE_OCCUPANT",
+            "Propriétaire occupant",
+        )
+        LOCATAIRE = "LOCATAIRE", "Locataire"
+        AYANT_DROIT = "AYANT_DROIT", "Ayant droit"
+        AUTRE = "AUTRE", "Autre"
+
+    copropriete = models.ForeignKey(
+        Copropriete,
+        on_delete=models.CASCADE,
+        related_name="occupants_lots",
+        db_index=True,
+    )
+
+    lot = models.ForeignKey(
+        "lots.Lot",
+        on_delete=models.CASCADE,
+        related_name="occupants",
+        db_index=True,
+    )
+
+    coproprietaire = models.ForeignKey(
+        Coproprietaire,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="occupants_declares",
+        db_index=True,
+        help_text=(
+            "Copropriétaire de référence si l'occupant est propriétaire occupant "
+            "ou ayant droit lié à un copropriétaire."
+        ),
+    )
+
+    nom = models.CharField(max_length=120, db_index=True)
+    prenom = models.CharField(max_length=120, blank=True, db_index=True)
+
+    telephone = models.CharField(max_length=40, blank=True, db_index=True)
+    email = models.EmailField(blank=True, db_index=True)
+
+    statut_occupation = models.CharField(
+        max_length=40,
+        choices=StatutOccupation.choices,
+        default=StatutOccupation.PROPRIETAIRE_OCCUPANT,
+        db_index=True,
+    )
+
+    occupant_principal = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Occupant principal actif du lot.",
+    )
+
+    nombre_occupants = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text="Nombre total d'occupants déclarés pour le logement.",
+    )
+
+    date_entree = models.DateField(null=True, blank=True, db_index=True)
+    date_sortie = models.DateField(null=True, blank=True, db_index=True)
+
+    contact_urgence_nom = models.CharField(max_length=160, blank=True)
+    contact_urgence_telephone = models.CharField(max_length=40, blank=True)
+
+    notes = models.TextField(blank=True)
+
+    actif = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ("lot__reference", "-occupant_principal", "-date_entree", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lot"],
+                condition=Q(
+                    occupant_principal=True,
+                    actif=True,
+                    date_sortie__isnull=True,
+                ),
+                name="uniq_occupant_principal_actif_par_lot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["copropriete", "actif"]),
+            models.Index(fields=["copropriete", "statut_occupation"]),
+            models.Index(fields=["lot", "actif"]),
+            models.Index(fields=["lot", "occupant_principal", "actif"]),
+            models.Index(fields=["nom", "prenom"]),
+            models.Index(fields=["telephone"]),
+            models.Index(fields=["email"]),
+            models.Index(fields=["date_entree", "date_sortie"]),
+        ]
+
+    def __str__(self) -> str:
+        lot_ref = getattr(self.lot, "reference", None) or str(self.lot_id)
+        return f"{self.display_name} — {lot_ref}"
+
+    def clean(self):
+        if not self.copropriete_id:
+            raise ValidationError({"copropriete": "La copropriété est obligatoire."})
+
+        if not self.lot_id:
+            raise ValidationError({"lot": "Le lot est obligatoire."})
+
+        if self.lot_id and self.copropriete_id:
+            lot_copropriete_id = getattr(self.lot, "copropriete_id", None)
+            if lot_copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {"lot": "Le lot doit appartenir à la même copropriété."}
+                )
+
+        if self.coproprietaire_id and self.copropriete_id:
+            owner_copropriete_id = getattr(
+                self.coproprietaire,
+                "copropriete_id",
+                None,
+            )
+            if owner_copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {
+                        "coproprietaire": (
+                            "Le copropriétaire rattaché doit appartenir à la même "
+                            "copropriété."
+                        )
+                    }
+                )
+
+        if not self.nom or not self.nom.strip():
+            raise ValidationError({"nom": "Le nom de l’occupant est obligatoire."})
+
+        self.nom = self.nom.strip()
+
+        if self.prenom:
+            self.prenom = self.prenom.strip()
+
+        if self.email:
+            self.email = self.email.strip().lower()
+
+        if self.telephone:
+            self.telephone = self.telephone.strip()
+
+        if self.contact_urgence_nom:
+            self.contact_urgence_nom = self.contact_urgence_nom.strip()
+
+        if self.contact_urgence_telephone:
+            self.contact_urgence_telephone = self.contact_urgence_telephone.strip()
+
+        if self.nombre_occupants is not None and self.nombre_occupants < 1:
+            raise ValidationError(
+                {"nombre_occupants": "Le nombre d’occupants doit être au moins égal à 1."}
+            )
+
+        if self.date_sortie and self.date_entree and self.date_sortie < self.date_entree:
+            raise ValidationError(
+                {
+                    "date_sortie": (
+                        "La date de sortie ne peut pas être antérieure à la date d’entrée."
+                    )
+                }
+            )
+
+        if self.date_sortie:
+            self.actif = False
+
+        if self.occupant_principal and self.actif and not self.date_sortie and self.lot_id:
+            exists = (
+                LotOccupant.objects.filter(
+                    lot_id=self.lot_id,
+                    occupant_principal=True,
+                    actif=True,
+                    date_sortie__isnull=True,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            )
+
+            if exists:
+                raise ValidationError(
+                    {
+                        "occupant_principal": (
+                            "Un occupant principal actif existe déjà pour ce lot."
+                        )
+                    }
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def display_name(self) -> str:
+        full_name = f"{self.prenom} {self.nom}".strip()
+        return full_name or self.nom
+
+    @property
+    def contact_label(self) -> str:
+        parts = []
+
+        if self.email:
+            parts.append(self.email)
+
+        if self.telephone:
+            parts.append(self.telephone)
+
+        return " / ".join(parts)
+
+    @property
+    def is_active(self) -> bool:
+        return self.actif and self.date_sortie is None
+
+    @property
+    def periode_label(self) -> str:
+        if self.date_entree and self.date_sortie:
+            return f"Du {self.date_entree} au {self.date_sortie}"
+
+        if self.date_entree:
+            return f"Depuis le {self.date_entree}"
+
+        if self.date_sortie:
+            return f"Sorti le {self.date_sortie}"
+
+        return "Période non renseignée"
