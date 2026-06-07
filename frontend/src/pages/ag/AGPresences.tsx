@@ -86,6 +86,26 @@ function pickString(...values: unknown[]): string {
   return "";
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isMandatePresence(item: PresenceItem): boolean {
+  const comment = normalizeText(item.commentaire);
+
+  return (
+    item.present_ou_represente &&
+    Boolean(item.representant_nom.trim()) &&
+    (comment.includes("procuration") ||
+      comment.includes("mandat") ||
+      comment.includes("represent"))
+  );
+}
+
 function formatNumber(value?: number | null): string {
   if (value === null || value === undefined) return "0";
 
@@ -577,6 +597,7 @@ export default function AGPresences() {
         item.commentaire,
         item.present_ou_represente ? "présent représenté oui" : "absent non",
         item.is_zero_tantieme ? "zero tantieme poids nul" : "",
+        isMandatePresence(item) ? "mandat procuration représentation validée" : "",
       ]
         .join(" ")
         .toLowerCase();
@@ -588,6 +609,7 @@ export default function AGPresences() {
   const stats = useMemo(() => {
     const presents = rows.filter((x) => x.present_ou_represente);
     const zeroTantieme = rows.filter((x) => x.is_zero_tantieme);
+    const mandatePresences = rows.filter(isMandatePresence);
 
     return {
       totalLots: rows.length,
@@ -595,6 +617,7 @@ export default function AGPresences() {
       absents: rows.filter((x) => !x.present_ou_represente).length,
       tantiemesPresents: presents.reduce((sum, item) => sum + item.tantiemes, 0),
       zeroTantieme: zeroTantieme.length,
+      mandatePresences: mandatePresences.length,
     };
   }, [rows]);
 
@@ -604,6 +627,15 @@ export default function AGPresences() {
   }
 
   function fillForm(item: PresenceItem) {
+    if (isMandatePresence(item)) {
+      setMessage({
+        kind: "info",
+        text:
+          "Cette présence provient d’un mandat de représentation validé. Elle est verrouillée dans l’interface afin de préserver la cohérence entre mandat, présence, quorum, votes et procès-verbal.",
+      });
+      return;
+    }
+
     setEditingId(item.id);
     setForm({
       lot: item.lot,
@@ -658,6 +690,17 @@ export default function AGPresences() {
 
     if (!agId || !form.lot) return;
 
+    const currentEditingItem = rows.find((item) => item.id === editingId);
+
+    if (currentEditingItem && isMandatePresence(currentEditingItem)) {
+      setMessage({
+        kind: "error",
+        text:
+          "Cette présence provient d’un mandat validé et ne peut pas être modifiée directement depuis la saisie des présences.",
+      });
+      return;
+    }
+
     setBusyAction(editingId ? "update" : "create");
     setMessage(null);
     setBlockingReasons([]);
@@ -693,19 +736,28 @@ export default function AGPresences() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(item: PresenceItem) {
+    if (isMandatePresence(item)) {
+      setMessage({
+        kind: "error",
+        text:
+          "Suppression impossible depuis cette page : cette présence provient d’un mandat de représentation validé.",
+      });
+      return;
+    }
+
     const ok = window.confirm("Confirmer la suppression de cette présence ?");
     if (!ok) return;
 
-    setBusyAction(`delete-${id}`);
+    setBusyAction(`delete-${item.id}`);
     setMessage(null);
     setBlockingReasons([]);
 
     try {
-      await api.delete(buildPresenceDetailUrl(id));
+      await api.delete(buildPresenceDetailUrl(item.id));
       setMessage({ kind: "success", text: "Présence supprimée avec succès." });
 
-      if (editingId === id) {
+      if (editingId === item.id) {
         resetForm();
       }
 
@@ -747,14 +799,15 @@ export default function AGPresences() {
           <div style={heroAsidePanelStyle}>
             <div style={heroAsideTitleStyle}>Lecture métier</div>
             <div style={heroAsideTextStyle}>
-              Les tantièmes sont calculés automatiquement par le backend. Les lots à 0 tantième
-              restent visibles dans l’assemblée mais n’impactent pas le calcul pondéré des
-              décisions.
+              Les tantièmes sont calculés automatiquement par le backend. Les
+              présences issues d’un mandat validé sont protégées afin d’éviter une
+              rupture entre procuration, quorum, votes et procès-verbal.
             </div>
 
             <div style={heroBadgeStackStyle}>
               <Badge text={`${stats.totalLots} lots`} kind="neutral" />
               <Badge text={`${stats.presents} présents`} kind="success" />
+              <Badge text={`${stats.mandatePresences} par mandat`} kind="info" />
               <Badge text={`${stats.zeroTantieme} à 0 tantième`} kind="warning" />
             </div>
           </div>
@@ -812,6 +865,13 @@ export default function AGPresences() {
 
       <div className="ag-presences-kpi-grid ag-presences-kpi-grid-secondary">
         <SummaryCard
+          label="Présences par mandat"
+          value={stats.mandatePresences}
+          helper="Présences issues d’un mandat de représentation validé et protégées côté interface."
+          isLoading={state === "loading"}
+          tone="info"
+        />
+        <SummaryCard
           label="Lots à 0 tantième"
           value={stats.zeroTantieme}
           helper="Ils restent visibles mais ne pèsent pas dans le calcul pondéré."
@@ -823,7 +883,7 @@ export default function AGPresences() {
       <div className="ag-presences-main-grid">
         <SectionCard
           title={editingId ? "Modifier une présence" : "Enregistrer une présence"}
-          subtitle="Renseignez le lot, le statut de présence et les informations utiles de représentation."
+          subtitle="Renseignez le lot, le statut de présence et les informations utiles de représentation. Les présences issues d’un mandat validé sont protégées et ne se modifient pas depuis ce formulaire."
           right={editingId ? <Badge text="Mode édition" kind="info" /> : <Badge text="Saisie AG" kind="info" />}
           minHeight={560}
         >
@@ -892,8 +952,8 @@ export default function AGPresences() {
             </div>
 
             <div style={infoBoxStyle}>
-              Le poids de présence en tantièmes est calculé par le backend. Il n’est pas saisi
-              manuellement dans ce formulaire.
+              Le poids de présence en tantièmes est calculé par le backend. Il
+              n’est pas saisi manuellement dans ce formulaire.
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -928,7 +988,7 @@ export default function AGPresences() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher : lot, représentant, commentaire..."
+              placeholder="Rechercher : lot, représentant, mandat, commentaire..."
               style={inputStyle}
             />
 
@@ -947,62 +1007,108 @@ export default function AGPresences() {
               />
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {filtered.map((item) => (
-                  <div key={item.id} style={presenceCardStyle}>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
-                          Lot {item.lot_reference}
+                {filtered.map((item) => {
+                  const mandatePresence = isMandatePresence(item);
+
+                  return (
+                    <div
+                      key={item.id}
+                      style={{
+                        ...presenceCardStyle,
+                        ...(mandatePresence ? mandatePresenceCardStyle : {}),
+                      }}
+                    >
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+                            Lot {item.lot_reference}
+                          </div>
+
+                          {item.lot_type_lot ? (
+                            <Badge text={item.lot_type_lot} kind="neutral" />
+                          ) : null}
+
+                          <Badge
+                            text={item.present_ou_represente ? "Présent / représenté" : "Absent"}
+                            kind={item.present_ou_represente ? "success" : "warning"}
+                          />
+
+                          {mandatePresence ? (
+                            <Badge text="Mandat validé" kind="info" />
+                          ) : null}
+
+                          <Badge text={`${formatNumber(item.tantiemes)} tantièmes`} kind="info" />
+
+                          {item.is_zero_tantieme ? <Badge text="0 tantième" kind="warning" /> : null}
                         </div>
 
-                        {item.lot_type_lot ? <Badge text={item.lot_type_lot} kind="neutral" /> : null}
+                        <div style={{ fontSize: 13, color: "#374151" }}>
+                          <strong>Représentant :</strong> {item.representant_nom || "—"}
+                        </div>
 
-                        <Badge
-                          text={item.present_ou_represente ? "Présent / représenté" : "Absent"}
-                          kind={item.present_ou_represente ? "success" : "warning"}
-                        />
+                        <div style={{ fontSize: 13, color: "#374151" }}>
+                          <strong>Tantièmes AG retenus :</strong> {formatNumber(item.tantiemes)}
+                          {item.tantiemes_recalcules !== null &&
+                          item.tantiemes_recalcules !== undefined ? (
+                            <span style={{ color: "#6b7280" }}>
+                              {" "}
+                              — référence recalculée : {formatNumber(item.tantiemes_recalcules)}
+                            </span>
+                          ) : null}
+                        </div>
 
-                        <Badge text={`${formatNumber(item.tantiemes)} tantièmes`} kind="info" />
+                        <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.55 }}>
+                          <strong>Commentaire :</strong> {item.commentaire || "—"}
+                        </div>
 
-                        {item.is_zero_tantieme ? <Badge text="0 tantième" kind="warning" /> : null}
-                      </div>
+                        {mandatePresence ? (
+                          <div style={mandateInfoBoxStyle}>
+                            <strong>Présence issue d’un mandat validé.</strong> Cette
+                            ligne est protégée côté interface. Toute correction doit
+                            passer par un circuit encadré afin de préserver la cohérence
+                            entre mandat, quorum, votes et procès-verbal.
+                          </div>
+                        ) : null}
 
-                      <div style={{ fontSize: 13, color: "#374151" }}>
-                        <strong>Représentant :</strong> {item.representant_nom || "—"}
-                      </div>
-
-                      <div style={{ fontSize: 13, color: "#374151" }}>
-                        <strong>Tantièmes AG retenus :</strong> {formatNumber(item.tantiemes)}
-                        {item.tantiemes_recalcules !== null && item.tantiemes_recalcules !== undefined ? (
-                          <span style={{ color: "#6b7280" }}>
-                            {" "}
-                            — référence recalculée : {formatNumber(item.tantiemes_recalcules)}
-                          </span>
+                        {item.is_zero_tantieme ? (
+                          <div style={warningBoxStyle}>
+                            Ce lot a 0 tantième. Il reste visible dans l’AG mais ne sera
+                            pas pris en compte dans le calcul pondéré.
+                          </div>
                         ) : null}
                       </div>
 
-                      <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.55 }}>
-                        <strong>Commentaire :</strong> {item.commentaire || "—"}
-                      </div>
-
-                      {item.is_zero_tantieme ? (
-                        <div style={warningBoxStyle}>
-                          Ce lot a 0 tantième. Il reste visible dans l’AG mais ne sera pas pris en
-                          compte dans le calcul pondéré.
+                      {mandatePresence ? (
+                        <div style={lockedActionsStyle}>
+                          <Badge text="Modification encadrée" kind="info" />
+                          <div style={lockedActionsTextStyle}>
+                            Suppression désactivée pour les présences issues d’un mandat.
+                          </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <SmallButton onClick={() => fillForm(item)} disabled={busyAction !== null}>
+                            Modifier
+                          </SmallButton>
+                          <SmallButton
+                            danger
+                            onClick={() => void handleDelete(item)}
+                            disabled={busyAction !== null}
+                          >
+                            {busyAction === `delete-${item.id}` ? "Suppression..." : "Supprimer"}
+                          </SmallButton>
+                        </div>
+                      )}
                     </div>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <SmallButton onClick={() => fillForm(item)} disabled={busyAction !== null}>
-                        Modifier
-                      </SmallButton>
-                      <SmallButton danger onClick={() => void handleDelete(item.id)} disabled={busyAction !== null}>
-                        {busyAction === `delete-${item.id}` ? "Suppression..." : "Supprimer"}
-                      </SmallButton>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1010,8 +1116,9 @@ export default function AGPresences() {
       </div>
 
       <AlertBox kind="info" title="Lecture produit">
-        Cette page constitue la base du quorum et du vote. Toute incohérence ici impacte
-        directement les décisions en assemblée.
+        Cette page constitue la base du quorum et du vote. Toute incohérence ici
+        impacte directement les décisions en assemblée. Les présences issues d’un
+        mandat validé sont protégées dans l’interface.
       </AlertBox>
 
       <style>{`
@@ -1022,7 +1129,7 @@ export default function AGPresences() {
         }
 
         .ag-presences-kpi-grid-secondary {
-          grid-template-columns: repeat(1, minmax(0, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .ag-presences-main-grid {
@@ -1032,7 +1139,8 @@ export default function AGPresences() {
         }
 
         @media (max-width: 1280px) {
-          .ag-presences-kpi-grid {
+          .ag-presences-kpi-grid,
+          .ag-presences-kpi-grid-secondary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
@@ -1263,6 +1371,16 @@ const warningBoxStyle: CSSProperties = {
   lineHeight: 1.55,
 };
 
+const mandateInfoBoxStyle: CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  color: "#1d4ed8",
+  fontSize: 12,
+  lineHeight: 1.55,
+};
+
 const presenceCardStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr auto",
@@ -1273,4 +1391,21 @@ const presenceCardStyle: CSSProperties = {
   borderRadius: 14,
   background: "#fff",
   minWidth: 0,
+};
+
+const mandatePresenceCardStyle: CSSProperties = {
+  borderColor: "#bfdbfe",
+  background: "#f8fbff",
+};
+
+const lockedActionsStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  maxWidth: 180,
+};
+
+const lockedActionsTextStyle: CSSProperties = {
+  fontSize: 12,
+  color: "#64748b",
+  lineHeight: 1.45,
 };

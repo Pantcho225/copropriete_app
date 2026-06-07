@@ -19,16 +19,18 @@ type StatutFilter = "" | AGProcurationStatut;
 const statutOptions: Array<{ value: StatutFilter; label: string }> = [
   { value: "", label: "Tous les statuts" },
   { value: "EN_ATTENTE", label: "En attente" },
-  { value: "VALIDEE", label: "Validées" },
-  { value: "REJETEE", label: "Rejetées" },
-  { value: "ANNULEE", label: "Annulées" },
+  { value: "VALIDEE", label: "Validés" },
+  { value: "REJETEE", label: "Rejetés" },
+  { value: "ANNULEE", label: "Annulés" },
 ];
 
 export default function AGProcurations() {
   const [items, setItems] = useState<AGProcurationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(null);
+  const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(
+    null,
+  );
 
   const [statut, setStatut] = useState<StatutFilter>("");
   const [agId, setAgId] = useState("");
@@ -66,7 +68,7 @@ export default function AGProcurations() {
         setError(
           getErrorMessage(
             err,
-            "Impossible de charger les procurations AG pour le moment.",
+            "Impossible de charger les mandats de représentation pour le moment.",
           ),
         );
         setItems([]);
@@ -113,10 +115,14 @@ export default function AGProcurations() {
   const stats = useMemo(() => {
     return {
       total: items.length,
-      enAttente: items.filter((item) => normalize(item.statut) === "EN_ATTENTE").length,
-      validees: items.filter((item) => normalize(item.statut) === "VALIDEE").length,
-      rejetees: items.filter((item) => normalize(item.statut) === "REJETEE").length,
-      annulees: items.filter((item) => normalize(item.statut) === "ANNULEE").length,
+      enAttente: items.filter((item) => normalize(item.statut) === "EN_ATTENTE")
+        .length,
+      validees: items.filter((item) => normalize(item.statut) === "VALIDEE")
+        .length,
+      rejetees: items.filter((item) => normalize(item.statut) === "REJETEE")
+        .length,
+      annulees: items.filter((item) => normalize(item.statut) === "ANNULEE")
+        .length,
     };
   }, [items]);
 
@@ -127,12 +133,12 @@ export default function AGProcurations() {
   const handleValidate = useCallback(
     async (item: AGProcurationItem) => {
       if (!canValidateAGProcuration(item)) {
-        showFlash("info", "Seules les procurations en attente peuvent être validées.");
+        showFlash("info", "Seuls les mandats en attente peuvent être validés.");
         return;
       }
 
       const confirmed = window.confirm(
-        `Valider la procuration donnée à ${item.mandataire_nom} pour le lot ${
+        `Valider le mandat donné à ${item.mandataire_nom} pour le lot ${
           item.lot_label || item.lot_reference || `#${item.lot}`
         } ?`,
       );
@@ -144,13 +150,10 @@ export default function AGProcurations() {
 
         const response = await validerAGProcuration(item.id);
 
-        showFlash("success", response.detail || "Procuration validée avec succès.");
+        showFlash("success", response.detail || "Mandat validé avec succès.");
         await loadProcurations({ silent: true });
       } catch (err) {
-        showFlash(
-          "error",
-          getErrorMessage(err, "Impossible de valider cette procuration."),
-        );
+        showFlash("error", getErrorMessage(err, "Impossible de valider ce mandat."));
       } finally {
         setValidatingId(null);
       }
@@ -161,7 +164,7 @@ export default function AGProcurations() {
   const openRejectModal = useCallback(
     (item: AGProcurationItem) => {
       if (!canRejectAGProcuration(item)) {
-        showFlash("info", "Seules les procurations en attente peuvent être rejetées.");
+        showFlash("info", "Seuls les mandats en attente peuvent être rejetés.");
         return;
       }
 
@@ -198,15 +201,12 @@ export default function AGProcurations() {
           motif_rejet: motif,
         });
 
-        showFlash("success", response.detail || "Procuration rejetée avec succès.");
+        showFlash("success", response.detail || "Mandat rejeté avec succès.");
         setRejectModal(null);
         setRejectMotif("");
         await loadProcurations({ silent: true });
       } catch (err) {
-        showFlash(
-          "error",
-          getErrorMessage(err, "Impossible de rejeter cette procuration."),
-        );
+        showFlash("error", getErrorMessage(err, "Impossible de rejeter ce mandat."));
       } finally {
         setRejectingId(null);
       }
@@ -219,9 +219,9 @@ export default function AGProcurations() {
       <div style={styles.loadingCard}>
         <div style={styles.loadingIcon}>🧾</div>
         <div>
-          <p style={styles.loadingTitle}>Chargement des procurations...</p>
+          <p style={styles.loadingTitle}>Chargement des mandats...</p>
           <p style={styles.muted}>
-            Nous récupérons les procurations transmises par les copropriétaires.
+            Nous récupérons les mandats transmis par les copropriétaires.
           </p>
         </div>
       </div>
@@ -233,11 +233,11 @@ export default function AGProcurations() {
       <section style={styles.hero}>
         <div>
           <div style={styles.heroBadge}>Assemblées générales</div>
-          <h2 style={styles.heroTitle}>Procurations AG</h2>
+          <h2 style={styles.heroTitle}>Mandats de représentation</h2>
           <p style={styles.heroText}>
-            Consultez, validez ou rejetez les procurations transmises par les
-            copropriétaires. Une procuration validée alimente automatiquement la
-            présence représentée du lot concerné.
+            Consultez, validez ou rejetez les mandats transmis par les
+            copropriétaires. Un mandat validé alimente automatiquement la présence
+            représentée du lot concerné et renforce la traçabilité du cycle AG.
           </p>
 
           <div style={styles.heroMeta}>
@@ -245,7 +245,9 @@ export default function AGProcurations() {
             <span style={styles.metaPill}>
               En attente : {formatNumber(stats.enAttente)}
             </span>
-            <span style={styles.metaPill}>Validées : {formatNumber(stats.validees)}</span>
+            <span style={styles.metaPill}>
+              Validés : {formatNumber(stats.validees)}
+            </span>
           </div>
         </div>
 
@@ -254,7 +256,8 @@ export default function AGProcurations() {
           <p style={styles.sideTitle}>Traçabilité juridique</p>
           <p style={styles.sideText}>
             Les validations et rejets sont historisés côté backend avec l’acteur,
-            la date, le statut et le motif éventuel.
+            la date, le statut et le motif éventuel. Les décisions traitées ne
+            doivent pas être modifiées comme de simples présences manuelles.
           </p>
         </div>
       </section>
@@ -263,27 +266,32 @@ export default function AGProcurations() {
       {error ? <FlashBox kind="error">{error}</FlashBox> : null}
 
       <section style={styles.statsGrid}>
-        <StatCard label="Total" value={stats.total} hint="Procurations reçues" tone="blue" />
+        <StatCard label="Total" value={stats.total} hint="Mandats reçus" tone="blue" />
         <StatCard
           label="En attente"
           value={stats.enAttente}
           hint="À traiter"
           tone="amber"
         />
-        <StatCard label="Validées" value={stats.validees} hint="Acceptées" tone="green" />
-        <StatCard label="Rejetées" value={stats.rejetees} hint="Refusées" tone="rose" />
-        <StatCard label="Annulées" value={stats.annulees} hint="Annulées côté copropriétaire" tone="slate" />
+        <StatCard label="Validés" value={stats.validees} hint="Acceptés" tone="green" />
+        <StatCard label="Rejetés" value={stats.rejetees} hint="Refusés" tone="rose" />
+        <StatCard
+          label="Annulés"
+          value={stats.annulees}
+          hint="Annulés côté copropriétaire"
+          tone="slate"
+        />
       </section>
 
       <section style={styles.card}>
         <div style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Traitement syndic</p>
-            <h3 style={styles.sectionTitle}>Liste des procurations</h3>
+            <h3 style={styles.sectionTitle}>Registre des mandats</h3>
             <p style={styles.sectionText}>
-              Filtrez par statut, recherchez un mandataire, un lot, un copropriétaire
-              ou une assemblée. Les actions de validation/rejet ne sont disponibles
-              que pour les procurations en attente.
+              Filtrez par statut, recherchez un mandataire, un lot, un
+              copropriétaire ou une assemblée. Les actions de validation et de
+              rejet ne sont disponibles que pour les mandats en attente.
             </p>
           </div>
 
@@ -322,8 +330,8 @@ export default function AGProcurations() {
 
         {filteredItems.length === 0 ? (
           <EmptyState
-            title="Aucune procuration trouvée"
-            text="Aucune procuration ne correspond aux filtres actuels."
+            title="Aucun mandat trouvé"
+            text="Aucun mandat de représentation ne correspond aux filtres actuels."
           />
         ) : (
           <div style={styles.list}>
@@ -370,14 +378,14 @@ function ProcurationCard({
 }) {
   const canValidate = canValidateAGProcuration(item);
   const canReject = canRejectAGProcuration(item);
+  const canAct = canValidate || canReject;
+  const statusLabel = item.statut_label || getAGProcurationStatutLabel(item.statut);
 
   return (
     <article style={styles.procurationCard}>
       <div style={styles.procurationMain}>
         <div style={styles.badges}>
-          <Badge style={getStatusStyle(item.statut)}>
-            {item.statut_label || getAGProcurationStatutLabel(item.statut)}
-          </Badge>
+          <Badge style={getStatusStyle(item.statut)}>{statusLabel}</Badge>
 
           <Badge style={styles.agBadge}>AG #{item.ag}</Badge>
         </div>
@@ -388,28 +396,29 @@ function ProcurationCard({
 
         <p style={styles.procurationSubtitle}>
           Mandataire désigné par{" "}
-          <strong>{item.coproprietaire_label || `Copropriétaire #${item.coproprietaire}`}</strong>
+          <strong>
+            {item.coproprietaire_label || `Copropriétaire #${item.coproprietaire}`}
+          </strong>
         </p>
 
         <div style={styles.infoGrid}>
           <Info label="Assemblée" value={item.ag_titre || `AG #${item.ag}`} />
           <Info
             label="Lot"
-            value={item.lot_label || item.lot_reference || item.lot_numero || `Lot #${item.lot}`}
-          />
-          <Info label="Téléphone mandataire" value={item.mandataire_telephone || "—"} />
-          <Info label="Email mandataire" value={item.mandataire_email || "—"} />
-          <Info label="Créée le" value={formatDate(item.created_at)} />
-          <Info
-            label="Traitement"
             value={
-              normalize(item.statut) === "VALIDEE"
-                ? `Validée le ${formatDate(item.validated_at)}`
-                : normalize(item.statut) === "REJETEE"
-                  ? `Rejetée le ${formatDate(item.rejected_at)}`
-                  : "En attente de traitement"
+              item.lot_label ||
+              item.lot_reference ||
+              item.lot_numero ||
+              `Lot #${item.lot}`
             }
           />
+          <Info
+            label="Téléphone mandataire"
+            value={item.mandataire_telephone || "—"}
+          />
+          <Info label="Email mandataire" value={item.mandataire_email || "—"} />
+          <Info label="Créé le" value={formatDate(item.created_at)} />
+          <Info label="Traitement" value={getTreatmentLabel(item)} />
         </div>
 
         {item.motif_rejet ? (
@@ -421,7 +430,9 @@ function ProcurationCard({
         {item.document_url ? (
           <button
             type="button"
-            onClick={() => window.open(item.document_url || "", "_blank", "noopener,noreferrer")}
+            onClick={() =>
+              window.open(item.document_url || "", "_blank", "noopener,noreferrer")
+            }
             style={styles.documentButton}
           >
             Ouvrir le document joint
@@ -430,29 +441,46 @@ function ProcurationCard({
       </div>
 
       <div style={styles.actions}>
-        <button
-          type="button"
-          disabled={!canValidate || validating || rejecting}
-          onClick={() => onValidate(item)}
-          style={{
-            ...styles.validateButton,
-            ...(!canValidate || validating || rejecting ? styles.actionButtonDisabled : {}),
-          }}
-        >
-          {validating ? "Validation..." : "Valider"}
-        </button>
+        {canAct ? (
+          <>
+            <button
+              type="button"
+              disabled={!canValidate || validating || rejecting}
+              onClick={() => onValidate(item)}
+              style={{
+                ...styles.validateButton,
+                ...(!canValidate || validating || rejecting
+                  ? styles.actionButtonDisabled
+                  : {}),
+              }}
+            >
+              {validating ? "Validation..." : "Valider"}
+            </button>
 
-        <button
-          type="button"
-          disabled={!canReject || validating || rejecting}
-          onClick={() => onReject(item)}
-          style={{
-            ...styles.rejectButton,
-            ...(!canReject || validating || rejecting ? styles.actionButtonDisabled : {}),
-          }}
-        >
-          {rejecting ? "Rejet..." : "Rejeter"}
-        </button>
+            <button
+              type="button"
+              disabled={!canReject || validating || rejecting}
+              onClick={() => onReject(item)}
+              style={{
+                ...styles.rejectButton,
+                ...(!canReject || validating || rejecting
+                  ? styles.actionButtonDisabled
+                  : {}),
+              }}
+            >
+              {rejecting ? "Rejet..." : "Rejeter"}
+            </button>
+          </>
+        ) : (
+          <div style={styles.decisionBox}>
+            <p style={styles.decisionTitle}>Décision déjà traitée</p>
+            <p style={styles.decisionText}>Statut : {statusLabel}</p>
+            <p style={styles.decisionHint}>
+              Cette décision est historisée. Toute correction doit passer par un
+              circuit encadré afin de préserver la cohérence AG.
+            </p>
+          </div>
+        )}
       </div>
     </article>
   );
@@ -478,10 +506,10 @@ function RejectModal({
       <div style={styles.modalCard}>
         <div style={styles.modalHeader}>
           <div>
-            <p style={styles.modalEyebrow}>Rejet procuration</p>
+            <p style={styles.modalEyebrow}>Rejet du mandat</p>
             <h3 style={styles.modalTitle}>Motif de rejet obligatoire</h3>
             <p style={styles.modalText}>
-              Vous allez rejeter la procuration donnée à{" "}
+              Vous allez rejeter le mandat donné à{" "}
               <strong>{item.mandataire_nom}</strong> pour le lot{" "}
               <strong>{item.lot_label || item.lot_reference || `#${item.lot}`}</strong>.
             </p>
@@ -652,6 +680,24 @@ function formatDate(value: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function getTreatmentLabel(item: AGProcurationItem): string {
+  const statut = normalize(item.statut);
+
+  if (statut === "VALIDEE") {
+    return `Validé le ${formatDate(item.validated_at)}`;
+  }
+
+  if (statut === "REJETEE") {
+    return `Rejeté le ${formatDate(item.rejected_at)}`;
+  }
+
+  if (statut === "ANNULEE") {
+    return "Annulé par le copropriétaire";
+  }
+
+  return "En attente de traitement";
 }
 
 function getStatusStyle(statut: string | null | undefined): CSSProperties {
@@ -1016,7 +1062,7 @@ const styles: Record<string, CSSProperties> = {
     background: "#ffffff",
     padding: 18,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 160px",
+    gridTemplateColumns: "minmax(0, 1fr) 190px",
     gap: 16,
     alignItems: "start",
     boxShadow: "0 14px 36px rgba(15,23,42,0.05)",
@@ -1138,6 +1184,34 @@ const styles: Record<string, CSSProperties> = {
     background: "#f8fafc",
     color: "#94a3b8",
     cursor: "not-allowed",
+  },
+
+  decisionBox: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 18,
+    background: "#f8fafc",
+    padding: 14,
+  },
+
+  decisionTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: 950,
+  },
+
+  decisionText: {
+    margin: "7px 0 0",
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: 850,
+  },
+
+  decisionHint: {
+    margin: "7px 0 0",
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.5,
   },
 
   emptyState: {
