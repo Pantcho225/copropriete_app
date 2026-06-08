@@ -8,11 +8,14 @@ import {
   getMesLotsCoproprietaire,
   getPaiementsCoproprietaire,
   getRelancesCoproprietaire,
+  getSituationFinanciereCoproprietaire,
   type CoproprietaireAppelsResponse,
+  type CoproprietaireDernierMouvement,
   type CoproprietaireDocumentsResponse,
   type CoproprietaireMesLotsResponse,
   type CoproprietairePaiementsResponse,
   type CoproprietaireRelancesResponse,
+  type CoproprietaireSituationFinanciereResponse,
 } from "../../api/coproprietaire";
 
 type DashboardState = {
@@ -23,6 +26,7 @@ type DashboardState = {
   paiements: CoproprietairePaiementsResponse | null;
   relances: CoproprietaireRelancesResponse | null;
   documents: CoproprietaireDocumentsResponse | null;
+  situationFinanciere: CoproprietaireSituationFinanciereResponse | null;
   error: string | null;
   businessWarning: string | null;
 };
@@ -35,6 +39,24 @@ type QuickAction = {
   path: string;
   icon: string;
   tone: Tone;
+};
+
+type DashboardSummary = {
+  lotsCount: number;
+  appelsCount: number;
+  totalDu: number;
+  totalPaye: number;
+  resteAPayer: number;
+  paiementsCount: number;
+  relancesCount: number;
+  dossiersImpayeCount: number;
+  nbEnRetard: number;
+  documentsCount: number;
+  tauxEncaissement: number;
+  creditsBancaires: number;
+  debitsBancaires: number;
+  soldeBancaireEstime: number;
+  exerciceAnnee: number | null;
 };
 
 const QUICK_ACTIONS: QuickAction[] = [
@@ -58,6 +80,13 @@ const QUICK_ACTIONS: QuickAction[] = [
     path: "/coproprietaire/paiements",
     icon: "💳",
     tone: "green",
+  },
+  {
+    title: "Situation financière",
+    description: "Voir la synthèse globale, les entrées, sorties et courbes.",
+    path: "/coproprietaire/situation-financiere",
+    icon: "📊",
+    tone: "indigo",
   },
   {
     title: "Relances",
@@ -97,6 +126,7 @@ const initialState: DashboardState = {
   paiements: null,
   relances: null,
   documents: null,
+  situationFinanciere: null,
   error: null,
   businessWarning: null,
 };
@@ -119,7 +149,15 @@ const formatMoney = (value: string | number | null | undefined) => {
 
   return `${new Intl.NumberFormat("fr-FR", {
     maximumFractionDigits: 0,
-  }).format(Math.max(0, Math.round(amount)))} FCFA`;
+  }).format(Math.round(amount))} FCFA`;
+};
+
+const formatPercent = (value: string | number | null | undefined) => {
+  const amount = parseAmount(value);
+
+  return `${new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 2,
+  }).format(amount)} %`;
 };
 
 const getTimeFromDate = (value: string | null | undefined) => {
@@ -163,6 +201,7 @@ export default function CoproprietaireDashboard() {
         paiementsResult,
         relancesResult,
         documentsResult,
+        situationFinanciereResult,
       ] = await Promise.allSettled([
         getAuthMe(),
         getMesLotsCoproprietaire(),
@@ -170,6 +209,7 @@ export default function CoproprietaireDashboard() {
         getPaiementsCoproprietaire(),
         getRelancesCoproprietaire(),
         getDocumentsCoproprietaire(),
+        getSituationFinanciereCoproprietaire(),
       ] as const);
 
       if (!mounted) return;
@@ -190,6 +230,7 @@ export default function CoproprietaireDashboard() {
         paiementsResult,
         relancesResult,
         documentsResult,
+        situationFinanciereResult,
       ].some((result) => result.status === "rejected");
 
       setState({
@@ -200,6 +241,7 @@ export default function CoproprietaireDashboard() {
         paiements: fulfilledValue(paiementsResult),
         relances: fulfilledValue(relancesResult),
         documents: fulfilledValue(documentsResult),
+        situationFinanciere: fulfilledValue(situationFinanciereResult),
         error: null,
         businessWarning: businessHasError
           ? "Certaines informations n’ont pas pu être chargées. Les données disponibles sont affichées."
@@ -222,7 +264,7 @@ export default function CoproprietaireDashboard() {
     );
   }, [state.me]);
 
-  const summary = useMemo(() => {
+  const summary = useMemo<DashboardSummary>(() => {
     const lotsCount = state.lots?.count ?? state.lots?.lots.length ?? 0;
 
     const appelsCount =
@@ -231,17 +273,30 @@ export default function CoproprietaireDashboard() {
       state.appels?.appels.length ??
       0;
 
-    const totalDu = parseAmount(state.appels?.stats.total_du);
-    const totalPayeAppels = parseAmount(state.appels?.stats.total_paye);
-    const resteAPayer = parseAmount(state.appels?.stats.reste_a_payer);
+    const finance = state.situationFinanciere;
+
+    const totalDu =
+      finance !== null
+        ? parseAmount(finance.total_appels)
+        : parseAmount(state.appels?.stats.total_du);
+
+    const totalPayeAppels =
+      finance !== null
+        ? parseAmount(finance.total_encaisse)
+        : parseAmount(state.appels?.stats.total_paye);
+
+    const totalPayePaiements = parseAmount(state.paiements?.stats.total_paye);
+
+    const resteAPayer =
+      finance !== null
+        ? parseAmount(finance.reste_a_recouvrer)
+        : parseAmount(state.appels?.stats.reste_a_payer);
 
     const paiementsCount =
       state.paiements?.stats.nb_paiements ??
       state.paiements?.count ??
       state.paiements?.paiements.length ??
       0;
-
-    const totalPayePaiements = parseAmount(state.paiements?.stats.total_paye);
 
     const relancesCount =
       state.relances?.stats.nb_relances ??
@@ -253,13 +308,22 @@ export default function CoproprietaireDashboard() {
       state.relances?.stats.nb_dossiers ?? state.relances?.dossiers.length ?? 0;
 
     const nbEnRetard =
-      state.relances?.stats.nb_en_retard ?? state.appels?.stats.nb_en_retard ?? 0;
+      state.relances?.stats.nb_en_retard ??
+      state.appels?.stats.nb_en_retard ??
+      0;
 
     const documentsCount =
       state.documents?.stats.total ??
       state.documents?.count ??
       state.documents?.documents.length ??
       0;
+
+    const tauxEncaissement =
+      finance !== null
+        ? parseAmount(finance.taux_encaissement)
+        : totalDu > 0
+          ? (Math.max(totalPayePaiements, totalPayeAppels) / totalDu) * 100
+          : 0;
 
     return {
       lotsCount,
@@ -272,8 +336,20 @@ export default function CoproprietaireDashboard() {
       dossiersImpayeCount,
       nbEnRetard,
       documentsCount,
+      tauxEncaissement,
+      creditsBancaires: parseAmount(finance?.total_credits_bancaires),
+      debitsBancaires: parseAmount(finance?.total_debits_bancaires),
+      soldeBancaireEstime: parseAmount(finance?.solde_bancaire_estime),
+      exerciceAnnee: finance?.exercice_annee ?? null,
     };
-  }, [state.appels, state.documents, state.lots, state.paiements, state.relances]);
+  }, [
+    state.appels,
+    state.documents,
+    state.lots,
+    state.paiements,
+    state.relances,
+    state.situationFinanciere,
+  ]);
 
   const latestPaiements = useMemo(() => {
     return [...(state.paiements?.paiements ?? [])]
@@ -298,6 +374,10 @@ export default function CoproprietaireDashboard() {
       .sort((a, b) => getTimeFromDate(b.created_at) - getTimeFromDate(a.created_at))
       .slice(0, 1);
   }, [state.relances]);
+
+  const latestMouvements = useMemo(() => {
+    return [...(state.situationFinanciere?.derniers_mouvements ?? [])].slice(0, 2);
+  }, [state.situationFinanciere]);
 
   if (state.loading) {
     return (
@@ -327,6 +407,7 @@ export default function CoproprietaireDashboard() {
   const coproName =
     mainMembership?.copropriete.nom ??
     state.lots?.lots[0]?.copropriete?.nom ??
+    state.situationFinanciere?.copropriete_label ??
     "Copropriété non définie";
 
   const membershipStatus = mainMembership?.is_active ? "Actif" : "À vérifier";
@@ -334,6 +415,7 @@ export default function CoproprietaireDashboard() {
   const situationLabel = summary.resteAPayer > 0 ? "À régulariser" : "À jour";
 
   const situationTone: Tone = summary.resteAPayer > 0 ? "amber" : "green";
+  const soldeTone: Tone = summary.soldeBancaireEstime < 0 ? "rose" : "green";
 
   return (
     <div style={styles.stack}>
@@ -352,8 +434,8 @@ export default function CoproprietaireDashboard() {
 
           <p style={styles.heroText}>
             Retrouvez vos informations essentielles : lots, appels de charges,
-            paiements, relances, documents, assemblées générales, présence, votes et
-            règles utiles de la copropriété.
+            paiements, situation financière, relances, documents, assemblées
+            générales, présence, votes et règles utiles de la copropriété.
           </p>
 
           <div style={styles.heroMeta}>
@@ -361,6 +443,9 @@ export default function CoproprietaireDashboard() {
             <span style={styles.metaPill}>Profil : Copropriétaire</span>
             <span style={styles.metaPill}>Compte : {membershipStatus}</span>
             <span style={styles.metaPill}>Situation : {situationLabel}</span>
+            {summary.exerciceAnnee ? (
+              <span style={styles.metaPill}>Exercice : {summary.exerciceAnnee}</span>
+            ) : null}
           </div>
         </div>
 
@@ -388,17 +473,44 @@ export default function CoproprietaireDashboard() {
           tone={situationTone}
         />
         <InfoCard
-          label="Total payé"
+          label="Total encaissé"
           value={formatMoney(summary.totalPaye)}
           description={`${summary.paiementsCount} paiement(s) enregistré(s)`}
           tone="green"
         />
         <InfoCard
-          label="Documents"
-          value={String(summary.documentsCount)}
-          description="Documents personnels disponibles"
-          tone="slate"
+          label="Solde estimé"
+          value={formatMoney(summary.soldeBancaireEstime)}
+          description="Solde global visible de la copropriété"
+          tone={soldeTone}
         />
+      </section>
+
+      <section style={styles.financialStrip}>
+        <div style={styles.financialStripLeft}>
+          <div style={styles.financialIcon}>📊</div>
+
+          <div>
+            <p style={styles.financialEyebrow}>Transparence financière</p>
+            <h3 style={styles.financialTitle}>
+              Situation globale de la copropriété
+            </h3>
+            <p style={styles.financialText}>
+              Consultez les appels, encaissements, crédits, débits, solde estimé
+              et courbes mensuelles en lecture seule.
+            </p>
+          </div>
+        </div>
+
+        <div style={styles.financialMetrics}>
+          <MiniMetric label="Taux" value={formatPercent(summary.tauxEncaissement)} />
+          <MiniMetric label="Crédits" value={formatMoney(summary.creditsBancaires)} />
+          <MiniMetric label="Débits" value={formatMoney(summary.debitsBancaires)} />
+        </div>
+
+        <Link to="/coproprietaire/situation-financiere" style={styles.primaryLink}>
+          Voir la situation →
+        </Link>
       </section>
 
       <section style={styles.mainGrid}>
@@ -422,10 +534,10 @@ export default function CoproprietaireDashboard() {
               tone="amber"
             />
             <SummaryCard
-              label="Relances"
-              value={String(summary.relancesCount)}
-              description={`${summary.dossiersImpayeCount} dossier(s) impayé(s)`}
-              tone={summary.relancesCount > 0 ? "rose" : "green"}
+              label="Encaissement"
+              value={formatPercent(summary.tauxEncaissement)}
+              description={`${formatMoney(summary.totalPaye)} encaissé`}
+              tone="green"
             />
             <SummaryCard
               label="Situation"
@@ -465,6 +577,20 @@ export default function CoproprietaireDashboard() {
                         paiement.date_paiement,
                       )}`}
                       tone="green"
+                    />
+                  ))
+                )}
+              </div>
+
+              <div style={styles.activityList}>
+                <p style={styles.activityGroupTitle}>Mouvements</p>
+                {latestMouvements.length === 0 ? (
+                  <p style={styles.emptyText}>Aucun mouvement récent.</p>
+                ) : (
+                  latestMouvements.map((mouvement) => (
+                    <MouvementActivityItem
+                      key={mouvement.id}
+                      mouvement={mouvement}
                     />
                   ))
                 )}
@@ -543,6 +669,11 @@ export default function CoproprietaireDashboard() {
                 tone="green"
               />
               <StatusLine
+                label="Situation financière"
+                status={formatPercent(summary.tauxEncaissement)}
+                tone={summary.tauxEncaissement >= 100 ? "green" : "amber"}
+              />
+              <StatusLine
                 label="Relances"
                 status={`${summary.relancesCount} relance(s)`}
                 tone={summary.relancesCount > 0 ? "rose" : "green"}
@@ -568,9 +699,9 @@ export default function CoproprietaireDashboard() {
           <div style={styles.noteCard}>
             <p style={styles.noteTitle}>Conseil</p>
             <p style={styles.noteText}>
-              Pensez à consulter régulièrement vos appels, relances, documents,
-              assemblées générales et règles utiles afin de garder votre situation
-              à jour.
+              Pensez à consulter régulièrement vos appels, paiements, situation
+              financière, relances, documents, assemblées générales et règles
+              utiles afin de garder votre situation à jour.
             </p>
           </div>
         </aside>
@@ -722,6 +853,34 @@ function ActivityItem({
         <strong style={styles.activityTitle}>{title}</strong>
         <span style={styles.activityMeta}>{meta}</span>
       </span>
+    </div>
+  );
+}
+
+function MouvementActivityItem({
+  mouvement,
+}: {
+  mouvement: CoproprietaireDernierMouvement;
+}) {
+  const isCredit = mouvement.sens === "CREDIT";
+  const tone: Tone = mouvement.cancelled ? "slate" : isCredit ? "green" : "rose";
+
+  return (
+    <ActivityItem
+      title={mouvement.libelle || "Mouvement bancaire"}
+      meta={`${isCredit ? "+" : "-"}${formatMoney(mouvement.montant)} · ${formatDate(
+        mouvement.date_operation,
+      )}`}
+      tone={tone}
+    />
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={styles.miniMetric}>
+      <span style={styles.miniMetricLabel}>{label}</span>
+      <strong style={styles.miniMetricValue}>{value}</strong>
     </div>
   );
 }
@@ -921,6 +1080,109 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 650,
   },
 
+  financialStrip: {
+    borderRadius: 30,
+    padding: 20,
+    background:
+      "linear-gradient(135deg, rgba(238,242,255,0.96), rgba(239,246,255,0.94))",
+    border: "1px solid #c7d2fe",
+    boxShadow: "0 18px 54px rgba(79,70,229,0.10)",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto auto",
+    alignItems: "center",
+    gap: 18,
+  },
+
+  financialStripLeft: {
+    display: "flex",
+    gap: 14,
+    alignItems: "flex-start",
+    minWidth: 0,
+  },
+
+  financialIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 18,
+    background: "#e0e7ff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 21,
+    flexShrink: 0,
+  },
+
+  financialEyebrow: {
+    margin: 0,
+    fontSize: 10,
+    fontWeight: 950,
+    color: "#4f46e5",
+    letterSpacing: "0.15em",
+    textTransform: "uppercase",
+  },
+
+  financialTitle: {
+    margin: "5px 0 0",
+    fontSize: 18,
+    lineHeight: 1.2,
+    fontWeight: 950,
+    color: "#0f172a",
+    letterSpacing: "-0.03em",
+  },
+
+  financialText: {
+    margin: "7px 0 0",
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: "#475569",
+    fontWeight: 650,
+  },
+
+  financialMetrics: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+
+  miniMetric: {
+    borderRadius: 18,
+    padding: "10px 12px",
+    background: "rgba(255,255,255,0.82)",
+    border: "1px solid #dbeafe",
+    minWidth: 108,
+  },
+
+  miniMetricLabel: {
+    display: "block",
+    fontSize: 10,
+    fontWeight: 900,
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+
+  miniMetricValue: {
+    display: "block",
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: 950,
+    color: "#1e293b",
+  },
+
+  primaryLink: {
+    justifySelf: "end",
+    textDecoration: "none",
+    borderRadius: 18,
+    padding: "12px 14px",
+    background: "#4f46e5",
+    color: "white",
+    fontSize: 13,
+    fontWeight: 950,
+    boxShadow: "0 14px 36px rgba(79,70,229,0.24)",
+    whiteSpace: "nowrap",
+  },
+
   mainGrid: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.35fr) minmax(340px, 0.65fr)",
@@ -1077,7 +1339,7 @@ const styles: Record<string, CSSProperties> = {
 
   activityGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: 12,
     marginTop: 16,
   },
