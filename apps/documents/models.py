@@ -3,12 +3,19 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 def generated_document_upload_to(instance, filename: str) -> str:
     copro_id = instance.copropriete_id or "global"
     doc_type = (instance.document_type or "document").lower()
     return f"documents/generated/{copro_id}/{doc_type}/{filename}"
+
+
+def reglement_texte_upload_to(instance, filename: str) -> str:
+    copro_id = instance.copropriete_id or "global"
+    categorie = (instance.categorie or "texte").lower()
+    return f"documents/reglement-textes/{copro_id}/{categorie}/{filename}"
 
 
 class GeneratedDocument(models.Model):
@@ -140,6 +147,182 @@ class GeneratedDocument(models.Model):
             return self.file.name.split("/")[-1]
         except Exception:
             return ""
+
+
+class ReglementTexteApplicable(models.Model):
+    """
+    Texte, règlement ou document de référence publié par l'admin/syndic.
+
+    Objectif métier :
+    - permettre au syndic/admin d'ajouter des règles, textes ou documents utiles ;
+    - contrôler leur statut : brouillon, publié, archivé ;
+    - choisir s'ils sont visibles ou non dans l'espace copropriétaire ;
+    - afficher côté copropriétaire uniquement les contenus publiés et visibles.
+    """
+
+    class Categorie(models.TextChoices):
+        REGLEMENT_COPROPRIETE = (
+            "REGLEMENT_COPROPRIETE",
+            "Règlement de copropriété",
+        )
+        REGLEMENT_INTERIEUR = "REGLEMENT_INTERIEUR", "Règlement intérieur"
+        TEXTE_LOI = "TEXTE_LOI", "Texte de loi"
+        NOTE_SYNDIC = "NOTE_SYNDIC", "Note du syndic"
+        VIE_COMMUNE = "VIE_COMMUNE", "Vie commune"
+        CHARGES_COTISATIONS = "CHARGES_COTISATIONS", "Charges et cotisations"
+        ASSEMBLEES_GENERALES = "ASSEMBLEES_GENERALES", "Assemblées générales"
+        TRAVAUX_ENTRETIEN = "TRAVAUX_ENTRETIEN", "Travaux et entretien"
+        DOCUMENT_ADMINISTRATIF = (
+            "DOCUMENT_ADMINISTRATIF",
+            "Document administratif",
+        )
+        AUTRE = "AUTRE", "Autre"
+
+    class Statut(models.TextChoices):
+        BROUILLON = "BROUILLON", "Brouillon"
+        PUBLIE = "PUBLIE", "Publié"
+        ARCHIVE = "ARCHIVE", "Archivé"
+
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="reglement_textes_applicables",
+    )
+
+    titre = models.CharField(max_length=255)
+    categorie = models.CharField(
+        max_length=50,
+        choices=Categorie.choices,
+        default=Categorie.AUTRE,
+        db_index=True,
+    )
+
+    resume = models.TextField(
+        blank=True,
+        default="",
+        help_text="Résumé court affichable dans les listes.",
+    )
+    contenu = models.TextField(
+        blank=True,
+        default="",
+        help_text="Contenu textuel du règlement, texte ou document.",
+    )
+
+    fichier = models.FileField(
+        upload_to=reglement_texte_upload_to,
+        null=True,
+        blank=True,
+        help_text="PDF ou document attaché optionnel.",
+    )
+
+    statut = models.CharField(
+        max_length=30,
+        choices=Statut.choices,
+        default=Statut.BROUILLON,
+        db_index=True,
+    )
+    visible_coproprietaire = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Si coché, le texte publié est visible côté copropriétaire.",
+    )
+
+    ordre_affichage = models.PositiveIntegerField(
+        default=100,
+        help_text="Permet de prioriser l'ordre d'affichage.",
+    )
+
+    publie_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reglement_textes_publies",
+    )
+    date_publication = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reglement_textes_created",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reglement_textes_updated",
+    )
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Règlement ou texte applicable"
+        verbose_name_plural = "Règlements et textes applicables"
+        ordering = ["ordre_affichage", "categorie", "-date_publication", "-created_at"]
+        indexes = [
+            models.Index(fields=["copropriete", "categorie"]),
+            models.Index(fields=["copropriete", "statut"]),
+            models.Index(fields=["copropriete", "visible_coproprietaire"]),
+            models.Index(fields=["statut", "visible_coproprietaire"]),
+            models.Index(fields=["ordre_affichage"]),
+            models.Index(fields=["date_publication"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.titre} - {self.get_categorie_display()}"
+
+    @property
+    def is_published_for_owner(self) -> bool:
+        return (
+            self.statut == self.Statut.PUBLIE
+            and self.visible_coproprietaire is True
+        )
+
+    @property
+    def filename(self) -> str:
+        if not self.fichier:
+            return ""
+        try:
+            return self.fichier.name.split("/")[-1]
+        except Exception:
+            return ""
+
+    def publier(self, user=None, visible_coproprietaire: bool | None = None) -> None:
+        """
+        Publie le texte et renseigne la date de publication.
+
+        Si visible_coproprietaire est fourni, on met aussi à jour la visibilité.
+        """
+        self.statut = self.Statut.PUBLIE
+        self.date_publication = timezone.now()
+        if user is not None:
+            self.publie_par = user
+            self.updated_by = user
+        if visible_coproprietaire is not None:
+            self.visible_coproprietaire = visible_coproprietaire
+        self.save(
+            update_fields=[
+                "statut",
+                "date_publication",
+                "publie_par",
+                "updated_by",
+                "visible_coproprietaire",
+                "updated_at",
+            ]
+        )
+
+    def archiver(self, user=None) -> None:
+        self.statut = self.Statut.ARCHIVE
+        if user is not None:
+            self.updated_by = user
+        self.save(update_fields=["statut", "updated_by", "updated_at"])
 
 
 class DocumentMasqueCoproprietaire(models.Model):

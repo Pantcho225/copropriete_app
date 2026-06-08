@@ -15,8 +15,12 @@ from rest_framework.views import APIView
 from apps.core.models import CoproMembre
 from apps.owners.models import ProprietaireLot
 
-from .models import GeneratedDocument
-from .serializers import GeneratedDocumentSerializer
+from .models import GeneratedDocument, ReglementTexteApplicable
+from .serializers import (
+    CoproprietaireReglementTexteApplicableSerializer,
+    GeneratedDocumentSerializer,
+    ReglementTexteApplicableSerializer,
+)
 from .services.pdf import (
     generate_mandat_ag_pdf_bytes,
     generate_relance_impaye_pdf_bytes,
@@ -39,6 +43,58 @@ def _assert_same_copro(obj, copro_id: str):
         raise ValidationError(
             {"detail": "Ressource hors périmètre de la copropriété courante."}
         )
+
+
+def _assert_can_manage_copro(request, copro_id: str) -> None:
+    """
+    Sécurité admin/syndic.
+
+    - Superuser/staff : accès autorisé.
+    - Membre actif de la copropriété avec rôle différent de COPROPRIETAIRE :
+      accès autorisé.
+    - Simple copropriétaire : refus.
+    """
+
+    user = request.user
+
+    if not user or not user.is_authenticated:
+        raise PermissionDenied("Authentification requise.")
+
+    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+        return
+
+    has_admin_membership = (
+        CoproMembre.objects.filter(
+            user=user,
+            copropriete_id=copro_id,
+            is_active=True,
+        )
+        .exclude(role=CoproMembre.Role.COPROPRIETAIRE)
+        .exists()
+    )
+
+    if not has_admin_membership:
+        raise PermissionDenied(
+            "Vous n’avez pas le droit de gérer les textes de cette copropriété."
+        )
+
+
+def _parse_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+
+    if isinstance(value, bool):
+        return value
+
+    value_str = str(value).strip().lower()
+
+    if value_str in {"1", "true", "yes", "oui", "on"}:
+        return True
+
+    if value_str in {"0", "false", "no", "non", "off"}:
+        return False
+
+    return default
 
 
 def _default_relance_message(dossier) -> str:
@@ -127,6 +183,319 @@ class GeneratedDocumentViewSet(viewsets.ReadOnlyModelViewSet):
         )
         response["Content-Disposition"] = f'inline; filename="{document.filename}"'
         return response
+
+
+class ReglementTexteApplicableViewSet(viewsets.ModelViewSet):
+    """
+    Gestion admin/syndic des règlements et textes applicables.
+
+    Routes attendues :
+    - GET    /api/documents/reglement-textes/
+    - POST   /api/documents/reglement-textes/
+    - GET    /api/documents/reglement-textes/:id/
+    - PATCH  /api/documents/reglement-textes/:id/
+    - DELETE /api/documents/reglement-textes/:id/
+
+    Actions :
+    - POST /api/documents/reglement-textes/:id/publier/
+    - POST /api/documents/reglement-textes/:id/archiver/
+    - POST /api/documents/reglement-textes/:id/rendre-visible/
+    - POST /api/documents/reglement-textes/:id/masquer-coproprietaire/
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReglementTexteApplicableSerializer
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        qs = (
+            ReglementTexteApplicable.objects.select_related(
+                "copropriete",
+                "publie_par",
+                "created_by",
+                "updated_by",
+            )
+            .filter(copropriete_id=copro_id)
+            .order_by("ordre_affichage", "categorie", "-date_publication", "-created_at")
+        )
+
+        params = self.request.query_params
+
+        categorie = params.get("categorie")
+        statut_value = params.get("statut")
+        visible = params.get("visible_coproprietaire")
+        q = params.get("q")
+
+        if categorie:
+            qs = qs.filter(categorie=categorie)
+
+        if statut_value:
+            qs = qs.filter(statut=statut_value)
+
+        if visible is not None and visible != "":
+            qs = qs.filter(
+                visible_coproprietaire=_parse_bool(
+                    visible,
+                    default=False,
+                )
+            )
+
+        if q:
+            qs = qs.filter(
+                Q(titre__icontains=q)
+                | Q(resume__icontains=q)
+                | Q(contenu__icontains=q)
+            )
+
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        copro_id = _require_copro_id(request)
+        _assert_can_manage_copro(request, copro_id)
+
+        data = request.data.copy()
+        data["copropriete"] = copro_id
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+
+        self.perform_create(serializer)
+
+        headers = self.get_success_headers(serializer.data)
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        instance = serializer.save(
+            copropriete_id=copro_id,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+        if instance.statut == ReglementTexteApplicable.Statut.PUBLIE:
+            changed_fields = []
+
+            if not instance.date_publication:
+                instance.date_publication = timezone.now()
+                changed_fields.append("date_publication")
+
+            if not instance.publie_par_id:
+                instance.publie_par = self.request.user
+                changed_fields.append("publie_par")
+
+            if changed_fields:
+                changed_fields.append("updated_at")
+                instance.save(update_fields=changed_fields)
+
+    def perform_update(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        instance = serializer.save(updated_by=self.request.user)
+
+        _assert_same_copro(instance, copro_id)
+
+        changed_fields = []
+
+        if instance.statut == ReglementTexteApplicable.Statut.PUBLIE:
+            if not instance.date_publication:
+                instance.date_publication = timezone.now()
+                changed_fields.append("date_publication")
+
+            if not instance.publie_par_id:
+                instance.publie_par = self.request.user
+                changed_fields.append("publie_par")
+
+        if changed_fields:
+            changed_fields.append("updated_at")
+            instance.save(update_fields=changed_fields)
+
+    def perform_destroy(self, instance):
+        """
+        On évite la suppression physique d’un texte publié.
+
+        - Brouillon : suppression possible.
+        - Publié/Archivé : on archive au lieu de supprimer.
+        """
+
+        if instance.statut == ReglementTexteApplicable.Statut.BROUILLON:
+            instance.delete()
+            return
+
+        instance.archiver(user=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="publier")
+    def publier(self, request, pk=None):
+        texte = self.get_object()
+
+        has_text = bool((texte.resume or "").strip()) or bool(
+            (texte.contenu or "").strip()
+        )
+        has_file = bool(texte.fichier)
+
+        if not has_text and not has_file:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible de publier ce texte : ajoutez un résumé, "
+                        "un contenu ou un fichier."
+                    )
+                }
+            )
+
+        visible = _parse_bool(
+            request.data.get("visible_coproprietaire"),
+            default=True,
+        )
+
+        texte.publier(
+            user=request.user,
+            visible_coproprietaire=visible,
+        )
+
+        serializer = self.get_serializer(texte)
+
+        return Response(
+            {
+                "detail": "Texte publié avec succès.",
+                "texte": serializer.data,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="archiver")
+    def archiver(self, request, pk=None):
+        texte = self.get_object()
+        texte.archiver(user=request.user)
+
+        serializer = self.get_serializer(texte)
+
+        return Response(
+            {
+                "detail": "Texte archivé avec succès.",
+                "texte": serializer.data,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="rendre-visible")
+    def rendre_visible(self, request, pk=None):
+        texte = self.get_object()
+
+        if texte.statut != ReglementTexteApplicable.Statut.PUBLIE:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seul un texte publié peut être rendu visible aux copropriétaires."
+                    )
+                }
+            )
+
+        texte.visible_coproprietaire = True
+        texte.updated_by = request.user
+        texte.save(
+            update_fields=[
+                "visible_coproprietaire",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+
+        serializer = self.get_serializer(texte)
+
+        return Response(
+            {
+                "detail": "Texte rendu visible aux copropriétaires.",
+                "texte": serializer.data,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="masquer-coproprietaire")
+    def masquer_coproprietaire(self, request, pk=None):
+        texte = self.get_object()
+
+        texte.visible_coproprietaire = False
+        texte.updated_by = request.user
+        texte.save(
+            update_fields=[
+                "visible_coproprietaire",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+
+        serializer = self.get_serializer(texte)
+
+        return Response(
+            {
+                "detail": "Texte masqué côté copropriétaire.",
+                "texte": serializer.data,
+            }
+        )
+
+
+class CoproprietaireReglementTexteApplicableViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Lecture seule côté copropriétaire.
+
+    Routes attendues :
+    - GET /api/documents/coproprietaire/reglement-textes/
+    - GET /api/documents/coproprietaire/reglement-textes/:id/
+
+    Règle :
+    - l’utilisateur doit être copropriétaire actif ;
+    - seuls les textes de ses copropriétés sont visibles ;
+    - seuls les textes publiés + visibles_coproprietaire=True sont exposés.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = CoproprietaireReglementTexteApplicableSerializer
+
+    def get_queryset(self):
+        copro_ids = list(
+            CoproMembre.objects.filter(
+                user=self.request.user,
+                is_active=True,
+                role=CoproMembre.Role.COPROPRIETAIRE,
+            ).values_list("copropriete_id", flat=True)
+        )
+
+        if not copro_ids:
+            return ReglementTexteApplicable.objects.none()
+
+        qs = (
+            ReglementTexteApplicable.objects.select_related(
+                "copropriete",
+                "publie_par",
+            )
+            .filter(
+                copropriete_id__in=copro_ids,
+                statut=ReglementTexteApplicable.Statut.PUBLIE,
+                visible_coproprietaire=True,
+            )
+            .order_by("ordre_affichage", "categorie", "-date_publication", "-created_at")
+        )
+
+        params = self.request.query_params
+
+        categorie = params.get("categorie")
+        q = params.get("q")
+
+        if categorie:
+            qs = qs.filter(categorie=categorie)
+
+        if q:
+            qs = qs.filter(
+                Q(titre__icontains=q)
+                | Q(resume__icontains=q)
+                | Q(contenu__icontains=q)
+            )
+
+        return qs
 
 
 class GenerateRelanceLetterAPIView(APIView):
@@ -487,7 +856,9 @@ class CoproprietaireGeneratedDocumentsAPIView(APIView):
         )
 
         lot_ids = list(liens_lots.values_list("lot_id", flat=True).distinct())
-        owner_ids = list(liens_lots.values_list("coproprietaire_id", flat=True).distinct())
+        owner_ids = list(
+            liens_lots.values_list("coproprietaire_id", flat=True).distinct()
+        )
 
         qs = (
             GeneratedDocument.objects.select_related(

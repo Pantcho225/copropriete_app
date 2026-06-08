@@ -5,9 +5,11 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CoproprietaireGenerateAgMandatAPIView,
     CoproprietaireGeneratedDocumentsAPIView,
+    CoproprietaireReglementTexteApplicableViewSet,
     GenerateAgMandatAPIView,
     GenerateRelanceLetterAPIView,
     GeneratedDocumentViewSet,
+    ReglementTexteApplicableViewSet,
 )
 from .views_coproprietaire import (
     CoproprietaireDocumentsAPIView,
@@ -18,9 +20,30 @@ from .views_coproprietaire import (
 app_name = "documents"
 
 router = DefaultRouter()
-router.register(r"generated", GeneratedDocumentViewSet, basename="generated-document")
+
+# Registre documentaire généré admin/syndic
+router.register(
+    r"generated",
+    GeneratedDocumentViewSet,
+    basename="generated-document",
+)
+
+# Règlements / textes applicables côté admin-syndic
+router.register(
+    r"reglement-textes",
+    ReglementTexteApplicableViewSet,
+    basename="reglement-texte-applicable",
+)
+
+# Règlements / textes applicables côté copropriétaire
+router.register(
+    r"coproprietaire/reglement-textes",
+    CoproprietaireReglementTexteApplicableViewSet,
+    basename="coproprietaire-reglement-texte-applicable",
+)
 
 urlpatterns = [
+    # Documents visibles côté copropriétaire
     path(
         "coproprietaire/documents/",
         CoproprietaireDocumentsAPIView.as_view(),
@@ -41,11 +64,15 @@ urlpatterns = [
         CoproprietaireRestaurerDocumentAPIView.as_view(),
         name="coproprietaire-documents-restaurer",
     ),
+
+    # Mandat AG généré depuis l’espace copropriétaire
     path(
         "coproprietaire/ag/<int:ag_id>/mandat/",
         CoproprietaireGenerateAgMandatAPIView.as_view(),
         name="coproprietaire-generate-ag-mandat",
     ),
+
+    # Génération documentaire admin/syndic
     path(
         "generate/relance/<int:dossier_id>/",
         GenerateRelanceLetterAPIView.as_view(),
@@ -56,5 +83,7 @@ urlpatterns = [
         GenerateAgMandatAPIView.as_view(),
         name="generate-ag-mandat",
     ),
+
+    # Routes ViewSets DRF
     path("", include(router.urls)),
 ]

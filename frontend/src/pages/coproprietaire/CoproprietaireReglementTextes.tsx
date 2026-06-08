@@ -1,93 +1,117 @@
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
-type RuleCard = {
-  title: string;
-  description: string;
-  icon: string;
-  points: string[];
+import {
+  getCoproprietaireReglementTextes,
+  type CoproprietaireReglementTexte,
+  type ReglementTexteCategorie,
+} from "../../api/reglementTextes";
+
+type FilterItem = {
+  label: string;
+  value: ReglementTexteCategorie | "";
 };
 
-type TextCard = {
-  title: string;
-  description: string;
-  status: string;
+const FILTERS: FilterItem[] = [
+  { label: "Tous", value: "" },
+  { label: "Règlement copropriété", value: "REGLEMENT_COPROPRIETE" },
+  { label: "Règlement intérieur", value: "REGLEMENT_INTERIEUR" },
+  { label: "Textes de loi", value: "TEXTE_LOI" },
+  { label: "Notes syndic", value: "NOTE_SYNDIC" },
+  { label: "Vie commune", value: "VIE_COMMUNE" },
+  { label: "Charges", value: "CHARGES_COTISATIONS" },
+  { label: "AG", value: "ASSEMBLEES_GENERALES" },
+  { label: "Travaux", value: "TRAVAUX_ENTRETIEN" },
+  { label: "Documents", value: "DOCUMENT_ADMINISTRATIF" },
+];
+
+const CATEGORY_ICONS: Record<string, string> = {
+  REGLEMENT_COPROPRIETE: "📘",
+  REGLEMENT_INTERIEUR: "🏡",
+  TEXTE_LOI: "⚖️",
+  NOTE_SYNDIC: "📝",
+  VIE_COMMUNE: "🤝",
+  CHARGES_COTISATIONS: "💳",
+  ASSEMBLEES_GENERALES: "🗳️",
+  TRAVAUX_ENTRETIEN: "🛠️",
+  DOCUMENT_ADMINISTRATIF: "📄",
+  AUTRE: "📚",
 };
-
-const ruleCards: RuleCard[] = [
-  {
-    title: "Vie commune",
-    description:
-      "Règles pratiques pour préserver le calme, la sécurité et le respect entre résidents.",
-    icon: "🏡",
-    points: [
-      "Respecter les parties communes et les équipements collectifs.",
-      "Éviter les nuisances sonores, surtout aux heures de repos.",
-      "Signaler rapidement tout incident ou dégradation au syndic.",
-    ],
-  },
-  {
-    title: "Charges & cotisations",
-    description:
-      "Repères pour comprendre les appels de charges, paiements et relances.",
-    icon: "💳",
-    points: [
-      "Consulter régulièrement vos appels de charges.",
-      "Régler les cotisations dans les délais communiqués.",
-      "Contacter le syndic en cas de désaccord ou de difficulté de paiement.",
-    ],
-  },
-  {
-    title: "Assemblées générales",
-    description:
-      "Informations utiles sur la présence, les votes et les mandats de représentation.",
-    icon: "🗳️",
-    points: [
-      "Consulter les convocations et documents liés aux assemblées générales.",
-      "Confirmer votre présence ou signaler votre absence depuis votre espace.",
-      "Donner un mandat de représentation si vous ne pouvez pas participer.",
-    ],
-  },
-  {
-    title: "Travaux & entretien",
-    description:
-      "Suivi des décisions collectives, travaux validés et interventions dans la copropriété.",
-    icon: "🛠️",
-    points: [
-      "Les travaux importants sont soumis à validation selon les règles de la copropriété.",
-      "Les interventions peuvent être liées à une résolution votée en AG.",
-      "Les informations utiles sont consultables depuis les modules dédiés.",
-    ],
-  },
-];
-
-const textCards: TextCard[] = [
-  {
-    title: "Règlement de copropriété",
-    description:
-      "Document de référence définissant les droits, obligations, lots, parties communes et règles collectives.",
-    status: "À publier par le syndic",
-  },
-  {
-    title: "Règlement intérieur",
-    description:
-      "Règles de vie quotidienne : bruit, propreté, sécurité, stationnement, usage des équipements et parties communes.",
-    status: "Lecture seule",
-  },
-  {
-    title: "Textes applicables",
-    description:
-      "Repères informatifs sur les règles encadrant la copropriété, à valider par les responsables compétents avant usage officiel.",
-    status: "Information utile",
-  },
-  {
-    title: "Documents administratifs",
-    description:
-      "Courriers, procès-verbaux, mandats, relances, avis et documents mis à disposition par le syndic.",
-    status: "Disponible selon publication",
-  },
-];
 
 export default function CoproprietaireReglementTextes() {
+  const [textes, setTextes] = useState<CoproprietaireReglementTexte[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [categorie, setCategorie] = useState<ReglementTexteCategorie | "">("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTextes() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const data = await getCoproprietaireReglementTextes({
+          categorie,
+          q: search.trim(),
+        });
+
+        if (mounted) {
+          setTextes(data);
+        }
+      } catch (err) {
+        console.error(err);
+
+        if (mounted) {
+          setError(
+            "Impossible de charger les règlements et textes utiles pour le moment.",
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadTextes();
+
+    return () => {
+      mounted = false;
+    };
+  }, [categorie, search]);
+
+  const stats = useMemo(() => {
+    const published = textes.filter((item) => item.statut === "PUBLIE").length;
+    const withFile = textes.filter((item) => Boolean(item.fichier_url)).length;
+    const categories = new Set(textes.map((item) => item.categorie)).size;
+
+    return {
+      total: textes.length,
+      published,
+      withFile,
+      categories,
+    };
+  }, [textes]);
+
+  const groupedTextes = useMemo(() => {
+    const groups = new Map<string, CoproprietaireReglementTexte[]>();
+
+    textes.forEach((item) => {
+      const label = item.categorie_label || "Autres documents";
+
+      if (!groups.has(label)) {
+        groups.set(label, []);
+      }
+
+      groups.get(label)?.push(item);
+    });
+
+    return Array.from(groups.entries());
+  }, [textes]);
+
   return (
     <div style={styles.stack}>
       <section style={styles.hero}>
@@ -97,131 +121,210 @@ export default function CoproprietaireReglementTextes() {
           <h2 style={styles.heroTitle}>Règlement & textes utiles</h2>
 
           <p style={styles.heroText}>
-            Retrouvez ici les règles de vie, documents de référence et textes
-            utiles liés à votre copropriété. Ces contenus sont mis à disposition
-            par le syndic ou l’administration de la copropriété.
+            Retrouvez les règles, notes, documents et textes publiés par le
+            syndic ou l’administration de votre copropriété. Seuls les contenus
+            officiellement publiés et rendus visibles aux copropriétaires
+            apparaissent ici.
           </p>
 
           <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>Espace copropriétaire</span>
-            <span style={styles.metaPill}>Consultation uniquement</span>
-            <span style={styles.metaPill}>Règles de la copropriété</span>
+            <span style={styles.metaPill}>Publication syndic</span>
+            <span style={styles.metaPill}>Consultation copropriétaire</span>
+            <span style={styles.metaPill}>Documents utiles</span>
           </div>
         </div>
 
         <div style={styles.secureBox}>
           <div style={styles.secureIcon}>📚</div>
-          <p style={styles.secureTitle}>Information utile</p>
+          <p style={styles.secureTitle}>Textes publiés</p>
           <p style={styles.secureText}>
-            Cette page aide les copropriétaires à retrouver les principaux repères
-            liés à la vie collective, aux charges, aux assemblées générales et aux
-            documents administratifs.
+            Cette page est alimentée par les textes ajoutés et publiés depuis
+            l’espace admin/syndic.
           </p>
         </div>
+      </section>
+
+      <section style={styles.statsGrid}>
+        <StatCard label="Textes visibles" value={stats.total} helper="Publiés pour vous" />
+        <StatCard label="Catégories" value={stats.categories} helper="Types de contenus" />
+        <StatCard label="Documents joints" value={stats.withFile} helper="Fichiers disponibles" />
+        <StatCard label="Statut" value={stats.published} helper="Éléments publiés" />
       </section>
 
       <section style={styles.noticeCard}>
         <div style={styles.noticeIcon}>ℹ️</div>
         <div>
-          <p style={styles.noticeTitle}>Document d’information</p>
+          <p style={styles.noticeTitle}>Information importante</p>
           <p style={styles.noticeText}>
-            Les informations affichées ici ne remplacent pas les documents
-            officiels signés ou publiés par le syndic. Les textes juridiques
-            doivent être validés par les personnes compétentes avant usage
-            officiel.
+            Les informations affichées ici ne remplacent pas les actes
+            officiels signés ni les conseils d’un professionnel compétent.
+            Elles servent de repères pratiques pour les copropriétaires.
           </p>
         </div>
       </section>
 
-      <section style={styles.grid}>
-        {ruleCards.map((card) => (
-          <article key={card.title} style={styles.ruleCard}>
-            <div style={styles.ruleIcon}>{card.icon}</div>
-
-            <div>
-              <h3 style={styles.ruleTitle}>{card.title}</h3>
-              <p style={styles.ruleDescription}>{card.description}</p>
-            </div>
-
-            <ul style={styles.pointsList}>
-              {card.points.map((point) => (
-                <li key={point} style={styles.pointItem}>
-                  {point}
-                </li>
-              ))}
-            </ul>
-          </article>
-        ))}
-      </section>
-
-      <section style={styles.card}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <p style={styles.sectionEyebrow}>Références</p>
-            <h3 style={styles.sectionTitle}>Documents et textes à consulter</h3>
-            <p style={styles.sectionText}>
-              Cette zone prépare l’affichage des documents institutionnels utiles
-              aux copropriétaires : règlement de copropriété, règlement intérieur,
-              textes applicables et documents administratifs publiés.
-            </p>
-          </div>
+      <section style={styles.toolbar}>
+        <div style={styles.searchBlock}>
+          <label style={styles.inputLabel}>Recherche</label>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Rechercher un texte, une règle, une note..."
+            style={styles.searchInput}
+          />
         </div>
 
-        <div style={styles.textGrid}>
-          {textCards.map((item) => (
-            <article key={item.title} style={styles.textCard}>
-              <div style={styles.textCardHeader}>
-                <h4 style={styles.textCardTitle}>{item.title}</h4>
-                <span style={styles.statusPill}>{item.status}</span>
+        <div style={styles.filterBlock}>
+          <label style={styles.inputLabel}>Catégorie</label>
+          <select
+            value={categorie}
+            onChange={(event) =>
+              setCategorie(event.target.value as ReglementTexteCategorie | "")
+            }
+            style={styles.select}
+          >
+            {FILTERS.map((filter) => (
+              <option key={filter.value || "all"} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      {error ? <div style={styles.errorBox}>{error}</div> : null}
+
+      {loading ? (
+        <section style={styles.card}>
+          <p style={styles.loadingText}>Chargement des textes utiles...</p>
+        </section>
+      ) : textes.length === 0 ? (
+        <section style={styles.emptyCard}>
+          <div style={styles.emptyIcon}>📭</div>
+          <h3 style={styles.emptyTitle}>Aucun texte publié pour le moment</h3>
+          <p style={styles.emptyText}>
+            Le syndic ou l’administration de la copropriété pourra publier ici
+            le règlement intérieur, les textes utiles, notes d’information ou
+            documents de référence visibles par les copropriétaires.
+          </p>
+        </section>
+      ) : (
+        <section style={styles.groupsStack}>
+          {groupedTextes.map(([groupLabel, items]) => (
+            <div key={groupLabel} style={styles.card}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <p style={styles.sectionEyebrow}>Catégorie</p>
+                  <h3 style={styles.sectionTitle}>{groupLabel}</h3>
+                </div>
+
+                <span style={styles.counterPill}>
+                  {items.length} élément{items.length > 1 ? "s" : ""}
+                </span>
               </div>
 
-              <p style={styles.textCardDescription}>{item.description}</p>
-            </article>
+              <div style={styles.textesList}>
+                {items.map((item) => (
+                  <TexteCard key={item.id} texte={item} />
+                ))}
+              </div>
+            </div>
           ))}
-        </div>
-      </section>
-
-      <section style={styles.card}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <p style={styles.sectionEyebrow}>Bonnes pratiques</p>
-            <h3 style={styles.sectionTitle}>Ce que vous pouvez faire depuis votre espace</h3>
-          </div>
-        </div>
-
-        <div style={styles.actionGrid}>
-          <InfoLine
-            title="Suivre vos cotisations"
-            text="Consultez vos appels de charges, paiements et éventuelles relances depuis les pages dédiées."
-          />
-          <InfoLine
-            title="Participer aux assemblées générales"
-            text="Consultez les AG, confirmez votre présence, votez lorsque cela est ouvert ou donnez un mandat de représentation."
-          />
-          <InfoLine
-            title="Consulter vos documents"
-            text="Retrouvez les PV, courriers, documents administratifs et fichiers publiés pour votre profil."
-          />
-          <InfoLine
-            title="Respecter le cadre collectif"
-            text="Les règles de vie commune permettent de protéger la résidence, les équipements et les intérêts des copropriétaires."
-          />
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
 
-function InfoLine({ title, text }: { title: string; text: string }) {
+function TexteCard({ texte }: { texte: CoproprietaireReglementTexte }) {
+  const icon = CATEGORY_ICONS[texte.categorie] || "📚";
+  const datePublication = formatDate(texte.date_publication);
+
+  function openFile() {
+    if (!texte.fichier_url) {
+      return;
+    }
+
+    window.open(texte.fichier_url, "_blank", "noopener,noreferrer");
+  }
+
   return (
-    <div style={styles.infoLine}>
-      <div style={styles.infoDot}>✓</div>
-      <div>
-        <p style={styles.infoTitle}>{title}</p>
-        <p style={styles.infoText}>{text}</p>
+    <article style={styles.texteCard}>
+      <div style={styles.texteIcon}>{icon}</div>
+
+      <div style={styles.texteBody}>
+        <div style={styles.texteHeader}>
+          <div>
+            <h4 style={styles.texteTitle}>{texte.titre}</h4>
+
+            <div style={styles.texteMeta}>
+              <span style={styles.statusPill}>{texte.statut_label || "Publié"}</span>
+
+              {datePublication ? (
+                <span style={styles.metaText}>Publié le {datePublication}</span>
+              ) : null}
+
+              {texte.publie_par_label ? (
+                <span style={styles.metaText}>Par {texte.publie_par_label}</span>
+              ) : null}
+            </div>
+          </div>
+
+          {texte.fichier_url ? (
+            <button type="button" onClick={openFile} style={styles.fileButton}>
+              Ouvrir le fichier
+            </button>
+          ) : null}
+        </div>
+
+        {texte.resume ? <p style={styles.texteResume}>{texte.resume}</p> : null}
+
+        {texte.contenu ? (
+          <div style={styles.contenuBox}>
+            <p style={styles.contenuText}>{texte.contenu}</p>
+          </div>
+        ) : null}
+
+        {texte.filename ? (
+          <p style={styles.filename}>Fichier joint : {texte.filename}</p>
+        ) : null}
       </div>
-    </div>
+    </article>
   );
+}
+
+function StatCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: number | string;
+  helper: string;
+}) {
+  return (
+    <article style={styles.statCard}>
+      <p style={styles.statLabel}>{label}</p>
+      <p style={styles.statValue}>{value}</p>
+      <p style={styles.statHelper}>{helper}</p>
+    </article>
+  );
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 const styles: Record<string, CSSProperties> = {
@@ -333,6 +436,42 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.6,
   },
 
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 14,
+  },
+
+  statCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 22,
+    background: "#ffffff",
+    padding: 18,
+    boxShadow: "0 16px 44px rgba(15,23,42,0.06)",
+  },
+
+  statLabel: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 850,
+  },
+
+  statValue: {
+    margin: "8px 0 0",
+    color: "#0f172a",
+    fontSize: 28,
+    fontWeight: 950,
+    letterSpacing: "-0.04em",
+  },
+
+  statHelper: {
+    margin: "5px 0 0",
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+
   noticeCard: {
     border: "1px solid #bfdbfe",
     borderRadius: 24,
@@ -371,62 +510,64 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 650,
   },
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 16,
-  },
-
-  ruleCard: {
+  toolbar: {
     border: "1px solid #e2e8f0",
-    borderRadius: 28,
+    borderRadius: 26,
     background: "#ffffff",
-    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
-    padding: 22,
+    padding: 18,
     display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 280px",
     gap: 14,
+    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
   },
 
-  ruleIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 20,
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 24,
-  },
-
-  ruleTitle: {
-    margin: 0,
-    color: "#0f172a",
-    fontSize: 20,
-    fontWeight: 950,
-    letterSpacing: "-0.02em",
-  },
-
-  ruleDescription: {
-    margin: "8px 0 0",
-    color: "#64748b",
-    fontSize: 14,
-    lineHeight: 1.6,
-    fontWeight: 600,
-  },
-
-  pointsList: {
-    margin: 0,
-    paddingLeft: 18,
-    color: "#475569",
+  searchBlock: {
     display: "grid",
-    gap: 8,
+    gap: 7,
   },
 
-  pointItem: {
+  filterBlock: {
+    display: "grid",
+    gap: 7,
+  },
+
+  inputLabel: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
+  searchInput: {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: 16,
+    padding: "12px 14px",
+    fontSize: 14,
+    outline: "none",
+    background: "#f8fafc",
+    color: "#0f172a",
+  },
+
+  select: {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: 16,
+    padding: "12px 14px",
+    fontSize: 14,
+    outline: "none",
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontWeight: 700,
+  },
+
+  errorBox: {
+    border: "1px solid #fecaca",
+    background: "#fff1f2",
+    color: "#be123c",
+    borderRadius: 18,
+    padding: 14,
     fontSize: 13,
-    lineHeight: 1.55,
-    fontWeight: 650,
+    fontWeight: 800,
   },
 
   card: {
@@ -435,6 +576,46 @@ const styles: Record<string, CSSProperties> = {
     background: "#ffffff",
     boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
     padding: 22,
+  },
+
+  loadingText: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 14,
+    fontWeight: 700,
+  },
+
+  emptyCard: {
+    border: "1px dashed #cbd5e1",
+    borderRadius: 28,
+    background: "#ffffff",
+    padding: 34,
+    textAlign: "center",
+    boxShadow: "0 18px 55px rgba(15,23,42,0.05)",
+  },
+
+  emptyIcon: {
+    fontSize: 38,
+  },
+
+  emptyTitle: {
+    margin: "12px 0 0",
+    color: "#0f172a",
+    fontSize: 21,
+    fontWeight: 950,
+  },
+
+  emptyText: {
+    margin: "8px auto 0",
+    maxWidth: 720,
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.65,
+  },
+
+  groupsStack: {
+    display: "grid",
+    gap: 18,
   },
 
   sectionHeader: {
@@ -463,103 +644,127 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: "-0.03em",
   },
 
-  sectionText: {
-    margin: "8px 0 0",
-    color: "#64748b",
-    fontSize: 14,
-    lineHeight: 1.6,
-    maxWidth: 820,
+  counterPill: {
+    borderRadius: 999,
+    padding: "7px 11px",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: 900,
   },
 
-  textGrid: {
+  textesList: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 14,
   },
 
-  textCard: {
+  texteCard: {
     border: "1px solid #e2e8f0",
-    borderRadius: 22,
+    borderRadius: 24,
     background: "#f8fafc",
     padding: 16,
+    display: "grid",
+    gridTemplateColumns: "48px minmax(0, 1fr)",
+    gap: 14,
   },
 
-  textCardHeader: {
+  texteIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+  },
+
+  texteBody: {
+    minWidth: 0,
+  },
+
+  texteHeader: {
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
     alignItems: "flex-start",
-    flexWrap: "wrap",
   },
 
-  textCardTitle: {
+  texteTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: 950,
+    letterSpacing: "-0.02em",
+  },
+
+  texteMeta: {
+    marginTop: 8,
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
   },
 
   statusPill: {
     borderRadius: 999,
     padding: "5px 9px",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    color: "#475569",
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    color: "#047857",
     fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
   },
 
-  textCardDescription: {
-    margin: "10px 0 0",
+  metaText: {
     color: "#64748b",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+
+  fileButton: {
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    borderRadius: 14,
+    padding: "9px 11px",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  texteResume: {
+    margin: "13px 0 0",
+    color: "#475569",
     fontSize: 13,
     lineHeight: 1.6,
-    fontWeight: 600,
+    fontWeight: 750,
   },
 
-  actionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 12,
-  },
-
-  infoLine: {
+  contenuBox: {
+    marginTop: 12,
+    borderRadius: 18,
     border: "1px solid #e2e8f0",
-    borderRadius: 20,
-    background: "#f8fafc",
-    padding: 15,
-    display: "flex",
-    gap: 12,
-    alignItems: "flex-start",
+    background: "#ffffff",
+    padding: 14,
   },
 
-  infoDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    background: "#ecfdf5",
-    color: "#047857",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 13,
-    fontWeight: 950,
-    flexShrink: 0,
-  },
-
-  infoTitle: {
+  contenuText: {
     margin: 0,
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: 950,
+    color: "#334155",
+    fontSize: 13,
+    lineHeight: 1.75,
+    whiteSpace: "pre-wrap",
   },
 
-  infoText: {
-    margin: "6px 0 0",
+  filename: {
+    margin: "10px 0 0",
     color: "#64748b",
-    fontSize: 13,
-    lineHeight: 1.55,
-    fontWeight: 600,
+    fontSize: 12,
+    fontWeight: 750,
   },
 };
