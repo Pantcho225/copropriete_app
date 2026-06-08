@@ -54,31 +54,38 @@ const QUICK_ACTIONS: QuickAction[] = [
   },
   {
     title: "Paiements",
-    description: "Vérifier l’historique de vos règlements.",
+    description: "Vérifier l’historique de vos règlements validés.",
     path: "/coproprietaire/paiements",
     icon: "💳",
     tone: "green",
   },
   {
     title: "Relances",
-    description: "Voir les rappels liés à vos lots.",
+    description: "Voir les rappels liés à vos lots actifs.",
     path: "/coproprietaire/relances",
     icon: "🔔",
     tone: "rose",
   },
   {
     title: "Documents",
-    description: "Accéder aux PV et documents utiles.",
+    description: "Accéder aux PV, relances PDF et documents utiles.",
     path: "/coproprietaire/documents",
     icon: "📁",
     tone: "slate",
   },
   {
     title: "Assemblées générales",
-    description: "Consulter vos AG, votes, résolutions et PV.",
+    description: "Consulter les AG, confirmer votre présence et voter.",
     path: "/coproprietaire/ag",
     icon: "🗳️",
     tone: "indigo",
+  },
+  {
+    title: "Règlement & textes utiles",
+    description: "Consulter les règles et repères utiles de la copropriété.",
+    path: "/coproprietaire/reglement-textes",
+    icon: "📚",
+    tone: "slate",
   },
 ];
 
@@ -171,7 +178,8 @@ export default function CoproprietaireDashboard() {
         setState({
           ...initialState,
           loading: false,
-          error: "Impossible de charger votre espace copropriétaire.",
+          error:
+            "Impossible de charger votre espace copropriétaire. Veuillez vous reconnecter.",
         });
         return;
       }
@@ -194,7 +202,7 @@ export default function CoproprietaireDashboard() {
         documents: fulfilledValue(documentsResult),
         error: null,
         businessWarning: businessHasError
-          ? "Certaines données métier n’ont pas pu être chargées. Les informations disponibles sont affichées."
+          ? "Certaines informations n’ont pas pu être chargées. Les données disponibles sont affichées."
           : null,
       });
     }
@@ -218,7 +226,10 @@ export default function CoproprietaireDashboard() {
     const lotsCount = state.lots?.count ?? state.lots?.lots.length ?? 0;
 
     const appelsCount =
-      state.appels?.stats.nb_appels ?? state.appels?.count ?? state.appels?.appels.length ?? 0;
+      state.appels?.stats.nb_appels ??
+      state.appels?.count ??
+      state.appels?.appels.length ??
+      0;
 
     const totalDu = parseAmount(state.appels?.stats.total_du);
     const totalPayeAppels = parseAmount(state.appels?.stats.total_paye);
@@ -254,7 +265,7 @@ export default function CoproprietaireDashboard() {
       lotsCount,
       appelsCount,
       totalDu,
-      totalPaye: totalPayePaiements || totalPayeAppels,
+      totalPaye: Math.max(totalPayePaiements, totalPayeAppels),
       resteAPayer,
       paiementsCount,
       relancesCount,
@@ -320,8 +331,7 @@ export default function CoproprietaireDashboard() {
 
   const membershipStatus = mainMembership?.is_active ? "Actif" : "À vérifier";
 
-  const situationLabel =
-    summary.resteAPayer > 0 ? "À régulariser" : "À jour";
+  const situationLabel = summary.resteAPayer > 0 ? "À régulariser" : "À jour";
 
   const situationTone: Tone = summary.resteAPayer > 0 ? "amber" : "green";
 
@@ -336,19 +346,20 @@ export default function CoproprietaireDashboard() {
 
       <section style={styles.hero}>
         <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Portail personnel</div>
+          <div style={styles.heroBadge}>Espace copropriétaire</div>
 
           <h2 style={styles.heroTitle}>Bonjour {fullName}</h2>
 
           <p style={styles.heroText}>
             Retrouvez vos informations essentielles : lots, appels de charges,
-            paiements, relances, documents et assemblées générales.
+            paiements, relances, documents, assemblées générales, présence, votes et
+            règles utiles de la copropriété.
           </p>
 
           <div style={styles.heroMeta}>
             <span style={styles.metaPill}>Copropriété : {coproName}</span>
             <span style={styles.metaPill}>Profil : Copropriétaire</span>
-            <span style={styles.metaPill}>Statut : {membershipStatus}</span>
+            <span style={styles.metaPill}>Compte : {membershipStatus}</span>
             <span style={styles.metaPill}>Situation : {situationLabel}</span>
           </div>
         </div>
@@ -357,8 +368,8 @@ export default function CoproprietaireDashboard() {
           <div style={styles.secureIcon}>🔐</div>
           <p style={styles.secureTitle}>Accès sécurisé</p>
           <p style={styles.secureText}>
-            Vos données sont automatiquement filtrées selon votre compte et vos
-            lots rattachés.
+            Vos données sont filtrées automatiquement selon votre compte, vos lots
+            et vos droits copropriétaires.
           </p>
         </div>
       </section>
@@ -398,7 +409,9 @@ export default function CoproprietaireDashboard() {
               <h3 style={styles.sectionTitle}>Vos démarches courantes</h3>
             </div>
 
-            <span style={styles.sectionPill}>6 modules disponibles</span>
+            <span style={styles.sectionPill}>
+              {QUICK_ACTIONS.length} modules disponibles
+            </span>
           </div>
 
           <div style={styles.summaryGrid}>
@@ -435,7 +448,7 @@ export default function CoproprietaireDashboard() {
           <div style={styles.activityBlock}>
             <div>
               <p style={styles.sectionEyebrow}>Activité récente</p>
-              <h3 style={styles.sectionTitle}>Derniers mouvements visibles</h3>
+              <h3 style={styles.sectionTitle}>Dernières informations visibles</h3>
             </div>
 
             <div style={styles.activityGrid}>
@@ -498,17 +511,22 @@ export default function CoproprietaireDashboard() {
 
         <aside style={styles.sidePanel}>
           <div style={styles.card}>
-            <p style={styles.sectionEyebrow}>Situation du portail</p>
-            <h3 style={styles.sectionTitle}>Espace copropriétaire opérationnel</h3>
+            <p style={styles.sectionEyebrow}>État de l’espace</p>
+            <h3 style={styles.sectionTitle}>Portail copropriétaire opérationnel</h3>
 
             <p style={styles.paragraph}>
               Votre espace personnel est séparé de l’espace administrateur. Vous
-              pouvez consulter les informations accessibles à votre profil sans
-              gérer les données globales de la copropriété.
+              consultez uniquement les informations liées à vos lots et à votre
+              profil copropriétaire.
             </p>
 
             <div style={styles.statusList}>
               <StatusLine label="Authentification" status="Validé" tone="green" />
+              <StatusLine
+                label="Récupération d’accès"
+                status="Disponible"
+                tone="green"
+              />
               <StatusLine
                 label="Mes lots"
                 status={`${summary.lotsCount} lot(s)`}
@@ -534,15 +552,25 @@ export default function CoproprietaireDashboard() {
                 status={`${summary.documentsCount} document(s)`}
                 tone="green"
               />
-              <StatusLine label="Assemblées générales" status="Disponible" tone="green" />
+              <StatusLine
+                label="Assemblées générales"
+                status="Disponible"
+                tone="green"
+              />
+              <StatusLine
+                label="Règlement & textes"
+                status="Lecture seule"
+                tone="blue"
+              />
             </div>
           </div>
 
           <div style={styles.noteCard}>
             <p style={styles.noteTitle}>Conseil</p>
             <p style={styles.noteText}>
-              Consultez régulièrement vos appels, relances et documents afin de
-              garder votre situation copropriétaire à jour.
+              Pensez à consulter régulièrement vos appels, relances, documents,
+              assemblées générales et règles utiles afin de garder votre situation
+              à jour.
             </p>
           </div>
         </aside>

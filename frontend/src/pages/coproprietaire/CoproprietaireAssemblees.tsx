@@ -21,7 +21,13 @@ import {
 } from "../../api/coproprietaire";
 
 type StatTone = "blue" | "green" | "amber" | "slate" | "indigo";
-type StatusFilter = "" | "CONVOQUEE" | "OUVERTE" | "CLOTUREE" | "ARCHIVEE" | "ANNULEE";
+type StatusFilter =
+  | ""
+  | "CONVOQUEE"
+  | "OUVERTE"
+  | "CLOTUREE"
+  | "ARCHIVEE"
+  | "ANNULEE";
 type FlashKind = "success" | "error" | "info";
 type VoteTone = "green" | "rose" | "slate";
 
@@ -105,13 +111,19 @@ const voteChoiceLabels: Record<CoproprietaireVoteChoix, string> = {
 
 export default function CoproprietaireAssemblees() {
   const [data, setData] = useState<CoproprietaireAGResponse>(emptyResponse);
-  const [procurations, setProcurations] = useState<CoproprietaireProcurationItem[]>([]);
+  const [procurations, setProcurations] = useState<
+    CoproprietaireProcurationItem[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(null);
+  const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const [statut, setStatut] = useState<StatusFilter>("");
-  const [generatingMandatAgId, setGeneratingMandatAgId] = useState<number | null>(null);
+  const [generatingMandatAgId, setGeneratingMandatAgId] = useState<
+    number | null
+  >(null);
   const [presenceBusy, setPresenceBusy] = useState<{
     agId: number;
     mode: CoproprietairePresenceMode;
@@ -123,13 +135,12 @@ export default function CoproprietaireAssemblees() {
   const [localVotesByResolution, setLocalVotesByResolution] = useState<
     Record<string, CoproprietaireVoteItem>
   >({});
-  const [procurationModal, setProcurationModal] = useState<ProcurationModalState | null>(
-    null,
-  );
+  const [procurationModal, setProcurationModal] =
+    useState<ProcurationModalState | null>(null);
   const [creatingProcuration, setCreatingProcuration] = useState(false);
-  const [cancelingProcurationId, setCancelingProcurationId] = useState<number | null>(
-    null,
-  );
+  const [cancelingProcurationId, setCancelingProcurationId] = useState<
+    number | null
+  >(null);
 
   const loadAssemblees = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -216,7 +227,7 @@ export default function CoproprietaireAssemblees() {
       if (!canGiveProcuration(ag)) {
         showFlash(
           "info",
-          "La procuration est disponible uniquement pour une AG convoquée ou ouverte, non verrouillée.",
+          "Le mandat de représentation est disponible uniquement pour une AG convoquée ou ouverte, non verrouillée.",
         );
         return;
       }
@@ -260,7 +271,8 @@ export default function CoproprietaireAssemblees() {
       if (!procurationModal) return;
 
       const mandataireNom = procurationModal.mandataire_nom.trim();
-      const mandataireTelephone = procurationModal.mandataire_telephone.trim();
+      const mandataireTelephone =
+        procurationModal.mandataire_telephone.trim();
       const mandataireEmail = procurationModal.mandataire_email.trim();
       const lotId = procurationModal.lot_id.trim();
 
@@ -282,7 +294,7 @@ export default function CoproprietaireAssemblees() {
 
         showFlash(
           "success",
-          `${response.detail} Statut : ${
+          `${toMandatWording(response.detail)} Statut : ${
             response.procuration.statut_label || response.procuration.statut
           }.`,
         );
@@ -294,7 +306,7 @@ export default function CoproprietaireAssemblees() {
           "error",
           getErrorMessage(
             err,
-            "Impossible d’enregistrer votre demande de procuration.",
+            "Impossible d’enregistrer votre demande de mandat.",
           ),
         );
       } finally {
@@ -309,13 +321,13 @@ export default function CoproprietaireAssemblees() {
       if (!canCancelProcuration(procuration)) {
         showFlash(
           "info",
-          "Seules les procurations en attente peuvent être annulées depuis votre espace.",
+          "Seuls les mandats en attente peuvent être annulés depuis votre espace.",
         );
         return;
       }
 
       const confirmed = window.confirm(
-        `Annuler la procuration donnée à ${procuration.mandataire_nom} ?`,
+        `Annuler le mandat donné à ${procuration.mandataire_nom} ?`,
       );
 
       if (!confirmed) return;
@@ -323,14 +335,16 @@ export default function CoproprietaireAssemblees() {
       try {
         setCancelingProcurationId(procuration.id);
 
-        const response = await annulerProcurationAgCoproprietaire(procuration.id);
+        const response = await annulerProcurationAgCoproprietaire(
+          procuration.id,
+        );
 
-        showFlash("success", response.detail);
+        showFlash("success", toMandatWording(response.detail));
         await loadAssemblees({ silent: true });
       } catch (err) {
         showFlash(
           "error",
-          getErrorMessage(err, "Impossible d’annuler cette procuration."),
+          getErrorMessage(err, "Impossible d’annuler ce mandat."),
         );
       } finally {
         setCancelingProcurationId(null);
@@ -363,7 +377,9 @@ export default function CoproprietaireAssemblees() {
 
         showFlash(
           "success",
-          `Mandat généré avec succès. Référence : ${response.document?.reference || "—"}.`,
+          `Mandat généré avec succès. Référence : ${
+            response.document?.reference || "—"
+          }.`,
         );
 
         if (fileUrl) {
@@ -501,7 +517,9 @@ export default function CoproprietaireAssemblees() {
 
         showFlash(
           "success",
-          `${response.detail} Choix : ${response.vote.choix_label || response.vote.choix}.`,
+          `${response.detail} Choix : ${
+            response.vote.choix_label || response.vote.choix
+          }.`,
         );
 
         await loadAssemblees({ silent: true });
@@ -544,8 +562,8 @@ export default function CoproprietaireAssemblees() {
 
           <p style={styles.heroText}>
             Consultez les assemblées accessibles à vos lots : convocations,
-            quorum, présence, résolutions, votes, procurations et procès-verbaux
-            disponibles.
+            quorum, présence, résolutions, votes, mandats de représentation et
+            procès-verbaux disponibles.
           </p>
 
           <div style={styles.heroMeta}>
@@ -614,7 +632,7 @@ export default function CoproprietaireAssemblees() {
             <h3 style={styles.sectionTitle}>Liste de vos assemblées générales</h3>
             <p style={styles.sectionText}>
               Recherchez une assemblée par titre, lieu ou statut. Vous pouvez
-              confirmer votre présence, participer en ligne, donner procuration,
+              confirmer votre présence, participer en ligne, donner un mandat,
               voter sur les résolutions ouvertes, ouvrir le procès-verbal
               lorsqu’il est disponible et télécharger votre mandat pour les AG
               encore actives.
@@ -724,7 +742,10 @@ function AGCard({
   localVotesByResolution: Record<string, CoproprietaireVoteItem>;
   cancelingProcurationId: number | null;
   onGenerateMandat: (ag: CoproprietaireAG) => void;
-  onConfirmPresence: (ag: CoproprietaireAG, mode: CoproprietairePresenceMode) => void;
+  onConfirmPresence: (
+    ag: CoproprietaireAG,
+    mode: CoproprietairePresenceMode,
+  ) => void;
   onOpenProcuration: (ag: CoproprietaireAGWithResolutions) => void;
   onCancelProcuration: (procuration: CoproprietaireProcurationItem) => void;
   onVoteResolution: (
@@ -779,8 +800,8 @@ function AGCard({
             <p style={styles.presenceBoxTitle}>Ma présence à cette AG</p>
             <p style={styles.presenceBoxText}>
               Déclarez votre participation depuis votre espace copropriétaire.
-              La procuration suit désormais un circuit de demande et validation
-              par le syndic avant impact définitif sur la présence.
+              Le mandat de représentation suit désormais un circuit de demande
+              et validation par le syndic avant impact définitif sur la présence.
             </p>
 
             <div style={styles.presenceActionsGrid}>
@@ -809,7 +830,7 @@ function AGCard({
                 onClick={() => onConfirmPresence(ag, "ABSENT")}
               />
               <PresenceButton
-                label={hasActiveProcuration ? "Procuration créée" : "Donner procuration"}
+                label={hasActiveProcuration ? "Mandat créé" : "Donner un mandat"}
                 mode="REPRESENTE"
                 busyMode={presenceBusy}
                 disabled={!procurationAvailable || presenceBusy !== null}
@@ -844,17 +865,20 @@ function AGCard({
                 </p>
               </div>
 
-              <Badge style={canVoteAg(ag) ? styles.voteOpenBadge : styles.voteClosedBadge}>
+              <Badge
+                style={canVoteAg(ag) ? styles.voteOpenBadge : styles.voteClosedBadge}
+              >
                 {canVoteAg(ag) ? "Vote ouvert" : "Vote indisponible"}
               </Badge>
             </div>
 
             {resolutions.length === 0 ? (
               <p style={styles.voteUnavailableText}>
-                Aucune résolution n’est actuellement affichée pour cette assemblée.
-                Les résolutions préparées avant convocation apparaîtront ici en
-                consultation lorsqu’elles seront disponibles ; le vote restera
-                fermé tant que l’AG n’est pas officiellement ouverte.
+                Aucune résolution n’est actuellement affichée pour cette
+                assemblée. Les résolutions préparées avant convocation
+                apparaîtront ici en consultation lorsqu’elles seront disponibles ;
+                le vote restera fermé tant que l’AG n’est pas officiellement
+                ouverte.
               </p>
             ) : (
               <div style={styles.resolutionsList}>
@@ -863,7 +887,8 @@ function AGCard({
                     resolution,
                     localVotesByResolution,
                   );
-                  const voteAvailable = canVoteResolution(ag, resolution) && !existingVote;
+                  const voteAvailable =
+                    canVoteResolution(ag, resolution) && !existingVote;
                   const resolutionBusy =
                     voteBusy?.resolutionId === resolution.id
                       ? voteBusy.choix
@@ -937,8 +962,9 @@ function AGCard({
                       {!voteAvailable && !existingVote ? (
                         <p style={styles.voteUnavailableText}>
                           Vote indisponible : le vote s’ouvre uniquement lorsque
-                          l’AG est officiellement ouverte, avec une résolution active,
-                          un PV non verrouillé et une présence ou représentation confirmée.
+                          l’AG est officiellement ouverte, avec une résolution
+                          active, un PV non verrouillé et une présence ou
+                          représentation confirmée.
                         </p>
                       ) : null}
                     </div>
@@ -987,10 +1013,12 @@ function AGCard({
             onClick={() => onOpenProcuration(ag)}
             style={{
               ...styles.procurationMainButton,
-              ...(!procurationAvailable ? styles.procurationMainButtonDisabled : {}),
+              ...(!procurationAvailable
+                ? styles.procurationMainButtonDisabled
+                : {}),
             }}
           >
-            Donner procuration
+            Donner un mandat
           </button>
 
           {ag.has_pv ? (
@@ -1010,15 +1038,9 @@ function AGCard({
       </div>
 
       <div style={styles.cardStats}>
-        <SmallStat
-          label="Résolutions"
-          value={formatNumber(ag.total_resolutions)}
-        />
+        <SmallStat label="Résolutions" value={formatNumber(ag.total_resolutions)} />
         <SmallStat label="Mes votes" value={formatNumber(votesTotal)} />
-        <SmallStat
-          label="Procurations"
-          value={formatNumber(procurations.length)}
-        />
+        <SmallStat label="Mandats" value={formatNumber(procurations.length)} />
       </div>
     </article>
   );
@@ -1037,10 +1059,10 @@ function ProcurationsPanel({
     <div style={styles.procurationBox}>
       <div style={styles.procurationHeader}>
         <div>
-          <p style={styles.procurationTitle}>Mes procurations pour cette AG</p>
+          <p style={styles.procurationTitle}>Mes mandats pour cette AG</p>
           <p style={styles.procurationText}>
-            Suivez les demandes transmises au syndic : en attente, validées,
-            rejetées ou annulées.
+            Suivez les mandats transmis au syndic : en attente, validés, rejetés
+            ou annulés.
           </p>
         </div>
 
@@ -1051,7 +1073,7 @@ function ProcurationsPanel({
 
       {procurations.length === 0 ? (
         <p style={styles.procurationEmpty}>
-          Aucune procuration enregistrée pour cette assemblée.
+          Aucun mandat enregistré pour cette assemblée.
         </p>
       ) : (
         <div style={styles.procurationList}>
@@ -1116,7 +1138,9 @@ function ProcurationsPanel({
                     onClick={() => onCancel(procuration)}
                     style={{
                       ...styles.cancelProcurationButton,
-                      ...(!canCancel || canceling ? styles.cancelProcurationButtonDisabled : {}),
+                      ...(!canCancel || canceling
+                        ? styles.cancelProcurationButtonDisabled
+                        : {}),
                     }}
                   >
                     {canceling ? "Annulation..." : "Annuler"}
@@ -1129,7 +1153,9 @@ function ProcurationsPanel({
       )}
     </div>
   );
-}function ProcurationModal({
+}
+
+function ProcurationModal({
   state,
   creating,
   onChange,
@@ -1138,7 +1164,10 @@ function ProcurationsPanel({
 }: {
   state: ProcurationModalState;
   creating: boolean;
-  onChange: (field: keyof Omit<ProcurationModalState, "ag">, value: string) => void;
+  onChange: (
+    field: keyof Omit<ProcurationModalState, "ag">,
+    value: string,
+  ) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -1149,8 +1178,8 @@ function ProcurationsPanel({
       <div style={styles.modalCard}>
         <div style={styles.modalHeader}>
           <div>
-            <p style={styles.modalEyebrow}>Procuration AG</p>
-            <h3 style={styles.modalTitle}>Donner procuration</h3>
+            <p style={styles.modalEyebrow}>Mandat AG</p>
+            <h3 style={styles.modalTitle}>Donner un mandat</h3>
             <p style={styles.modalText}>
               Désignez le mandataire qui vous représentera pour{" "}
               <strong>{state.ag.titre}</strong>. La demande sera transmise au
@@ -1223,7 +1252,9 @@ function ProcurationsPanel({
             <span style={styles.label}>Email du mandataire</span>
             <input
               value={state.mandataire_email}
-              onChange={(event) => onChange("mandataire_email", event.target.value)}
+              onChange={(event) =>
+                onChange("mandataire_email", event.target.value)
+              }
               placeholder="Ex. mandataire@email.com"
               type="email"
               style={styles.formInput}
@@ -1232,8 +1263,8 @@ function ProcurationsPanel({
           </label>
 
           <p style={styles.helperText}>
-            Après enregistrement, la procuration sera en attente. Elle ne sera
-            prise en compte dans les présences qu’après validation par le syndic.
+            Après enregistrement, le mandat sera en attente. Il ne sera pris en
+            compte dans les présences qu’après validation par le syndic.
           </p>
 
           <div style={styles.modalActions}>
@@ -1254,7 +1285,7 @@ function ProcurationsPanel({
                 ...(creating ? styles.primaryButtonDisabled : {}),
               }}
             >
-              {creating ? "Enregistrement..." : "Envoyer la procuration"}
+              {creating ? "Enregistrement..." : "Envoyer le mandat"}
             </button>
           </div>
         </form>
@@ -1496,12 +1527,25 @@ function normalize(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function toMandatWording(value: string): string {
+  return value
+    .replace(/Procurations/g, "Mandats")
+    .replace(/procurations/g, "mandats")
+    .replace(/Procuration/g, "Mandat")
+    .replace(/procuration/g, "mandat");
+}
+
 function canGenerateMandat(ag: CoproprietaireAG): boolean {
   const value = normalize(ag.statut);
 
-  return !["CLOTUREE", "CLÔTURÉE", "ARCHIVEE", "ARCHIVÉE", "ANNULEE", "ANNULÉE"].includes(
-    value,
-  );
+  return ![
+    "CLOTUREE",
+    "CLÔTURÉE",
+    "ARCHIVEE",
+    "ARCHIVÉE",
+    "ANNULEE",
+    "ANNULÉE",
+  ].includes(value);
 }
 
 function canConfirmPresence(ag: CoproprietaireAG): boolean {
@@ -1518,17 +1562,23 @@ function canGiveProcuration(ag: CoproprietaireAG): boolean {
   return ["CONVOQUEE", "CONVOQUÉE", "OUVERTE"].includes(value) && !pvLocked;
 }
 
-function canCancelProcuration(procuration: CoproprietaireProcurationItem): boolean {
+function canCancelProcuration(
+  procuration: CoproprietaireProcurationItem,
+): boolean {
   return normalize(procuration.statut) === "EN_ATTENTE";
 }
 
-function getPresenceItems(ag: CoproprietaireAGWithResolutions): PresenceItemLike[] {
+function getPresenceItems(
+  ag: CoproprietaireAGWithResolutions,
+): PresenceItemLike[] {
   const presence = ag.presence_coproprietaire;
 
   return Array.isArray(presence?.items) ? presence.items : [];
 }
 
-function getPresenceLotOptions(ag: CoproprietaireAGWithResolutions): LotOption[] {
+function getPresenceLotOptions(
+  ag: CoproprietaireAGWithResolutions,
+): LotOption[] {
   const items = getPresenceItems(ag);
   const seen = new Set<string>();
   const options: LotOption[] = [];
@@ -1572,7 +1622,9 @@ function canVoteResolution(
   return canVoteAg(ag) && resolution.cloturee !== true;
 }
 
-function hasPresentOrRepresentedLot(ag: CoproprietaireAGWithResolutions): boolean {
+function hasPresentOrRepresentedLot(
+  ag: CoproprietaireAGWithResolutions,
+): boolean {
   const items = getPresenceItems(ag);
 
   return items.some((item: PresenceItemLike) => {
@@ -1700,7 +1752,9 @@ function getPresenceStyle(status: string | null | undefined): CSSProperties {
   };
 }
 
-function getProcurationStatusStyle(statut: string | null | undefined): CSSProperties {
+function getProcurationStatusStyle(
+  statut: string | null | undefined,
+): CSSProperties {
   const value = normalize(statut);
 
   if (value === "VALIDEE") {
@@ -1854,6 +1908,7 @@ const voteButtonTones: Record<
     color: "#475569",
   },
 };
+
 const styles: Record<string, CSSProperties> = {
   stack: {
     display: "flex",
