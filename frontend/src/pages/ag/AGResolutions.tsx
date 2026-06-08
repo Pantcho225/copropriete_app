@@ -1005,7 +1005,7 @@ export default function AGResolutions() {
         title={ag ? `Résolutions de l’assemblée ${ag}` : "Résolutions"}
         subtitle={
           ag
-            ? "Créez, suivez, analysez et clôturez les résolutions de cette assemblée générale dans une lecture plus cohérente avec AGList et AGDetail."
+            ? "Préparez et suivez les résolutions de cette assemblée générale. Les résolutions doivent normalement être créées avant la convocation ; le vote intervient seulement lorsque l’AG est officiellement ouverte."
             : "Supervisez les résolutions rattachées aux assemblées générales, leur majorité, leur résultat et leur impact métier."
         }
         right={
@@ -1041,7 +1041,7 @@ export default function AGResolutions() {
         title={ag ? `Cockpit des résolutions de l’assemblée ${ag}` : "Cockpit des résolutions"}
         text={
           ag
-            ? "Cette vue centralise la création, le suivi, le calcul des résultats et la clôture des résolutions de l’assemblée active, avec une grammaire visuelle alignée sur le reste du module AG."
+            ? "Cette vue centralise la préparation, le suivi, le calcul des résultats et la clôture des résolutions. Une AG convoquée doit normalement conserver un ordre du jour figé ; les votes ne s’ouvrent qu’en séance."
             : "Cette vue centralise la création, l’analyse, le calcul des résultats et la clôture des résolutions rattachées aux assemblées générales."
         }
         primaryLabel="Ajouter une résolution"
@@ -1052,8 +1052,8 @@ export default function AGResolutions() {
         <div style={heroAsidePanelStyle}>
           <div style={heroAsideTitleStyle}>Lecture rapide</div>
           <div style={heroAsideTextStyle}>
-            Utilisez cette vue pour suivre les décisions soumises à l’assemblée, leur majorité,
-            leur résultat pondéré et leur état de clôture sans surcharge visuelle.
+            Utilisez cette vue pour préparer les décisions avant convocation, puis suivre leur
+            majorité, leur résultat pondéré et leur état de clôture sans surcharge visuelle.
           </div>
 
           <div style={heroAsideDividerStyle} />
@@ -1064,6 +1064,13 @@ export default function AGResolutions() {
           </div>
         </div>
       </HeroSection>
+
+      <AlertBox kind="info" title="Règle métier AG">
+        Les résolutions doivent idéalement être préparées pendant le brouillon de
+        l’assemblée, avant l’envoi de la convocation. Une fois l’AG convoquée,
+        l’ordre du jour doit rester figé. Les votes ne deviennent possibles que
+        lorsque l’AG est officiellement ouverte par le syndic.
+      </AlertBox>
 
       {message ? <AlertBox kind={message.kind}>{message.text}</AlertBox> : null}
 
@@ -1084,8 +1091,9 @@ export default function AGResolutions() {
           }
         >
           <div style={formIntroBoxStyle}>
-            Cette zone permet d’ajouter rapidement une résolution au cycle AG, avec son ordre,
-            son texte, sa majorité et, si nécessaire, son budget voté.
+            Cette zone sert à préparer les résolutions avant la convocation ou à compléter
+            l’AG tant que son statut le permet. Après convocation, l’ordre du jour doit
+            normalement rester figé.
           </div>
 
           <div className="ag-resolutions-form-grid" style={formGridStyle}>

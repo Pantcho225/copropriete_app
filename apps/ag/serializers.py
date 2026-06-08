@@ -23,6 +23,59 @@ def _is_ag_open(ag) -> bool:
     return bool(ag) and getattr(ag, "statut", None) == "OUVERTE"
 
 
+def _ag_status_label(ag) -> str:
+    statut = str(getattr(ag, "statut", "") or "").strip().upper()
+
+    labels = {
+        "BROUILLON": "brouillon",
+        "CONVOQUEE": "convoquée",
+        "CONVOQUÉE": "convoquée",
+        "OUVERTE": "ouverte",
+        "CLOTUREE": "clôturée",
+        "CLÔTUREE": "clôturée",
+        "ARCHIVEE": "archivée",
+        "ANNULÉE": "annulée",
+        "ANNULEE": "annulée",
+    }
+
+    return labels.get(statut, statut.lower() or "non défini")
+
+
+def _ag_not_open_message(ag, *, what: str) -> str:
+    statut_label = _ag_status_label(ag)
+    what_lower = what.lower()
+
+    if "résolution" in what_lower or "resolution" in what_lower:
+        return (
+            f"Cette assemblée est en statut {statut_label} : {what} interdit. "
+            "Les résolutions doivent normalement être préparées avant l’envoi de la convocation. "
+            "Une fois l’AG convoquée, l’ordre du jour doit rester figé ; si une résolution manque, "
+            "repassez l’AG en brouillon ou créez une nouvelle convocation selon votre procédure interne."
+        )
+
+    return (
+        f"Cette assemblée est en statut {statut_label} : {what} interdit. "
+        "Cette action est disponible uniquement lorsque l’assemblée est officiellement ouverte "
+        "par le syndic et non verrouillée."
+    )
+
+
+def _assert_resolution_writable(ag, *, what: str):
+    if not ag:
+        raise serializers.ValidationError(f"AG invalide : {what} interdit.")
+
+    if _is_ag_closed(ag):
+        raise serializers.ValidationError(f"AG clôturée : {what} interdit.")
+
+    if _is_ag_locked(ag):
+        raise serializers.ValidationError(f"PV verrouillé : {what} interdit.")
+
+    statut = str(getattr(ag, "statut", "") or "").strip().upper()
+
+    if statut not in {"BROUILLON", "OUVERTE"}:
+        raise serializers.ValidationError(_ag_not_open_message(ag, what=what))
+
+
 def _assert_ag_writable(ag, *, what: str):
     if _is_ag_closed(ag):
         raise serializers.ValidationError(f"AG clôturée : {what} interdit.")
@@ -34,7 +87,7 @@ def _assert_ag_open_and_writable(ag, *, what: str):
     if not ag:
         raise serializers.ValidationError(f"AG invalide : {what} interdit.")
     if getattr(ag, "statut", None) != "OUVERTE":
-        raise serializers.ValidationError(f"AG non ouverte : {what} interdit.")
+        raise serializers.ValidationError(_ag_not_open_message(ag, what=what))
     if _is_ag_closed(ag):
         raise serializers.ValidationError(f"AG clôturée : {what} interdit.")
     if _is_ag_locked(ag):
@@ -641,7 +694,7 @@ class ResolutionSerializer(serializers.ModelSerializer):
 
         ag = attrs.get("ag") or (instance.ag if instance else None)
         if ag:
-            _assert_ag_open_and_writable(ag, what="création/modification des résolutions")
+            _assert_resolution_writable(ag, what="création/modification des résolutions")
 
         tantieme_categorie = attrs.get("tantieme_categorie")
         if tantieme_categorie is None and instance is not None:

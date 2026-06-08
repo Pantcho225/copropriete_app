@@ -837,8 +837,10 @@ function AGCard({
               <div>
                 <p style={styles.voteBoxTitle}>Mes votes sur les résolutions</p>
                 <p style={styles.voteBoxText}>
-                  Le vote en ligne est autorisé uniquement lorsque l’AG est
-                  ouverte. Chaque vote est unique, verrouillé et tracé.
+                  Les résolutions peuvent être consultées avant l’AG lorsqu’elles
+                  sont disponibles. Le vote en ligne ne s’ouvre qu’une fois l’AG
+                  officiellement ouverte. Chaque vote est unique, verrouillé et
+                  tracé.
                 </p>
               </div>
 
@@ -849,9 +851,10 @@ function AGCard({
 
             {resolutions.length === 0 ? (
               <p style={styles.voteUnavailableText}>
-                Aucune résolution détaillée n’est actuellement exposée dans cette
-                vue. Le backend doit renvoyer la liste des résolutions de l’AG
-                pour afficher les boutons de vote.
+                Aucune résolution n’est actuellement affichée pour cette assemblée.
+                Les résolutions préparées avant convocation apparaîtront ici en
+                consultation lorsqu’elles seront disponibles ; le vote restera
+                fermé tant que l’AG n’est pas officiellement ouverte.
               </p>
             ) : (
               <div style={styles.resolutionsList}>
@@ -933,8 +936,9 @@ function AGCard({
 
                       {!voteAvailable && !existingVote ? (
                         <p style={styles.voteUnavailableText}>
-                          Vote indisponible : AG non ouverte, PV verrouillé,
-                          résolution clôturée ou présence non confirmée.
+                          Vote indisponible : le vote s’ouvre uniquement lorsque
+                          l’AG est officiellement ouverte, avec une résolution active,
+                          un PV non verrouillé et une présence ou représentation confirmée.
                         </p>
                       ) : null}
                     </div>
@@ -1125,9 +1129,7 @@ function ProcurationsPanel({
       )}
     </div>
   );
-}
-
-function ProcurationModal({
+}function ProcurationModal({
   state,
   creating,
   onChange,
@@ -1852,7 +1854,6 @@ const voteButtonTones: Record<
     color: "#475569",
   },
 };
-
 const styles: Record<string, CSSProperties> = {
   stack: {
     display: "flex",
@@ -1860,16 +1861,52 @@ const styles: Record<string, CSSProperties> = {
     gap: 22,
   },
 
+  loadingCard: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 28,
+    background: "#ffffff",
+    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
+    padding: 28,
+    display: "flex",
+    gap: 16,
+    alignItems: "center",
+  },
+
+  loadingIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 20,
+    background: "#eef2ff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 24,
+  },
+
+  loadingTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 17,
+    fontWeight: 950,
+  },
+
+  muted: {
+    margin: "6px 0 0",
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+
   hero: {
     borderRadius: 34,
     padding: 30,
     background:
-      "linear-gradient(135deg, rgba(15,23,42,0.97), rgba(37,99,235,0.92)), radial-gradient(circle at top right, rgba(125,211,252,0.46), transparent 36%)",
+      "linear-gradient(135deg, rgba(15,23,42,0.97), rgba(79,70,229,0.94)), radial-gradient(circle at top right, rgba(196,181,253,0.45), transparent 36%)",
     color: "white",
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) 320px",
     gap: 24,
-    boxShadow: "0 30px 85px rgba(15,23,42,0.26)",
+    boxShadow: "0 30px 85px rgba(15,23,42,0.25)",
     overflow: "hidden",
   },
 
@@ -1884,7 +1921,7 @@ const styles: Record<string, CSSProperties> = {
     padding: "7px 11px",
     background: "rgba(255,255,255,0.13)",
     border: "1px solid rgba(255,255,255,0.18)",
-    color: "#dbeafe",
+    color: "#ede9fe",
     fontSize: 11,
     fontWeight: 950,
     letterSpacing: "0.14em",
@@ -1902,7 +1939,7 @@ const styles: Record<string, CSSProperties> = {
   heroText: {
     margin: "14px 0 0",
     maxWidth: 820,
-    color: "#dbeafe",
+    color: "#ede9fe",
     fontSize: 15,
     lineHeight: 1.75,
     fontWeight: 550,
@@ -1957,7 +1994,7 @@ const styles: Record<string, CSSProperties> = {
 
   secureText: {
     margin: "10px 0 0",
-    color: "#dbeafe",
+    color: "#ede9fe",
     fontSize: 14,
     lineHeight: 1.6,
   },
@@ -2027,7 +2064,7 @@ const styles: Record<string, CSSProperties> = {
 
   sectionEyebrow: {
     margin: 0,
-    color: "#2563eb",
+    color: "#4f46e5",
     fontSize: 11,
     fontWeight: 950,
     textTransform: "uppercase",
@@ -2051,11 +2088,11 @@ const styles: Record<string, CSSProperties> = {
   },
 
   resultPill: {
+    border: "1px solid #e2e8f0",
+    background: "#f8fafc",
+    color: "#475569",
     borderRadius: 999,
     padding: "8px 12px",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    color: "#475569",
     fontSize: 12,
     fontWeight: 900,
   },
@@ -2094,29 +2131,32 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid #fecdd3",
     background: "#fff1f2",
     color: "#be123c",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
+    borderRadius: 18,
+    padding: "14px 16px",
     fontSize: 13,
     fontWeight: 750,
+    lineHeight: 1.55,
+    marginBottom: 18,
   },
 
   list: {
     display: "grid",
-    gap: 14,
+    gap: 16,
   },
 
   agCard: {
     border: "1px solid #e2e8f0",
-    borderRadius: 24,
+    borderRadius: 28,
     background: "#ffffff",
-    padding: 18,
-    boxShadow: "0 14px 36px rgba(15,23,42,0.05)",
+    padding: 20,
+    display: "grid",
+    gap: 16,
+    boxShadow: "0 18px 45px rgba(15,23,42,0.06)",
   },
 
   agHeader: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 240px",
+    gridTemplateColumns: "minmax(0, 1fr) 220px",
     gap: 18,
     alignItems: "start",
   },
@@ -2129,7 +2169,7 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 12,
   },
 
   badge: {
@@ -2146,81 +2186,84 @@ const styles: Record<string, CSSProperties> = {
   agTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 19,
+    fontSize: 22,
     fontWeight: 950,
-    letterSpacing: "-0.02em",
-    lineHeight: 1.2,
+    letterSpacing: "-0.03em",
+    lineHeight: 1.18,
   },
 
   agMeta: {
     display: "flex",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
     marginTop: 8,
-    color: "#475569",
+    color: "#64748b",
     fontSize: 13,
-    fontWeight: 750,
+    fontWeight: 700,
   },
 
   description: {
-    margin: "10px 0 0",
+    margin: "12px 0 0",
     color: "#64748b",
-    fontSize: 13,
+    fontSize: 14,
     lineHeight: 1.6,
   },
 
   presenceBox: {
-    marginTop: 14,
+    marginTop: 16,
     border: "1px solid #e2e8f0",
-    borderRadius: 20,
+    borderRadius: 22,
     background: "#f8fafc",
-    padding: 14,
+    padding: 16,
+    display: "grid",
+    gap: 12,
   },
 
   presenceBoxTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 950,
   },
 
   presenceBoxText: {
-    margin: "6px 0 0",
+    margin: 0,
     color: "#64748b",
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 1.55,
   },
 
   presenceActionsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 8,
-    marginTop: 12,
+    gap: 10,
   },
 
   presenceButton: {
-    border: "1px solid",
+    border: "1px solid #e2e8f0",
     borderRadius: 14,
-    padding: "10px 9px",
+    padding: "10px 12px",
     fontSize: 12,
-    fontWeight: 900,
-    transition: "all 0.2s ease",
+    fontWeight: 950,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 
   presenceUnavailableText: {
-    margin: "10px 0 0",
-    color: "#94a3b8",
+    margin: 0,
+    color: "#92400e",
     fontSize: 12,
-    fontWeight: 750,
-    lineHeight: 1.45,
+    lineHeight: 1.5,
   },
 
   procurationBox: {
-    marginTop: 14,
+    marginTop: 16,
     border: "1px solid #e0e7ff",
-    borderRadius: 20,
+    borderRadius: 22,
     background: "#f8faff",
-    padding: 14,
+    padding: 16,
+    display: "grid",
+    gap: 12,
   },
 
   procurationHeader: {
@@ -2233,14 +2276,14 @@ const styles: Record<string, CSSProperties> = {
   procurationTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 950,
   },
 
   procurationText: {
     margin: "6px 0 0",
     color: "#64748b",
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 1.55,
   },
 
@@ -2251,26 +2294,24 @@ const styles: Record<string, CSSProperties> = {
   },
 
   procurationEmpty: {
-    margin: "12px 0 0",
-    color: "#94a3b8",
-    fontSize: 12,
-    fontWeight: 750,
-    lineHeight: 1.45,
+    margin: 0,
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.55,
   },
 
   procurationList: {
     display: "grid",
     gap: 10,
-    marginTop: 12,
   },
 
   procurationItem: {
     border: "1px solid #e2e8f0",
     borderRadius: 18,
     background: "#ffffff",
-    padding: 12,
+    padding: 14,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 160px",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: 12,
     alignItems: "start",
   },
@@ -2281,31 +2322,34 @@ const styles: Record<string, CSSProperties> = {
 
   procurationItemHeader: {
     display: "flex",
-    gap: 10,
     justifyContent: "space-between",
-    alignItems: "center",
+    gap: 10,
     flexWrap: "wrap",
+    alignItems: "center",
   },
 
   procurationName: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 950,
   },
 
   procurationDetails: {
     margin: "6px 0 0",
-    color: "#64748b",
+    color: "#475569",
     fontSize: 12,
     lineHeight: 1.45,
   },
 
   procurationRejectReason: {
     margin: "8px 0 0",
+    border: "1px solid #fecdd3",
+    background: "#fff1f2",
     color: "#be123c",
+    borderRadius: 12,
+    padding: 10,
     fontSize: 12,
-    fontWeight: 800,
     lineHeight: 1.45,
   },
 
@@ -2313,21 +2357,22 @@ const styles: Record<string, CSSProperties> = {
     margin: "8px 0 0",
     color: "#94a3b8",
     fontSize: 11,
-    fontWeight: 800,
+    fontWeight: 700,
   },
 
   procurationActions: {
     display: "flex",
     flexDirection: "column",
     gap: 8,
+    alignItems: "stretch",
   },
 
   procurationDocButton: {
     border: "1px solid #bfdbfe",
     background: "#eff6ff",
     color: "#1d4ed8",
-    borderRadius: 14,
-    padding: "9px 10px",
+    borderRadius: 12,
+    padding: "8px 10px",
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
@@ -2337,8 +2382,8 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid #fecdd3",
     background: "#fff1f2",
     color: "#be123c",
-    borderRadius: 14,
-    padding: "9px 10px",
+    borderRadius: 12,
+    padding: "8px 10px",
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
@@ -2352,11 +2397,13 @@ const styles: Record<string, CSSProperties> = {
   },
 
   voteBox: {
-    marginTop: 14,
-    border: "1px solid #dbeafe",
-    borderRadius: 20,
-    background: "#f8fbff",
-    padding: 14,
+    marginTop: 16,
+    border: "1px solid #e2e8f0",
+    borderRadius: 22,
+    background: "#ffffff",
+    padding: 16,
+    display: "grid",
+    gap: 12,
   },
 
   voteBoxHeader: {
@@ -2370,15 +2417,16 @@ const styles: Record<string, CSSProperties> = {
   voteBoxTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 950,
   },
 
   voteBoxText: {
     margin: "6px 0 0",
     color: "#64748b",
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 1.55,
+    maxWidth: 760,
   },
 
   voteOpenBadge: {
@@ -2393,17 +2441,25 @@ const styles: Record<string, CSSProperties> = {
     borderColor: "#e2e8f0",
   },
 
+  voteUnavailableText: {
+    margin: 0,
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 1.55,
+  },
+
   resolutionsList: {
     display: "grid",
-    gap: 10,
-    marginTop: 12,
+    gap: 12,
   },
 
   resolutionCard: {
     border: "1px solid #e2e8f0",
     borderRadius: 18,
-    background: "#ffffff",
-    padding: 12,
+    background: "#f8fafc",
+    padding: 14,
+    display: "grid",
+    gap: 12,
   },
 
   resolutionHeader: {
@@ -2416,7 +2472,7 @@ const styles: Record<string, CSSProperties> = {
   resolutionTitle: {
     margin: 0,
     color: "#0f172a",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 950,
     lineHeight: 1.35,
   },
@@ -2425,39 +2481,22 @@ const styles: Record<string, CSSProperties> = {
     margin: "6px 0 0",
     color: "#64748b",
     fontSize: 12,
-    lineHeight: 1.55,
-  },
-
-  resolutionOpenBadge: {
-    background: "#ecfdf5",
-    color: "#047857",
-    borderColor: "#a7f3d0",
+    lineHeight: 1.5,
   },
 
   resolutionClosedBadge: {
-    background: "#fff1f2",
-    color: "#be123c",
-    borderColor: "#fecdd3",
+    background: "#f8fafc",
+    color: "#64748b",
+    borderColor: "#e2e8f0",
   },
 
-  voteActionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 8,
-    marginTop: 10,
-  },
-
-  voteButton: {
-    border: "1px solid",
-    borderRadius: 14,
-    padding: "10px 9px",
-    fontSize: 12,
-    fontWeight: 950,
-    transition: "all 0.2s ease",
+  resolutionOpenBadge: {
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    borderColor: "#bfdbfe",
   },
 
   voteResult: {
-    marginTop: 10,
     border: "1px solid #a7f3d0",
     background: "#ecfdf5",
     color: "#047857",
@@ -2466,38 +2505,46 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    fontSize: 12,
-    fontWeight: 800,
+    fontSize: 13,
     lineHeight: 1.45,
   },
 
   voteResultIcon: {
-    fontSize: 14,
+    fontSize: 15,
+    flex: "0 0 auto",
   },
 
-  voteUnavailableText: {
-    margin: "10px 0 0",
-    color: "#94a3b8",
+  voteActionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 8,
+  },
+
+  voteButton: {
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+    padding: "10px 12px",
     fontSize: 12,
-    fontWeight: 750,
-    lineHeight: 1.45,
+    fontWeight: 950,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 
   agActions: {
     display: "flex",
     flexDirection: "column",
-    gap: 9,
+    gap: 10,
     alignItems: "stretch",
   },
 
   pvButton: {
-    border: "1px solid #bfdbfe",
-    background: "#eff6ff",
-    color: "#1d4ed8",
+    border: "1px solid #c7d2fe",
+    background: "#eef2ff",
+    color: "#3730a3",
     borderRadius: 16,
-    padding: "11px 14px",
+    padding: "12px 14px",
     fontSize: 13,
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
   },
 
@@ -2509,11 +2556,11 @@ const styles: Record<string, CSSProperties> = {
   },
 
   mandatButton: {
-    border: "1px solid #c7d2fe",
-    background: "#eef2ff",
-    color: "#4338ca",
+    border: "1px solid #bfdbfe",
+    background: "#eff6ff",
+    color: "#1d4ed8",
     borderRadius: 16,
-    padding: "11px 14px",
+    padding: "12px 14px",
     fontSize: 13,
     fontWeight: 950,
     cursor: "pointer",
@@ -2528,10 +2575,10 @@ const styles: Record<string, CSSProperties> = {
 
   procurationMainButton: {
     border: "1px solid #c7d2fe",
-    background: "#ffffff",
+    background: "#eef2ff",
     color: "#4338ca",
     borderRadius: 16,
-    padding: "11px 14px",
+    padding: "12px 14px",
     fontSize: 13,
     fontWeight: 950,
     cursor: "pointer",
@@ -2548,42 +2595,39 @@ const styles: Record<string, CSSProperties> = {
     color: "#047857",
     fontSize: 12,
     fontWeight: 800,
-    textAlign: "center",
   },
 
   pvHintMuted: {
     color: "#94a3b8",
     fontSize: 12,
     fontWeight: 800,
-    textAlign: "center",
   },
 
   mandatHint: {
-    color: "#4338ca",
+    color: "#1d4ed8",
     fontSize: 12,
     fontWeight: 800,
-    textAlign: "center",
   },
 
   mandatHintMuted: {
     color: "#94a3b8",
     fontSize: 12,
     fontWeight: 800,
-    textAlign: "center",
   },
 
   cardStats: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 10,
-    marginTop: 16,
+    borderTop: "1px solid #e2e8f0",
+    paddingTop: 16,
   },
 
   smallStat: {
-    borderRadius: 18,
-    background: "#f8fafc",
     border: "1px solid #e2e8f0",
-    padding: 12,
+    background: "#f8fafc",
+    borderRadius: 18,
+    padding: 14,
   },
 
   smallStatLabel: {
@@ -2596,74 +2640,10 @@ const styles: Record<string, CSSProperties> = {
   },
 
   smallStatValue: {
-    margin: "6px 0 0",
+    margin: "8px 0 0",
     color: "#0f172a",
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: 950,
-  },
-
-  emptyState: {
-    border: "1px dashed #cbd5e1",
-    borderRadius: 24,
-    padding: 26,
-    textAlign: "center",
-    background: "#f8fafc",
-  },
-
-  emptyIcon: {
-    fontSize: 30,
-    marginBottom: 10,
-  },
-
-  emptyTitle: {
-    margin: 0,
-    color: "#0f172a",
-    fontSize: 17,
-    fontWeight: 950,
-  },
-
-  emptyText: {
-    margin: "8px auto 0",
-    maxWidth: 620,
-    color: "#64748b",
-    fontSize: 14,
-    lineHeight: 1.6,
-  },
-
-  loadingCard: {
-    border: "1px solid #e2e8f0",
-    borderRadius: 28,
-    background: "#ffffff",
-    boxShadow: "0 18px 55px rgba(15,23,42,0.07)",
-    padding: 28,
-    display: "flex",
-    gap: 16,
-    alignItems: "center",
-  },
-
-  loadingIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 20,
-    background: "#eff6ff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 24,
-  },
-
-  loadingTitle: {
-    margin: 0,
-    color: "#0f172a",
-    fontSize: 17,
-    fontWeight: 950,
-  },
-
-  muted: {
-    margin: "6px 0 0",
-    color: "#64748b",
-    fontSize: 14,
-    lineHeight: 1.5,
   },
 
   modalBackdrop: {
@@ -2747,17 +2727,6 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 900,
   },
 
-  formInput: {
-    width: "100%",
-    border: "1px solid #dbe3ef",
-    borderRadius: 16,
-    padding: "12px 14px",
-    color: "#0f172a",
-    fontSize: 14,
-    outline: "none",
-    boxSizing: "border-box",
-  },
-
   formSelect: {
     width: "100%",
     border: "1px solid #dbe3ef",
@@ -2770,15 +2739,22 @@ const styles: Record<string, CSSProperties> = {
     boxSizing: "border-box",
   },
 
+  formInput: {
+    width: "100%",
+    border: "1px solid #dbe3ef",
+    borderRadius: 16,
+    padding: "12px 14px",
+    color: "#0f172a",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+
   helperText: {
     margin: 0,
     color: "#64748b",
     fontSize: 12,
     lineHeight: 1.55,
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: "10px 12px",
   },
 
   modalActions: {
@@ -2812,9 +2788,37 @@ const styles: Record<string, CSSProperties> = {
   },
 
   primaryButtonDisabled: {
-    borderColor: "#cbd5e1",
-    background: "#cbd5e1",
-    color: "#ffffff",
+    borderColor: "#e2e8f0",
+    background: "#f8fafc",
+    color: "#94a3b8",
     cursor: "not-allowed",
+  },
+
+  emptyState: {
+    border: "1px dashed #cbd5e1",
+    borderRadius: 24,
+    padding: 26,
+    textAlign: "center",
+    background: "#f8fafc",
+  },
+
+  emptyIcon: {
+    fontSize: 30,
+    marginBottom: 10,
+  },
+
+  emptyTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: 17,
+    fontWeight: 950,
+  },
+
+  emptyText: {
+    margin: "8px auto 0",
+    maxWidth: 620,
+    color: "#64748b",
+    fontSize: 14,
+    lineHeight: 1.6,
   },
 };

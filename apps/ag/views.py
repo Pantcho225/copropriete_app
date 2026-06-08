@@ -76,14 +76,64 @@ def _assert_ag_writable(ag: AssembleeGenerale):
         raise ValidationError({"detail": "PV verrouillé : modification interdite."})
 
 
+def _ag_status_label(ag: AssembleeGenerale) -> str:
+    statut = str(getattr(ag, "statut", "") or "").strip().upper()
+
+    labels = {
+        "BROUILLON": "brouillon",
+        "CONVOQUEE": "convoquée",
+        "CONVOQUÉE": "convoquée",
+        "OUVERTE": "ouverte",
+        "CLOTUREE": "clôturée",
+        "CLÔTUREE": "clôturée",
+        "ARCHIVEE": "archivée",
+        "ANNULÉE": "annulée",
+        "ANNULEE": "annulée",
+    }
+
+    return labels.get(statut, statut.lower() or "non défini")
+
+
+def _ag_not_open_message(ag: AssembleeGenerale, *, what: str) -> str:
+    statut_label = _ag_status_label(ag)
+    what_lower = what.lower()
+
+    if "résolution" in what_lower or "resolution" in what_lower:
+        return (
+            f"Cette assemblée est en statut {statut_label} : {what} interdit. "
+            "Les résolutions doivent normalement être préparées avant l’envoi de la convocation. "
+            "Une fois l’AG convoquée, l’ordre du jour doit rester figé ; si une résolution manque, "
+            "repassez l’AG en brouillon ou créez une nouvelle convocation selon votre procédure interne."
+        )
+
+    return (
+        f"Cette assemblée est en statut {statut_label} : {what} interdit. "
+        "Cette action est disponible uniquement lorsque l’assemblée est officiellement ouverte "
+        "par le syndic et non verrouillée."
+    )
+
+
 def _assert_ag_open_and_writable(ag: AssembleeGenerale, *, what: str):
     statut = getattr(ag, "statut", None)
     if statut != "OUVERTE":
-        raise ValidationError({"detail": f"AG non ouverte : {what} interdit."})
+        raise ValidationError({"detail": _ag_not_open_message(ag, what=what)})
     if statut == "CLOTUREE":
         raise ValidationError({"detail": f"AG clôturée : {what} interdit."})
     if getattr(ag, "pv_locked", False):
         raise ValidationError({"detail": f"PV verrouillé : {what} interdit."})
+
+
+def _assert_resolution_writable(ag: AssembleeGenerale, *, what: str):
+    statut = str(getattr(ag, "statut", "") or "").strip().upper()
+
+    if statut == "CLOTUREE":
+        raise ValidationError({"detail": f"AG clôturée : {what} interdit."})
+
+    if getattr(ag, "pv_locked", False):
+        raise ValidationError({"detail": f"PV verrouillé : {what} interdit."})
+
+    if statut not in {"BROUILLON", "OUVERTE"}:
+        raise ValidationError({"detail": _ag_not_open_message(ag, what=what)})
 
 
 def _raise_drf_validation(error):
@@ -1082,20 +1132,20 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         ag = serializer.validated_data.get("ag")
         if ag:
             _assert_same_copro(self.request, ag)
-            _assert_ag_open_and_writable(ag, what="création des résolutions")
+            _assert_resolution_writable(ag, what="création des résolutions")
         serializer.save()
 
     def perform_update(self, serializer):
         _require_copro_id(self.request)
         instance = self.get_object()
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_open_and_writable(instance.ag, what="modification des résolutions")
+        _assert_resolution_writable(instance.ag, what="modification des résolutions")
         serializer.save()
 
     def perform_destroy(self, instance):
         _require_copro_id(self.request)
         _assert_same_copro(self.request, instance.ag)
-        _assert_ag_open_and_writable(instance.ag, what="suppression des résolutions")
+        _assert_resolution_writable(instance.ag, what="suppression des résolutions")
         super().perform_destroy(instance)
 
 
