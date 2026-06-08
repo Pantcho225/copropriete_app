@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import ResetPassword from "./pages/auth/ResetPassword";
+
 // Gestion administrative
 import GestionAdministrativeHome from "./pages/administration/GestionAdministrativeHome";
 import CoproprieteAdministrativeOverview from "./pages/administration/CoproprieteAdministrativeOverview";
@@ -85,6 +86,7 @@ import CoproprietairePaiements from "./pages/coproprietaire/CoproprietairePaieme
 import CoproprietaireRelances from "./pages/coproprietaire/CoproprietaireRelances";
 import CoproprietaireDocuments from "./pages/coproprietaire/CoproprietaireDocuments";
 import CoproprietaireAssemblees from "./pages/coproprietaire/CoproprietaireAssemblees";
+import CoproprietaireReglementTextes from "./pages/coproprietaire/CoproprietaireReglementTextes";
 import CoproprietaireRoute from "./routes/CoproprietaireRoute";
 
 export default function App() {
@@ -93,6 +95,8 @@ export default function App() {
       <Routes>
         {/* Authentification */}
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Espace copropriétaire séparé */}
         <Route element={<CoproprietaireRoute />}>
@@ -110,6 +114,12 @@ export default function App() {
 
             {/* Assemblées générales copropriétaire */}
             <Route path="ag" element={<CoproprietaireAssemblees />} />
+
+            {/* Règlement & textes utiles copropriétaire */}
+            <Route
+              path="reglement-textes"
+              element={<CoproprietaireReglementTextes />}
+            />
           </Route>
         </Route>
 
@@ -289,8 +299,6 @@ export default function App() {
 
         {/* Redirection globale */}
         <Route path="*" element={<Navigate to="/" replace />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-<Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </BrowserRouter>
   );

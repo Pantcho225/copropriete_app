@@ -56,18 +56,26 @@ const NAV_ITEMS: NavItem[] = [
     label: "Assemblées générales",
     path: "/coproprietaire/ag",
     icon: "🗳️",
-    description: "Votes, quorum et PV",
+    description: "Votes, mandats et PV",
+  },
+  {
+    label: "Règlement & textes",
+    path: "/coproprietaire/reglement-textes",
+    icon: "📚",
+    description: "Règles utiles",
   },
 ];
 
 const PAGE_META: Record<string, PageMeta> = {
   "/coproprietaire": {
     title: "Tableau de bord",
-    subtitle: "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
+    subtitle:
+      "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
   },
   "/coproprietaire/tableau-de-bord": {
     title: "Tableau de bord",
-    subtitle: "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
+    subtitle:
+      "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
   },
   "/coproprietaire/mes-lots": {
     title: "Mes lots",
@@ -75,7 +83,8 @@ const PAGE_META: Record<string, PageMeta> = {
   },
   "/coproprietaire/appels": {
     title: "Appels de charges",
-    subtitle: "Suivez vos appels de fonds, échéances, montants dus et règlements.",
+    subtitle:
+      "Suivez vos appels de fonds, échéances, montants dus et règlements.",
   },
   "/coproprietaire/paiements": {
     title: "Mes paiements",
@@ -87,11 +96,18 @@ const PAGE_META: Record<string, PageMeta> = {
   },
   "/coproprietaire/documents": {
     title: "Mes documents",
-    subtitle: "Accédez à vos documents utiles, procès-verbaux et pièces partagées.",
+    subtitle:
+      "Accédez à vos documents utiles, procès-verbaux et pièces partagées.",
   },
   "/coproprietaire/ag": {
     title: "Assemblées générales",
-    subtitle: "Consultez vos assemblées, présences, votes, résolutions et procès-verbaux.",
+    subtitle:
+      "Consultez vos assemblées, présences, votes, mandats de représentation et procès-verbaux.",
+  },
+  "/coproprietaire/reglement-textes": {
+    title: "Règlement & textes utiles",
+    subtitle:
+      "Consultez les règles de vie, documents de référence et textes utiles liés à votre copropriété.",
   },
 };
 
