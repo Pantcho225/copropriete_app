@@ -1,3 +1,4 @@
+# apps/billing_app/serializers.py
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -50,14 +51,23 @@ class RelanceLotSerializer(serializers.ModelSerializer):
         # En création, appel et lot doivent être présents
         if instance is None:
             if lot is None:
-                raise serializers.ValidationError({"lot": "Le champ 'lot' est obligatoire."})
+                raise serializers.ValidationError(
+                    {"lot": "Le champ 'lot' est obligatoire."}
+                )
             if appel is None:
-                raise serializers.ValidationError({"appel": "Le champ 'appel' est obligatoire."})
+                raise serializers.ValidationError(
+                    {"appel": "Le champ 'appel' est obligatoire."}
+                )
 
         # Vérifs de cohérence lot/appel
         if lot and appel and lot.copropriete_id != appel.exercice.copropriete_id:
             raise serializers.ValidationError(
-                {"appel": "Cet appel ne correspond pas à la copropriété du lot sélectionné."}
+                {
+                    "appel": (
+                        "Cet appel ne correspond pas à la copropriété "
+                        "du lot sélectionné."
+                    )
+                }
             )
 
         # Header scope (si présent)
@@ -77,10 +87,15 @@ class RelanceLotSerializer(serializers.ModelSerializer):
 class PaiementAppelSerializer(serializers.ModelSerializer):
     """
     Serializer API pour créer/voir les paiements.
-    La logique métier (anti-dépassement, recalcul statut, relances => REGLE) est dans PaiementAppel.save().
+
+    La logique métier :
+    - anti-dépassement ;
+    - recalcul statut ;
+    - relances => REGLE ;
+    est dans PaiementAppel.save().
     """
 
-    # ✅ Optionnel côté API (le modèle a un default=timezone.now)
+    # ✅ Optionnel côté API : le modèle a un default=timezone.now
     date_paiement = serializers.DateTimeField(required=False, allow_null=True)
 
     class Meta:
@@ -109,7 +124,9 @@ class PaiementAppelSerializer(serializers.ModelSerializer):
         if ligne is None:
             # En création, ligne obligatoire
             if instance is None:
-                raise serializers.ValidationError({"ligne": "Le champ 'ligne' est obligatoire."})
+                raise serializers.ValidationError(
+                    {"ligne": "Le champ 'ligne' est obligatoire."}
+                )
             return attrs
 
         # Vérif header copro
@@ -127,6 +144,108 @@ class PaiementAppelSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"montant": "Montant invalide."})
 
             if montant_dec <= Decimal("0"):
-                raise serializers.ValidationError({"montant": "Le montant doit être strictement positif."})
+                raise serializers.ValidationError(
+                    {"montant": "Le montant doit être strictement positif."}
+                )
 
         return attrs
+
+
+class SituationFinanciereMensuelleSerializer(serializers.Serializer):
+    """
+    Point mensuel pour les courbes côté copropriétaire.
+
+    Chaque ligne représente un mois :
+    - appels émis ;
+    - paiements enregistrés ;
+    - crédits bancaires ;
+    - débits bancaires.
+    """
+
+    mois = serializers.CharField()
+    mois_label = serializers.CharField()
+
+    total_appels = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_paye = serializers.DecimalField(max_digits=14, decimal_places=2)
+    credits = serializers.DecimalField(max_digits=14, decimal_places=2)
+    debits = serializers.DecimalField(max_digits=14, decimal_places=2)
+    solde_mensuel = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class RepartitionMouvementSerializer(serializers.Serializer):
+    """
+    Répartition simple des flux bancaires.
+    """
+
+    type = serializers.CharField()
+    label = serializers.CharField()
+    montant = serializers.DecimalField(max_digits=14, decimal_places=2)
+    count = serializers.IntegerField()
+
+
+class DernierMouvementBancaireSerializer(serializers.Serializer):
+    """
+    Derniers mouvements bancaires visibles en synthèse.
+
+    On reste volontairement sur des champs non sensibles :
+    - date ;
+    - sens ;
+    - montant ;
+    - libellé ;
+    - compte ;
+    - référence.
+    """
+
+    id = serializers.IntegerField()
+    date_operation = serializers.DateField()
+    sens = serializers.CharField()
+    sens_label = serializers.CharField()
+    montant = serializers.DecimalField(max_digits=14, decimal_places=2)
+    libelle = serializers.CharField()
+    reference = serializers.CharField(allow_blank=True)
+    compte_label = serializers.CharField(allow_blank=True)
+    rapproche = serializers.BooleanField()
+    cancelled = serializers.BooleanField()
+    cancel_kind = serializers.CharField(allow_blank=True)
+
+
+class SituationFinanciereCoproprietaireSerializer(serializers.Serializer):
+    """
+    Réponse globale de transparence financière côté copropriétaire.
+
+    Cette réponse est en lecture seule et agrège :
+    - appels de fonds ;
+    - lignes d'appels ;
+    - paiements d'appels ;
+    - mouvements bancaires.
+    """
+
+    copropriete_id = serializers.IntegerField()
+    copropriete_label = serializers.CharField()
+    devise = serializers.CharField()
+
+    exercice_id = serializers.IntegerField(allow_null=True)
+    exercice_annee = serializers.IntegerField(allow_null=True)
+    periode_debut = serializers.DateField(allow_null=True)
+    periode_fin = serializers.DateField(allow_null=True)
+
+    total_appels = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_encaisse = serializers.DecimalField(max_digits=14, decimal_places=2)
+    reste_a_recouvrer = serializers.DecimalField(max_digits=14, decimal_places=2)
+    taux_encaissement = serializers.DecimalField(max_digits=7, decimal_places=2)
+
+    total_credits_bancaires = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_debits_bancaires = serializers.DecimalField(max_digits=14, decimal_places=2)
+    solde_bancaire_estime = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+    nb_appels = serializers.IntegerField()
+    nb_lignes_appel = serializers.IntegerField()
+    nb_lignes_impayees = serializers.IntegerField()
+    nb_lignes_partielles = serializers.IntegerField()
+    nb_lignes_payees = serializers.IntegerField()
+
+    courbe_mensuelle = SituationFinanciereMensuelleSerializer(many=True)
+    repartition_mouvements = RepartitionMouvementSerializer(many=True)
+    derniers_mouvements = DernierMouvementBancaireSerializer(many=True)
+
+    message_transparence = serializers.CharField()

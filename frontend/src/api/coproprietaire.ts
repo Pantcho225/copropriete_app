@@ -554,3 +554,89 @@ export async function voterResolutionAgCoproprietaire(
 
   return response.data;
 }
+
+// =========================================================
+// Situation financière globale copropriétaire
+// =========================================================
+
+export type CoproprietaireSituationMensuelle = {
+  mois: string;
+  mois_label: string;
+  total_appels: string;
+  total_paye: string;
+  credits: string;
+  debits: string;
+  solde_mensuel: string;
+};
+
+export type CoproprietaireRepartitionMouvement = {
+  type: "CREDIT" | "DEBIT" | string;
+  label: string;
+  montant: string;
+  count: number;
+};
+
+export type CoproprietaireDernierMouvement = {
+  id: number;
+  date_operation: string;
+  sens: "CREDIT" | "DEBIT" | string;
+  sens_label: string;
+  montant: string;
+  libelle: string;
+  reference: string;
+  compte_label: string;
+  rapproche: boolean;
+  cancelled: boolean;
+  cancel_kind: string;
+};
+
+export type CoproprietaireSituationFinanciereResponse = {
+  copropriete_id: number;
+  copropriete_label: string;
+  devise: string;
+
+  exercice_id: number | null;
+  exercice_annee: number | null;
+  periode_debut: string | null;
+  periode_fin: string | null;
+
+  total_appels: string;
+  total_encaisse: string;
+  reste_a_recouvrer: string;
+  taux_encaissement: string;
+
+  total_credits_bancaires: string;
+  total_debits_bancaires: string;
+  solde_bancaire_estime: string;
+
+  nb_appels: number;
+  nb_lignes_appel: number;
+  nb_lignes_impayees: number;
+  nb_lignes_partielles: number;
+  nb_lignes_payees: number;
+
+  courbe_mensuelle: CoproprietaireSituationMensuelle[];
+  repartition_mouvements: CoproprietaireRepartitionMouvement[];
+  derniers_mouvements: CoproprietaireDernierMouvement[];
+
+  message_transparence: string;
+};
+
+export async function getSituationFinanciereCoproprietaire(options?: {
+  exerciceId?: number | string;
+  annee?: number | string;
+  coproprieteId?: number | string;
+}) {
+  const response = await api.get<CoproprietaireSituationFinanciereResponse>(
+    "/api/billing/coproprietaire/situation-financiere/",
+    {
+      params: {
+        exercice_id: options?.exerciceId,
+        annee: options?.annee,
+        copropriete_id: options?.coproprieteId,
+      },
+    },
+  );
+
+  return response.data;
+}

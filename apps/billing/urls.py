@@ -7,7 +7,12 @@ from .public_views import (
     PublicRelanceVerifyAPIView,
     PublicRelanceVerifyByTokenAPIView,
 )
-from .views import AppelDeFondsViewSet, PaiementAppelViewSet, RelanceLotViewSet
+from .views import (
+    AppelDeFondsViewSet,
+    CoproprietaireSituationFinanciereAPIView,
+    PaiementAppelViewSet,
+    RelanceLotViewSet,
+)
 from .views_coproprietaire import (
     CoproprietaireAppelsAPIView,
     CoproprietairePaiementsAPIView,
@@ -21,20 +26,33 @@ router.register(r"appels", AppelDeFondsViewSet, basename="appel")
 router.register(r"paiements", PaiementAppelViewSet, basename="paiement")
 
 urlpatterns = [
-    # Espace copropriétaire
+    # Espace copropriétaire — appels de charges
     path(
         "coproprietaire/appels/",
         CoproprietaireAppelsAPIView.as_view(),
         name="coproprietaire-appels",
     ),
+
+    # Espace copropriétaire — paiements
     path(
         "coproprietaire/paiements/",
         CoproprietairePaiementsAPIView.as_view(),
         name="coproprietaire-paiements",
     ),
 
-    # Routes non-router
-    path("dashboard/", BillingDashboardAPIView.as_view(), name="billing-dashboard"),
+    # Espace copropriétaire — situation financière globale de la copropriété
+    path(
+        "coproprietaire/situation-financiere/",
+        CoproprietaireSituationFinanciereAPIView.as_view(),
+        name="coproprietaire-situation-financiere",
+    ),
+
+    # Dashboard facturation admin/syndic
+    path(
+        "dashboard/",
+        BillingDashboardAPIView.as_view(),
+        name="billing-dashboard",
+    ),
 
     # Route publique par PK
     path(

@@ -83,6 +83,7 @@ import CoproprietaireDashboard from "./pages/coproprietaire/CoproprietaireDashbo
 import CoproprietaireMesLots from "./pages/coproprietaire/CoproprietaireMesLots";
 import CoproprietaireAppels from "./pages/coproprietaire/CoproprietaireAppels";
 import CoproprietairePaiements from "./pages/coproprietaire/CoproprietairePaiements";
+import CoproprietaireSituationFinanciere from "./pages/coproprietaire/CoproprietaireSituationFinanciere";
 import CoproprietaireRelances from "./pages/coproprietaire/CoproprietaireRelances";
 import CoproprietaireDocuments from "./pages/coproprietaire/CoproprietaireDocuments";
 import CoproprietaireAssemblees from "./pages/coproprietaire/CoproprietaireAssemblees";
@@ -102,13 +103,22 @@ export default function App() {
         <Route element={<CoproprietaireRoute />}>
           <Route path="/coproprietaire" element={<CoproprietaireLayout />}>
             <Route index element={<CoproprietaireDashboard />} />
+
             <Route
               path="tableau-de-bord"
               element={<CoproprietaireDashboard />}
             />
+
             <Route path="mes-lots" element={<CoproprietaireMesLots />} />
             <Route path="appels" element={<CoproprietaireAppels />} />
             <Route path="paiements" element={<CoproprietairePaiements />} />
+
+            {/* Situation financière globale copropriétaire */}
+            <Route
+              path="situation-financiere"
+              element={<CoproprietaireSituationFinanciere />}
+            />
+
             <Route path="relances" element={<CoproprietaireRelances />} />
             <Route path="documents" element={<CoproprietaireDocuments />} />
 
@@ -138,28 +148,34 @@ export default function App() {
           {/* Gestion administrative */}
           <Route path="gestion-administrative">
             <Route index element={<GestionAdministrativeHome />} />
+
             <Route
               path="copropriete"
               element={<CoproprieteAdministrativeOverview />}
             />
+
             <Route
               path="reunions-rencontres"
               element={<ReunionsRencontres />}
             />
+
             <Route
               path="reglement-textes"
               element={<ReglementTextesApplicables />}
             />
+
             <Route path="documents" element={<DocumentsAdministratifs />} />
           </Route>
 
           {/* Comptabilité */}
           <Route path="compta">
             <Route index element={<ComptaHome />} />
+
             <Route
               path="releves"
               element={<Navigate to="/compta/imports" replace />}
             />
+
             <Route path="import" element={<ImportCSV />} />
             <Route path="imports" element={<RelevesImports />} />
             <Route path="imports/:importId/lignes" element={<ReleveLignes />} />
@@ -190,16 +206,20 @@ export default function App() {
             <Route index element={<Navigate to="/travaux/dossiers" replace />} />
             <Route path="dossiers" element={<TravauxDossiers />} />
             <Route path="dossiers/nouveau" element={<TravauxDossierForm />} />
+
             <Route
               path="dossiers/:id/modifier"
               element={<TravauxDossierForm />}
             />
+
             <Route path="dossiers/:id" element={<TravauxDossierDetail />} />
             <Route path="fournisseurs" element={<TravauxFournisseurs />} />
+
             <Route
               path="fournisseurs/nouveau"
               element={<TravauxFournisseurForm />}
             />
+
             <Route
               path="fournisseurs/:id/modifier"
               element={<TravauxFournisseurForm />}
@@ -229,6 +249,7 @@ export default function App() {
               path="assemblees/:id/resolutions"
               element={<AGResolutions />}
             />
+
             <Route path="resolutions" element={<AGResolutions />} />
 
             {/* Compatibilité ancienne route */}
@@ -257,14 +278,17 @@ export default function App() {
 
             {/* Copropriétés */}
             <Route path="coproprietes" element={<PlatformCoproprietesList />} />
+
             <Route
               path="coproprietes/nouveau"
               element={<PlatformCoproprieteForm />}
             />
+
             <Route
               path="coproprietes/:id"
               element={<PlatformCoproprieteDetail />}
             />
+
             <Route
               path="coproprietes/:id/modifier"
               element={<PlatformCoproprieteForm />}
@@ -278,18 +302,22 @@ export default function App() {
               path="referentiel-copropriete"
               element={<ReferentielCopropriete />}
             />
+
             <Route
               path="referentiel-copropriete/coproprietaires"
               element={<PlatformCoproprietaires />}
             />
+
             <Route
               path="referentiel-copropriete/lots"
               element={<PlatformLots />}
             />
+
             <Route
               path="referentiel-copropriete/occupants"
               element={<PlatformOccupants />}
             />
+
             <Route
               path="referentiel-copropriete/tantiemes"
               element={<PlatformTantiemes />}

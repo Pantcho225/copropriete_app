@@ -41,6 +41,12 @@ const NAV_ITEMS: NavItem[] = [
     description: "Règlements suivis",
   },
   {
+    label: "Situation financière",
+    path: "/coproprietaire/situation-financiere",
+    icon: "📊",
+    description: "Vue globale",
+  },
+  {
     label: "Relances",
     path: "/coproprietaire/relances",
     icon: "🔔",
@@ -89,6 +95,11 @@ const PAGE_META: Record<string, PageMeta> = {
   "/coproprietaire/paiements": {
     title: "Mes paiements",
     subtitle: "Consultez l’historique de vos règlements enregistrés.",
+  },
+  "/coproprietaire/situation-financiere": {
+    title: "Situation financière",
+    subtitle:
+      "Consultez la synthèse financière globale de votre copropriété en lecture seule.",
   },
   "/coproprietaire/relances": {
     title: "Mes relances",
