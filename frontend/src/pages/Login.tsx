@@ -1,6 +1,7 @@
 // src/pages/Login.tsx
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+
 import api from "../api/axios";
 import { ENDPOINTS } from "../api/endpoints";
 import { useAuthStore } from "../store/authStore";
@@ -222,6 +223,12 @@ export default function Login() {
                   autoComplete="current-password"
                   disabled={loading}
                 />
+
+                <div style={forgotPasswordRow}>
+                  <Link to="/forgot-password" style={forgotPasswordLink}>
+                    Mot de passe oublié ?
+                  </Link>
+                </div>
               </div>
 
               <div style={fieldGroup}>
@@ -529,6 +536,19 @@ const input: CSSProperties = {
   color: "#111827",
   outline: "none",
   boxSizing: "border-box",
+};
+
+const forgotPasswordRow: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  marginTop: -2,
+};
+
+const forgotPasswordLink: CSSProperties = {
+  color: "#4f46e5",
+  fontSize: 13,
+  fontWeight: 850,
+  textDecoration: "none",
 };
 
 const helperText: CSSProperties = {

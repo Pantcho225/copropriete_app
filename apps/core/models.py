@@ -1,9 +1,14 @@
 # apps/core/models.py
 from __future__ import annotations
 
+import hashlib
+import secrets
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.text import slugify
 
 
@@ -218,84 +223,18 @@ class CoproMembre(TimeStampedModel):
             or getattr(self.user, "email", None)
             or f"user#{self.user_id}"
         )
-
-        copro = (
-            getattr(self.copropriete, "nom", None)
-            or f"copro#{self.copropriete_id}"
-        )
-
-        return f"{username} ({self.role}) - {copro}"
-
-    @property
-    def is_admin(self) -> bool:
-        return self.role == self.Role.ADMIN
-
-    @property
-    def is_syndic(self) -> bool:
-        return self.role == self.Role.SYNDIC
-
-    @property
-    def is_gestionnaire(self) -> bool:
-        return self.role == self.Role.GESTIONNAIRE
-
-    @property
-    def is_comptable(self) -> bool:
-        return self.role == self.Role.COMPTABLE
-
-    @property
-    def is_coproprietaire(self) -> bool:
-        return self.role == self.Role.COPROPRIETAIRE
-
-    @property
-    def can_manage_copropriete(self) -> bool:
-        return self.role in {
-            self.Role.ADMIN,
-            self.Role.SYNDIC,
-        }
-
-    @property
-    def can_manage_referentiel(self) -> bool:
-        return self.role in {
-            self.Role.ADMIN,
-            self.Role.SYNDIC,
-            self.Role.GESTIONNAIRE,
-        }
-
-    @property
-    def can_manage_users(self) -> bool:
-        return self.role in {
-            self.Role.ADMIN,
-            self.Role.SYNDIC,
-        }
-
-    @property
-    def can_write_compta(self) -> bool:
-        return self.role in {
-            self.Role.ADMIN,
-            self.Role.SYNDIC,
-            self.Role.GESTIONNAIRE,
-            self.Role.COMPTABLE,
-        }
-
-    @property
-    def can_read_reports(self) -> bool:
-        return self.role in {
-            self.Role.ADMIN,
-            self.Role.SYNDIC,
-            self.Role.GESTIONNAIRE,
-            self.Role.COMPTABLE,
-            self.Role.CONSEIL,
-        }
+        copropriete = getattr(self.copropriete, "nom", f"copro#{self.copropriete_id}")
+        return f"{username} — {copropriete} — {self.role}"
 
 
 class UserSecurityProfile(TimeStampedModel):
     """
-    Profil sécurité complémentaire d'un utilisateur.
+    Profil de sécurité rattaché à un utilisateur.
 
-    Objectif :
-    - forcer le changement du mot de passe temporaire ;
-    - tracer la création d'un mot de passe temporaire ;
-    - préparer l'espace copropriétaire séparé.
+    Utilisé notamment pour :
+    - imposer le changement du mot de passe temporaire ;
+    - tracer la dernière modification du mot de passe ;
+    - préparer les futurs contrôles de sécurité d'accès.
     """
 
     user = models.OneToOneField(
@@ -308,22 +247,20 @@ class UserSecurityProfile(TimeStampedModel):
     must_change_password = models.BooleanField(
         default=False,
         db_index=True,
-        help_text=(
-            "Si True, l'utilisateur doit changer son mot de passe "
-            "à la prochaine connexion."
-        ),
+        help_text="Force l'utilisateur à changer son mot de passe avant d'utiliser les API métier.",
     )
 
-    temporary_password_created_at = models.DateTimeField(
-        null=True,
+    password_changed_at = models.DateTimeField(
         blank=True,
-        help_text="Date de génération du dernier mot de passe temporaire.",
+        null=True,
+        db_index=True,
     )
 
     class Meta:
         ordering = ("-id",)
         indexes = [
             models.Index(fields=["must_change_password"]),
+            models.Index(fields=["password_changed_at"]),
         ]
 
     def __str__(self) -> str:
@@ -332,5 +269,119 @@ class UserSecurityProfile(TimeStampedModel):
             or getattr(self.user, "email", None)
             or f"user#{self.user_id}"
         )
+        return f"Profil sécurité — {username}"
 
-        return f"Sécurité utilisateur — {username}"
+
+class PasswordResetToken(models.Model):
+    """
+    Token sécurisé de récupération d'accès.
+
+    Règles :
+    - le token brut n'est jamais stocké en base ;
+    - seul le hash SHA-256 est conservé ;
+    - le token expire automatiquement ;
+    - un token déjà utilisé ne peut pas être réutilisé ;
+    - les anciens tokens actifs du même utilisateur sont invalidés à la création d'un nouveau.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_reset_tokens",
+        db_index=True,
+    )
+
+    token_hash = models.CharField(
+        max_length=128,
+        unique=True,
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(blank=True, null=True, db_index=True)
+
+    requested_ip = models.GenericIPAddressField(blank=True, null=True)
+    requested_user_agent = models.TextField(blank=True)
+
+    consumed_ip = models.GenericIPAddressField(blank=True, null=True)
+    consumed_user_agent = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["user", "used_at"]),
+            models.Index(fields=["expires_at", "used_at"]),
+        ]
+
+    def __str__(self) -> str:
+        username = (
+            getattr(self.user, "username", None)
+            or getattr(self.user, "email", None)
+            or f"user#{self.user_id}"
+        )
+        return f"Password reset token — {username}"
+
+    @staticmethod
+    def hash_token(raw_token: str) -> str:
+        return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def generate_for_user(
+        cls,
+        *,
+        user,
+        requested_ip: str | None = None,
+        requested_user_agent: str = "",
+        ttl_minutes: int = 30,
+    ) -> tuple[str, "PasswordResetToken"]:
+        now = timezone.now()
+
+        cls.objects.filter(
+            user=user,
+            used_at__isnull=True,
+            expires_at__gt=now,
+        ).update(used_at=now)
+
+        raw_token = secrets.token_urlsafe(48)
+        token_hash = cls.hash_token(raw_token)
+
+        reset_token = cls.objects.create(
+            user=user,
+            token_hash=token_hash,
+            expires_at=now + timedelta(minutes=ttl_minutes),
+            requested_ip=requested_ip,
+            requested_user_agent=(requested_user_agent or "")[:1000],
+        )
+
+        return raw_token, reset_token
+
+    @property
+    def is_used(self) -> bool:
+        return self.used_at is not None
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.is_used and not self.is_expired
+
+    def consume(
+        self,
+        *,
+        consumed_ip: str | None = None,
+        consumed_user_agent: str = "",
+    ):
+        self.used_at = timezone.now()
+        self.consumed_ip = consumed_ip
+        self.consumed_user_agent = (consumed_user_agent or "")[:1000]
+        self.save(
+            update_fields=[
+                "used_at",
+                "consumed_ip",
+                "consumed_user_agent",
+            ]
+        )

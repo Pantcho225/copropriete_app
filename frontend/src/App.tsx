@@ -6,7 +6,8 @@ import AdminLayout from "./layout/AdminLayout";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 // Gestion administrative
 import GestionAdministrativeHome from "./pages/administration/GestionAdministrativeHome";
 import CoproprieteAdministrativeOverview from "./pages/administration/CoproprieteAdministrativeOverview";
@@ -288,6 +289,8 @@ export default function App() {
 
         {/* Redirection globale */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+<Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </BrowserRouter>
   );

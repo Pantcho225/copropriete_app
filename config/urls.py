@@ -1,3 +1,5 @@
+# config/urls.py
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -8,6 +10,8 @@ from apps.core.auth_views import (
     AuthMeAPIView,
     ChangePasswordAPIView,
     CustomTokenObtainPairView,
+    PasswordResetConfirmAPIView,
+    PasswordResetRequestAPIView,
 )
 
 urlpatterns = [
@@ -17,6 +21,8 @@ urlpatterns = [
     path("api/auth/login/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/auth/change-password/", ChangePasswordAPIView.as_view(), name="change_password"),
+    path("api/auth/password-reset/request/", PasswordResetRequestAPIView.as_view(), name="password_reset_request"),
+    path("api/auth/password-reset/confirm/", PasswordResetConfirmAPIView.as_view(), name="password_reset_confirm"),
     path("api/auth/me/", AuthMeAPIView.as_view(), name="auth_me"),
 
     # Core / référentiel

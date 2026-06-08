@@ -1,36 +1,85 @@
+// frontend/src/api/auth.ts
+
 import api from "./axios";
 
-export type AuthMeUser = {
+export type AuthUser = {
   id: number;
   username: string;
   email: string;
-  first_name?: string;
-  last_name?: string;
+  first_name: string;
+  last_name: string;
   is_superuser: boolean;
   is_staff: boolean;
 };
 
-export type AuthMeMembership = {
+export type AuthMembershipCopropriete = {
+  id: number;
+  nom: string;
+};
+
+export type AuthMembership = {
   id: number;
   role: string;
   is_active: boolean;
-  copropriete: {
-    id: number;
-    nom: string;
-  };
+  copropriete: AuthMembershipCopropriete;
 };
 
 export type AuthMeResponse = {
-  user: AuthMeUser;
+  user: AuthUser;
   must_change_password: boolean;
   roles: string[];
-  memberships: AuthMeMembership[];
+  memberships: AuthMembership[];
   is_admin: boolean;
   is_superuser: boolean;
-  is_coproprietaire?: boolean;
+  is_coproprietaire: boolean;
 };
 
 export async function getAuthMe(): Promise<AuthMeResponse> {
   const response = await api.get<AuthMeResponse>("/api/auth/me/");
+  return response.data;
+}
+
+export type PasswordResetRequestPayload = {
+  identifier: string;
+};
+
+export type PasswordResetRequestResponse = {
+  detail: string;
+  debug_reset_token?: string;
+  debug_reset_url?: string;
+  debug_throttled?: boolean;
+  debug_message?: string;
+};
+
+export type PasswordResetConfirmPayload = {
+  token: string;
+  new_password: string;
+  confirm_password: string;
+};
+
+export type PasswordResetConfirmResponse = {
+  detail: string;
+  must_change_password: boolean;
+};
+
+export async function requestPasswordReset(
+  payload: PasswordResetRequestPayload,
+): Promise<PasswordResetRequestResponse> {
+  const response = await api.post<PasswordResetRequestResponse>(
+    "/api/auth/password-reset/request/",
+    payload,
+  );
+
+  return response.data;
+}
+
+export async function confirmPasswordReset(
+  payload: PasswordResetConfirmPayload,
+): Promise<PasswordResetConfirmResponse> {
+  const response = await api.post<PasswordResetConfirmResponse>(
+    "/api/auth/password-reset/confirm/",
+    payload,
+  );
+
   return response.data;
 }

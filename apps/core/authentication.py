@@ -9,10 +9,11 @@ class MustChangePasswordJWTAuthentication(JWTAuthentication):
     Bloque l'accès aux API métier si l'utilisateur doit changer son mot de passe.
 
     Objectif :
-    - autoriser login
-    - autoriser refresh
-    - autoriser change-password
-    - bloquer le reste tant que must_change_password=True
+    - autoriser login ;
+    - autoriser refresh ;
+    - autoriser change-password ;
+    - autoriser récupération d'accès ;
+    - bloquer le reste tant que must_change_password=True.
     """
 
     ALLOWED_PATHS = {
@@ -22,6 +23,10 @@ class MustChangePasswordJWTAuthentication(JWTAuthentication):
         "/api/auth/refresh",
         "/api/auth/change-password/",
         "/api/auth/change-password",
+        "/api/auth/password-reset/request/",
+        "/api/auth/password-reset/request",
+        "/api/auth/password-reset/confirm/",
+        "/api/auth/password-reset/confirm",
     }
 
     def authenticate(self, request):
