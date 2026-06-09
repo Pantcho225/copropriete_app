@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import AGProcuration, AgConvocation, AssembleeGenerale, PresenceLot, Resolution, Vote
 from .services.results import compute_resolution_result
 
 
@@ -576,6 +576,257 @@ class AGProcurationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         obj = AGProcuration(**validated_data)
+        obj.save()
+        return obj
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+class AgConvocationSerializer(serializers.ModelSerializer):
+    ag_titre = serializers.CharField(source="ag.titre", read_only=True)
+    ag_date_ag = serializers.DateTimeField(source="ag.date_ag", read_only=True)
+    copropriete_label = serializers.SerializerMethodField(read_only=True)
+    coproprietaire_label = serializers.SerializerMethodField(read_only=True)
+    lot_reference = serializers.CharField(source="lot.reference", read_only=True)
+    lot_numero = serializers.CharField(source="lot.numero", read_only=True)
+    lot_label = serializers.SerializerMethodField(read_only=True)
+    document_url = serializers.SerializerMethodField(read_only=True)
+    document_reference = serializers.CharField(source="document.reference", read_only=True)
+    document_title = serializers.CharField(source="document.title", read_only=True)
+    statut_label = serializers.CharField(source="get_statut_display", read_only=True)
+    canal_label = serializers.CharField(source="get_canal_display", read_only=True)
+    generated_by_label = serializers.SerializerMethodField(read_only=True)
+    sent_by_label = serializers.SerializerMethodField(read_only=True)
+    cancelled_by_label = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = AgConvocation
+        fields = [
+            "id",
+            "reference",
+            "ag",
+            "ag_titre",
+            "ag_date_ag",
+            "copropriete",
+            "copropriete_label",
+            "coproprietaire",
+            "coproprietaire_label",
+            "lot",
+            "lot_reference",
+            "lot_numero",
+            "lot_label",
+            "document",
+            "document_url",
+            "document_reference",
+            "document_title",
+            "statut",
+            "statut_label",
+            "canal",
+            "canal_label",
+            "objet",
+            "message",
+            "generated_at",
+            "generated_by",
+            "generated_by_label",
+            "sent_at",
+            "sent_by",
+            "sent_by_label",
+            "consulted_at",
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_by_label",
+            "cancellation_reason",
+            "metadata",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "reference",
+            "ag_titre",
+            "ag_date_ag",
+            "copropriete",
+            "copropriete_label",
+            "coproprietaire_label",
+            "lot_reference",
+            "lot_numero",
+            "lot_label",
+            "document_url",
+            "document_reference",
+            "document_title",
+            "statut_label",
+            "canal_label",
+            "generated_at",
+            "generated_by",
+            "generated_by_label",
+            "sent_at",
+            "sent_by",
+            "sent_by_label",
+            "consulted_at",
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_by_label",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_copropriete_label(self, obj):
+        copropriete = getattr(obj, "copropriete", None)
+        if not copropriete:
+            return ""
+
+        return (
+            getattr(copropriete, "nom", "")
+            or getattr(copropriete, "name", "")
+            or getattr(copropriete, "libelle", "")
+            or str(copropriete)
+        )
+
+    def get_coproprietaire_label(self, obj):
+        owner = getattr(obj, "coproprietaire", None)
+        if not owner:
+            return ""
+        return getattr(owner, "display_name", "") or str(owner)
+
+    def get_lot_label(self, obj):
+        lot = getattr(obj, "lot", None)
+        if not lot:
+            return ""
+
+        return (
+            getattr(lot, "reference", "")
+            or getattr(lot, "numero", "")
+            or f"Lot #{getattr(lot, 'id', '')}"
+        )
+
+    def get_document_url(self, obj):
+        document = getattr(obj, "document", None)
+        if not document:
+            return None
+
+        for field_name in ("file", "fichier", "document_pdf", "pdf", "pdf_file"):
+            file_obj = getattr(document, field_name, None)
+            if not file_obj:
+                continue
+
+            try:
+                url = file_obj.url
+            except Exception:
+                continue
+
+            request = self.context.get("request")
+            if request is not None and isinstance(url, str) and url.startswith("/"):
+                return request.build_absolute_uri(url)
+
+            return url
+
+        return None
+
+    def _user_label(self, user):
+        if not user:
+            return ""
+
+        full_name = ""
+        try:
+            full_name = user.get_full_name()
+        except Exception:
+            full_name = ""
+
+        return full_name or getattr(user, "username", "") or getattr(user, "email", "") or str(user)
+
+    def get_generated_by_label(self, obj):
+        return self._user_label(getattr(obj, "generated_by", None))
+
+    def get_sent_by_label(self, obj):
+        return self._user_label(getattr(obj, "sent_by", None))
+
+    def get_cancelled_by_label(self, obj):
+        return self._user_label(getattr(obj, "cancelled_by", None))
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+
+        if instance and getattr(instance, "statut", None) in {"ENVOYEE", "CONSULTEE", "ANNULEE"}:
+            raise serializers.ValidationError(
+                "Une convocation envoyée, consultée ou annulée ne peut plus être modifiée."
+            )
+
+        ag = attrs.get("ag") or (instance.ag if instance else None)
+        lot = attrs.get("lot") or (instance.lot if instance else None)
+        coproprietaire = attrs.get("coproprietaire") or (
+            instance.coproprietaire if instance else None
+        )
+
+        if not ag:
+            raise serializers.ValidationError({"ag": "L’assemblée générale est obligatoire."})
+
+        if not lot:
+            raise serializers.ValidationError({"lot": "Le lot est obligatoire."})
+
+        if not coproprietaire:
+            raise serializers.ValidationError(
+                {"coproprietaire": "Le copropriétaire est obligatoire."}
+            )
+
+        if _is_ag_closed(ag) or _is_ag_locked(ag):
+            raise serializers.ValidationError(
+                {"ag": "AG clôturée ou PV verrouillé : convocation interdite."}
+            )
+
+        if str(getattr(lot, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
+            raise serializers.ValidationError(
+                {"lot": "Le lot convoqué doit appartenir à la même copropriété que l’AG."}
+            )
+
+        if str(getattr(coproprietaire, "copropriete_id", "")) != str(getattr(ag, "copropriete_id", "")):
+            raise serializers.ValidationError(
+                {
+                    "coproprietaire": (
+                        "Le copropriétaire convoqué doit appartenir à la même copropriété "
+                        "que l’AG."
+                    )
+                }
+            )
+
+        try:
+            from apps.owners.models import ProprietaireLot
+
+            has_active_link = ProprietaireLot.objects.filter(
+                copropriete_id=ag.copropriete_id,
+                coproprietaire=coproprietaire,
+                lot=lot,
+                date_fin__isnull=True,
+            ).exists()
+        except Exception:
+            has_active_link = True
+
+        if not has_active_link:
+            raise serializers.ValidationError(
+                {
+                    "lot": (
+                        "Ce lot n’est pas rattaché activement au copropriétaire "
+                        "sélectionné."
+                    )
+                }
+            )
+
+        existing = AgConvocation.objects.filter(ag=ag, lot=lot)
+        if instance and instance.pk:
+            existing = existing.exclude(pk=instance.pk)
+
+        if existing.exists():
+            raise serializers.ValidationError(
+                {"lot": "Une convocation existe déjà pour ce lot et cette AG."}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        obj = AgConvocation(**validated_data)
         obj.save()
         return obj
 

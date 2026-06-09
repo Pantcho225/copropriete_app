@@ -313,6 +313,217 @@ class AssembleeGenerale(models.Model):
             return ag
 
 
+class AgConvocation(models.Model):
+    STATUT_CHOICES = [
+        ("BROUILLON", "Brouillon"),
+        ("GENEREE", "Générée"),
+        ("ENVOYEE", "Envoyée"),
+        ("CONSULTEE", "Consultée"),
+        ("ANNULEE", "Annulée"),
+    ]
+
+    CANAL_CHOICES = [
+        ("PLATEFORME", "Plateforme"),
+        ("EMAIL", "Email"),
+        ("WHATSAPP", "WhatsApp"),
+        ("PAPIER", "Papier"),
+        ("AUTRE", "Autre"),
+    ]
+
+    ag = models.ForeignKey(
+        "ag.AssembleeGenerale",
+        on_delete=models.CASCADE,
+        related_name="convocations",
+    )
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="ag_convocations",
+    )
+    coproprietaire = models.ForeignKey(
+        "owners.Coproprietaire",
+        on_delete=models.PROTECT,
+        related_name="ag_convocations",
+    )
+    lot = models.ForeignKey(
+        "lots.Lot",
+        on_delete=models.PROTECT,
+        related_name="ag_convocations",
+    )
+    document = models.ForeignKey(
+        "documents.GeneratedDocument",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ag_convocations",
+    )
+
+    reference = models.CharField(max_length=80, unique=True, blank=True, default="")
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default="BROUILLON")
+    canal = models.CharField(max_length=20, choices=CANAL_CHOICES, default="PLATEFORME")
+
+    objet = models.CharField(max_length=180, blank=True, default="")
+    message = models.TextField(blank=True, default="")
+
+    generated_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    consulted_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ag_convocations_generees",
+    )
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ag_convocations_envoyees",
+    )
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ag_convocations_annulees",
+    )
+
+    cancellation_reason = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ag", "lot"],
+                name="unique_ag_convocation_by_lot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["copropriete", "ag"]),
+            models.Index(fields=["copropriete", "statut"]),
+            models.Index(fields=["ag", "statut"]),
+            models.Index(fields=["coproprietaire", "statut"]),
+            models.Index(fields=["lot", "statut"]),
+            models.Index(fields=["reference"]),
+        ]
+
+    def __str__(self):
+        return f"Convocation {self.reference or self.pk} - AG {self.ag_id}"
+
+    def clean(self):
+        super().clean()
+
+        if self.ag_id and self.copropriete_id:
+            if self.ag.copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {"copropriete": "La convocation doit appartenir à la même copropriété que l'AG."}
+                )
+
+        if self.lot_id and self.copropriete_id:
+            if self.lot.copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {"lot": "Le lot convoqué doit appartenir à la même copropriété."}
+                )
+
+        if self.coproprietaire_id and self.copropriete_id:
+            if self.coproprietaire.copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {"coproprietaire": "Le copropriétaire convoqué doit appartenir à la même copropriété."}
+                )
+
+    def save(self, *args, **kwargs):
+        if self.ag_id and not self.copropriete_id:
+            self.copropriete_id = self.ag.copropriete_id
+
+        if not self.objet and self.ag_id:
+            self.objet = f"Convocation - {self.ag.titre}"
+
+        if not self.reference:
+            self.full_clean(exclude=["reference"])
+
+            with transaction.atomic():
+                super().save(*args, **kwargs)
+                now = timezone.now()
+                self.reference = f"CONV-AG-{now:%Y%m%d}-{self.ag_id}-{self.pk:05d}"
+                super().save(update_fields=["reference", "updated_at"])
+            return
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def mark_generated(self, *, user=None, document=None):
+        self.statut = "GENEREE"
+        self.generated_at = timezone.now()
+
+        if user is not None and getattr(user, "is_authenticated", False):
+            self.generated_by = user
+
+        if document is not None:
+            self.document = document
+
+        self.save(
+            update_fields=[
+                "statut",
+                "generated_at",
+                "generated_by",
+                "document",
+                "updated_at",
+            ]
+        )
+
+    def mark_sent(self, *, user=None, canal: str | None = None):
+        self.statut = "ENVOYEE"
+        self.sent_at = timezone.now()
+
+        if canal:
+            self.canal = canal
+
+        if user is not None and getattr(user, "is_authenticated", False):
+            self.sent_by = user
+
+        self.save(
+            update_fields=[
+                "statut",
+                "sent_at",
+                "sent_by",
+                "canal",
+                "updated_at",
+            ]
+        )
+
+    def mark_consulted(self):
+        if self.statut != "ANNULEE":
+            self.statut = "CONSULTEE"
+            self.consulted_at = timezone.now()
+            self.save(update_fields=["statut", "consulted_at", "updated_at"])
+
+    def cancel(self, *, user=None, reason: str = ""):
+        self.statut = "ANNULEE"
+        self.cancelled_at = timezone.now()
+        self.cancellation_reason = reason or ""
+
+        if user is not None and getattr(user, "is_authenticated", False):
+            self.cancelled_by = user
+
+        self.save(
+            update_fields=[
+                "statut",
+                "cancelled_at",
+                "cancelled_by",
+                "cancellation_reason",
+                "updated_at",
+            ]
+        )
+
+
 class PresenceLot(models.Model):
     ag = models.ForeignKey(
         AssembleeGenerale,

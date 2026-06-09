@@ -19,10 +19,11 @@ from rest_framework.response import Response
 
 from apps.lots.models import Lot
 
-from .models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import AGProcuration, AgConvocation, AssembleeGenerale, PresenceLot, Resolution, Vote
 from .permissions import IsSyndicOrAdmin
 from .serializers import (
     AGProcurationSerializer,
+    AgConvocationSerializer,
     AssembleeGeneraleSerializer,
     PresenceLotSerializer,
     ResolutionSerializer,
@@ -487,6 +488,143 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "has_zero_tantieme_lots": ag.presences.filter(tantiemes__lte=0).exists(),
             },
             status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="generer-convocations")
+    def generer_convocations(self, request, pk=None):
+        ag = self.get_object()
+        _assert_same_copro(request, ag)
+        _assert_ag_writable(ag)
+
+        if getattr(ag, "statut", None) == "ANNULEE":
+            raise ValidationError({"detail": "AG annulée : génération des convocations interdite."})
+
+        canal = "PLATEFORME"
+        if request.data and request.data.get("canal"):
+            canal = str(request.data.get("canal") or "").strip().upper()
+
+        allowed_canaux = {choice[0] for choice in AgConvocation.CANAL_CHOICES}
+        if canal not in allowed_canaux:
+            raise ValidationError({"canal": f"Canal invalide. Valeurs autorisées : {', '.join(sorted(allowed_canaux))}."})
+
+        objet = ""
+        message = ""
+
+        if request.data:
+            objet = str(request.data.get("objet") or "").strip()
+            message = str(request.data.get("message") or "").strip()
+
+        created_convocations = []
+        created_count = 0
+        skipped_existing = 0
+        skipped_duplicate_link = 0
+        skipped_inactive_owner = 0
+        skipped_without_owner = 0
+
+        try:
+            from apps.owners.models import ProprietaireLot
+        except Exception as exc:
+            raise ValidationError({"detail": f"Impossible de charger ProprietaireLot : {str(exc)}"})
+
+        with transaction.atomic():
+            ag = AssembleeGenerale.objects.select_for_update().get(
+                pk=ag.pk,
+                copropriete_id=ag.copropriete_id,
+            )
+
+            _assert_ag_writable(ag)
+
+            active_links = (
+                ProprietaireLot.objects.select_related("lot", "coproprietaire")
+                .filter(
+                    copropriete_id=ag.copropriete_id,
+                    date_fin__isnull=True,
+                )
+                .order_by("lot_id", "-principal", "id")
+            )
+
+            processed_lot_ids = set()
+
+            for link in active_links:
+                lot = getattr(link, "lot", None)
+                coproprietaire = getattr(link, "coproprietaire", None)
+
+                if not lot:
+                    skipped_duplicate_link += 1
+                    continue
+
+                if link.lot_id in processed_lot_ids:
+                    skipped_duplicate_link += 1
+                    continue
+
+                processed_lot_ids.add(link.lot_id)
+
+                if not coproprietaire:
+                    skipped_without_owner += 1
+                    continue
+
+                owner_is_active = getattr(coproprietaire, "actif", True)
+                if owner_is_active is False:
+                    skipped_inactive_owner += 1
+                    continue
+
+                convocation, was_created = AgConvocation.objects.get_or_create(
+                    ag=ag,
+                    lot=lot,
+                    defaults={
+                        "copropriete": ag.copropriete,
+                        "coproprietaire": coproprietaire,
+                        "canal": canal,
+                        "objet": objet or f"Convocation - {ag.titre}",
+                        "message": message,
+                        "metadata": {
+                            "source": "generer-convocations",
+                            "proprietaire_lot_id": link.id,
+                            "principal": bool(getattr(link, "principal", False)),
+                            "quote_part": str(getattr(link, "quote_part", "")),
+                        },
+                    },
+                )
+
+                if not was_created:
+                    skipped_existing += 1
+                    continue
+
+                convocation.mark_generated(user=request.user)
+                created_convocations.append(convocation)
+                created_count += 1
+
+        _log_ag_event(
+            request,
+            ag,
+            event="AG_CONVOCATIONS_GENERATED",
+            meta={
+                "created": created_count,
+                "skipped_existing": skipped_existing,
+                "skipped_duplicate_link": skipped_duplicate_link,
+                "skipped_inactive_owner": skipped_inactive_owner,
+                "skipped_without_owner": skipped_without_owner,
+                "canal": canal,
+            },
+        )
+
+        serializer = AgConvocationSerializer(
+            created_convocations,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(
+            {
+                "ag_id": ag.id,
+                "created": created_count,
+                "skipped_existing": skipped_existing,
+                "skipped_duplicate_link": skipped_duplicate_link,
+                "skipped_inactive_owner": skipped_inactive_owner,
+                "skipped_without_owner": skipped_without_owner,
+                "convocations": serializer.data,
+            },
+            status=status.HTTP_201_CREATED if created_count else status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["post"], url_path="init-presences")
@@ -1045,6 +1183,190 @@ class AGProcurationViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AgConvocationViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsSyndicOrAdmin]
+    serializer_class = AgConvocationSerializer
+    queryset = (
+        AgConvocation.objects.select_related(
+            "ag",
+            "copropriete",
+            "coproprietaire",
+            "lot",
+            "document",
+            "generated_by",
+            "sent_by",
+            "cancelled_by",
+        )
+        .all()
+        .order_by("-created_at", "-id")
+    )
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+
+        qs = super().get_queryset().filter(copropriete_id=copro_id)
+
+        include_archives = str(
+            self.request.query_params.get("include_archives", "")
+        ).lower() in {"1", "true", "yes", "on"}
+
+        if not include_archives:
+            qs = qs.exclude(ag__titre__startswith="[ARCHIVE TEST]")
+
+        ag_id = self.request.query_params.get("ag")
+        if ag_id:
+            qs = qs.filter(ag_id=ag_id)
+
+        statut = self.request.query_params.get("statut")
+        if statut:
+            qs = qs.filter(statut=str(statut).strip().upper())
+
+        canal = self.request.query_params.get("canal")
+        if canal:
+            qs = qs.filter(canal=str(canal).strip().upper())
+
+        lot_id = self.request.query_params.get("lot")
+        if lot_id:
+            qs = qs.filter(lot_id=lot_id)
+
+        coproprietaire_id = self.request.query_params.get("coproprietaire")
+        if coproprietaire_id:
+            qs = qs.filter(coproprietaire_id=coproprietaire_id)
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        ag = serializer.validated_data.get("ag")
+        lot = serializer.validated_data.get("lot")
+        coproprietaire = serializer.validated_data.get("coproprietaire")
+
+        if not ag:
+            raise ValidationError({"ag": "L’assemblée générale est obligatoire."})
+
+        if str(ag.copropriete_id) != str(copro_id):
+            raise ValidationError({"ag": "AG hors périmètre de la copropriété courante."})
+
+        if lot and str(lot.copropriete_id) != str(copro_id):
+            raise ValidationError({"lot": "Lot hors périmètre de la copropriété courante."})
+
+        if coproprietaire and str(coproprietaire.copropriete_id) != str(copro_id):
+            raise ValidationError(
+                {
+                    "coproprietaire": (
+                        "Copropriétaire hors périmètre de la copropriété courante."
+                    )
+                }
+            )
+
+        _assert_ag_writable(ag)
+
+        try:
+            convocation = serializer.save(copropriete_id=copro_id)
+            convocation.mark_generated(user=self.request.user)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        _assert_same_copro(self.request, instance.ag)
+
+        if instance.statut in {"ENVOYEE", "CONSULTEE", "ANNULEE"}:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Convocation déjà envoyée, consultée ou annulée : "
+                        "modification interdite."
+                    )
+                }
+            )
+
+        _assert_ag_writable(instance.ag)
+
+        try:
+            serializer.save()
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+    def perform_destroy(self, instance):
+        _assert_same_copro(self.request, instance.ag)
+
+        if instance.statut in {"ENVOYEE", "CONSULTEE"}:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Convocation déjà envoyée ou consultée : suppression interdite. "
+                        "Annulez-la plutôt."
+                    )
+                }
+            )
+
+        instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="marquer-envoyee")
+    def marquer_envoyee(self, request, pk=None):
+        convocation = self.get_object()
+        _assert_same_copro(request, convocation.ag)
+
+        if convocation.statut == "ANNULEE":
+            raise ValidationError({"detail": "Convocation annulée : envoi interdit."})
+
+        canal = None
+        if request.data and request.data.get("canal"):
+            canal = str(request.data.get("canal") or "").strip().upper()
+
+            allowed_canaux = {choice[0] for choice in AgConvocation.CANAL_CHOICES}
+            if canal not in allowed_canaux:
+                raise ValidationError(
+                    {"canal": f"Canal invalide. Valeurs autorisées : {', '.join(sorted(allowed_canaux))}."}
+                )
+
+        try:
+            convocation.mark_sent(user=request.user, canal=canal)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        serializer = self.get_serializer(convocation)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="marquer-consultee")
+    def marquer_consultee(self, request, pk=None):
+        convocation = self.get_object()
+        _assert_same_copro(request, convocation.ag)
+
+        if convocation.statut == "ANNULEE":
+            raise ValidationError({"detail": "Convocation annulée : consultation interdite."})
+
+        try:
+            convocation.mark_consulted()
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        serializer = self.get_serializer(convocation)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="annuler")
+    def annuler(self, request, pk=None):
+        convocation = self.get_object()
+        _assert_same_copro(request, convocation.ag)
+
+        if convocation.statut == "CONSULTEE":
+            raise ValidationError({"detail": "Convocation déjà consultée : annulation interdite."})
+
+        reason = ""
+        if request.data:
+            reason = str(request.data.get("reason") or request.data.get("motif") or "").strip()
+
+        try:
+            convocation.cancel(user=request.user, reason=reason)
+        except DjangoValidationError as exc:
+            _raise_drf_validation(exc)
+
+        serializer = self.get_serializer(convocation)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class ResolutionViewSet(viewsets.ModelViewSet):

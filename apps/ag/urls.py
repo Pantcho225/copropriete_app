@@ -11,6 +11,7 @@ from .coproprietaire_views import (
 )
 from .views import (
     AGProcurationViewSet,
+    AgConvocationViewSet,
     AssembleeGeneraleViewSet,
     PresenceLotViewSet,
     ResolutionViewSet,
@@ -35,6 +36,11 @@ router.register(r"presences", PresenceLotViewSet, basename="presence")
 # Procurations AG
 # =========================
 router.register(r"procurations", AGProcurationViewSet, basename="ag-procuration")
+
+# =========================
+# Convocations AG
+# =========================
+router.register(r"convocations", AgConvocationViewSet, basename="ag-convocation")
 
 # =========================
 # Résolutions
