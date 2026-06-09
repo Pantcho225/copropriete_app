@@ -52,6 +52,7 @@ import AGPV from "./pages/ag/AGPV";
 import AGPresences from "./pages/ag/AGPresences";
 import AGVotes from "./pages/ag/AGVotes";
 import AGProcurations from "./pages/ag/AGProcurations";
+import AGConvocations from "./pages/ag/AGConvocations";
 
 // Relances
 import RelancesDashboard from "./pages/relances/RelancesDashboard";
@@ -241,7 +242,8 @@ export default function App() {
             <Route path="assemblees/:id/votes" element={<AGVotes />} />
             <Route path="assemblees/:id/pv" element={<AGPV />} />
 
-            {/* Mandats de représentation */}
+            {/* Convocations et mandats */}
+            <Route path="convocations" element={<AGConvocations />} />
             <Route path="procurations" element={<AGProcurations />} />
 
             {/* Résolutions */}

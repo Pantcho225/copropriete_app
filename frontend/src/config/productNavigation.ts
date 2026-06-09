@@ -33,6 +33,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/occupants",
       },
       { label: "Assemblées générales", to: "/ag" },
+      { label: "Convocations AG", to: "/ag/convocations" },
       { label: "Mandats de représentation", to: "/ag/procurations" },
       {
         label: "Réunions & rencontres",
@@ -171,6 +172,7 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/ag") return "Vue d’ensemble Assemblées générales";
   if (pathname === "/ag/assemblees") return "Liste des assemblées";
   if (pathname === "/ag/assemblees/nouveau") return "Nouvelle assemblée";
+  if (pathname === "/ag/convocations") return "Convocations AG";
   if (pathname === "/ag/procurations") return "Mandats de représentation";
   if (pathname === "/ag/resolutions") return "Résolutions";
 
@@ -253,7 +255,7 @@ export function getPageSubtitle(pathname: string): string {
 
   // Gestion administrative
   if (pathname === "/gestion-administrative") {
-    return "Centralisez les informations institutionnelles : copropriété, copropriétaires, lots, assemblées, mandats, réunions, textes applicables et documents administratifs.";
+    return "Centralisez les informations institutionnelles : copropriété, copropriétaires, lots, assemblées, convocations, mandats, réunions, textes applicables et documents administratifs.";
   }
   if (pathname === "/gestion-administrative/copropriete") {
     return "Consultez l’identité de la copropriété, sa structure, ses règles de référence et les informations administratives utiles au syndic.";
@@ -383,6 +385,9 @@ export function getPageSubtitle(pathname: string): string {
   }
   if (pathname === "/ag/assemblees/nouveau") {
     return "Renseignez les informations nécessaires pour préparer une nouvelle assemblée générale.";
+  }
+  if (pathname === "/ag/convocations") {
+    return "Générez les convocations, suivez leur envoi, leur consultation et conservez une traçabilité claire avant la tenue de l’assemblée générale.";
   }
   if (pathname === "/ag/procurations") {
     return "Consultez les mandats de représentation transmis par les copropriétaires, puis validez-les ou rejetez-les avec traçabilité.";
