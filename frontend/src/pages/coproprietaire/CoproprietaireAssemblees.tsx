@@ -3,9 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 
 import {
+  consulterConvocationCoproprietaire,
   getAssembleesGeneralesCoproprietaire,
+  getConvocationsCoproprietaire,
   type CoproprietaireAG,
   type CoproprietaireAGResponse,
+  type CoproprietaireAgConvocation,
 } from "../../api/coproprietaireAg";
 import {
   annulerProcurationAgCoproprietaire,
@@ -114,6 +117,9 @@ export default function CoproprietaireAssemblees() {
   const [procurations, setProcurations] = useState<
     CoproprietaireProcurationItem[]
   >([]);
+  const [convocations, setConvocations] = useState<
+    CoproprietaireAgConvocation[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: FlashKind; text: string } | null>(
@@ -141,6 +147,9 @@ export default function CoproprietaireAssemblees() {
   const [cancelingProcurationId, setCancelingProcurationId] = useState<
     number | null
   >(null);
+  const [consultingConvocationId, setConsultingConvocationId] = useState<
+    number | null
+  >(null);
 
   const loadAssemblees = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -163,6 +172,13 @@ export default function CoproprietaireAssemblees() {
           setProcurations(procurationsResponse.procurations ?? []);
         } catch {
           setProcurations([]);
+        }
+
+        try {
+          const convocationsResponse = await getConvocationsCoproprietaire();
+          setConvocations(convocationsResponse.convocations ?? []);
+        } catch {
+          setConvocations([]);
         }
       } catch {
         setError("Impossible de charger vos assemblées générales pour le moment.");
@@ -209,6 +225,22 @@ export default function CoproprietaireAssemblees() {
       {},
     );
   }, [procurations]);
+
+  const convocationsByAg = useMemo(() => {
+    return convocations.reduce<Record<string, CoproprietaireAgConvocation[]>>(
+      (acc, convocation) => {
+        const key = String(convocation.ag);
+
+        if (!acc[key]) {
+          acc[key] = [];
+        }
+
+        acc[key].push(convocation);
+        return acc;
+      },
+      {},
+    );
+  }, [convocations]);
 
   const pvDisponibles = useMemo(() => {
     return assemblees.filter((ag) => ag.has_pv).length;
@@ -348,6 +380,45 @@ export default function CoproprietaireAssemblees() {
         );
       } finally {
         setCancelingProcurationId(null);
+      }
+    },
+    [loadAssemblees, showFlash],
+  );
+
+  const handleConsultConvocation = useCallback(
+    async (convocation: CoproprietaireAgConvocation) => {
+      if (normalize(convocation.statut) === "ANNULEE") {
+        showFlash(
+          "info",
+          "Cette convocation est annulée et ne peut plus être consultée.",
+        );
+        return;
+      }
+
+      if (normalize(convocation.statut) === "CONSULTEE") {
+        showFlash("info", "Cette convocation a déjà été consultée.");
+        return;
+      }
+
+      try {
+        setConsultingConvocationId(convocation.id);
+
+        const response = await consulterConvocationCoproprietaire(convocation.id);
+
+        showFlash("success", response.detail);
+
+        if (response.convocation.document_url) {
+          openDocument(response.convocation.document_url);
+        }
+
+        await loadAssemblees({ silent: true });
+      } catch (err) {
+        showFlash(
+          "error",
+          getErrorMessage(err, "Impossible de consulter cette convocation."),
+        );
+      } finally {
+        setConsultingConvocationId(null);
       }
     },
     [loadAssemblees, showFlash],
@@ -685,6 +756,7 @@ export default function CoproprietaireAssemblees() {
                   key={ag.id}
                   ag={agTyped}
                   procurations={procurationsByAg[String(ag.id)] ?? []}
+                  convocations={convocationsByAg[String(ag.id)] ?? []}
                   generatingMandat={generatingMandatAgId === ag.id}
                   presenceBusy={
                     presenceBusy?.agId === ag.id ? presenceBusy.mode : null
@@ -692,10 +764,12 @@ export default function CoproprietaireAssemblees() {
                   voteBusy={voteBusy}
                   localVotesByResolution={localVotesByResolution}
                   cancelingProcurationId={cancelingProcurationId}
+                  consultingConvocationId={consultingConvocationId}
                   onGenerateMandat={handleGenerateMandat}
                   onConfirmPresence={handleConfirmPresence}
                   onOpenProcuration={handleOpenProcurationModal}
                   onCancelProcuration={handleCancelProcuration}
+                  onConsultConvocation={handleConsultConvocation}
                   onVoteResolution={handleVoteResolution}
                 />
               );
@@ -720,19 +794,23 @@ export default function CoproprietaireAssemblees() {
 function AGCard({
   ag,
   procurations,
+  convocations,
   generatingMandat,
   presenceBusy,
   voteBusy,
   localVotesByResolution,
   cancelingProcurationId,
+  consultingConvocationId,
   onGenerateMandat,
   onConfirmPresence,
   onOpenProcuration,
   onCancelProcuration,
+  onConsultConvocation,
   onVoteResolution,
 }: {
   ag: CoproprietaireAGWithResolutions;
   procurations: CoproprietaireProcurationItem[];
+  convocations: CoproprietaireAgConvocation[];
   generatingMandat: boolean;
   presenceBusy: CoproprietairePresenceMode | null;
   voteBusy: {
@@ -741,6 +819,7 @@ function AGCard({
   } | null;
   localVotesByResolution: Record<string, CoproprietaireVoteItem>;
   cancelingProcurationId: number | null;
+  consultingConvocationId: number | null;
   onGenerateMandat: (ag: CoproprietaireAG) => void;
   onConfirmPresence: (
     ag: CoproprietaireAG,
@@ -748,6 +827,7 @@ function AGCard({
   ) => void;
   onOpenProcuration: (ag: CoproprietaireAGWithResolutions) => void;
   onCancelProcuration: (procuration: CoproprietaireProcurationItem) => void;
+  onConsultConvocation: (convocation: CoproprietaireAgConvocation) => void;
   onVoteResolution: (
     ag: CoproprietaireAGWithResolutions,
     resolution: CoproprietaireResolution,
@@ -795,6 +875,12 @@ function AGCard({
             {ag.description ||
               "Aucun ordre du jour détaillé n’est disponible pour cette assemblée."}
           </p>
+
+          <ConvocationsPanel
+            convocations={convocations}
+            consultingConvocationId={consultingConvocationId}
+            onConsult={onConsultConvocation}
+          />
 
           <div style={styles.presenceBox}>
             <p style={styles.presenceBoxTitle}>Ma présence à cette AG</p>
@@ -1040,9 +1126,134 @@ function AGCard({
       <div style={styles.cardStats}>
         <SmallStat label="Résolutions" value={formatNumber(ag.total_resolutions)} />
         <SmallStat label="Mes votes" value={formatNumber(votesTotal)} />
+        <SmallStat label="Convocations" value={formatNumber(convocations.length)} />
         <SmallStat label="Mandats" value={formatNumber(procurations.length)} />
       </div>
     </article>
+  );
+}
+
+
+function ConvocationsPanel({
+  convocations,
+  consultingConvocationId,
+  onConsult,
+}: {
+  convocations: CoproprietaireAgConvocation[];
+  consultingConvocationId: number | null;
+  onConsult: (convocation: CoproprietaireAgConvocation) => void;
+}) {
+  return (
+    <div style={styles.procurationBox}>
+      <div style={styles.procurationHeader}>
+        <div>
+          <p style={styles.procurationTitle}>Mes convocations pour cette AG</p>
+          <p style={styles.procurationText}>
+            Consultez votre convocation personnelle, le lot concerné, le canal
+            d’envoi et le statut de lecture transmis au syndic.
+          </p>
+        </div>
+
+        <Badge style={styles.procurationCountBadge}>
+          {formatNumber(convocations.length)}
+        </Badge>
+      </div>
+
+      {convocations.length === 0 ? (
+        <p style={styles.procurationEmpty}>
+          Aucune convocation personnelle n’est encore rattachée à cette
+          assemblée.
+        </p>
+      ) : (
+        <div style={styles.procurationList}>
+          {convocations.map((convocation) => {
+            const isConsulted = normalize(convocation.statut) === "CONSULTEE";
+            const isCanceled = normalize(convocation.statut) === "ANNULEE";
+            const consulting = consultingConvocationId === convocation.id;
+
+            return (
+              <div key={convocation.id} style={styles.procurationItem}>
+                <div style={styles.procurationItemMain}>
+                  <div style={styles.procurationItemHeader}>
+                    <p style={styles.procurationName}>
+                      {convocation.reference || "Convocation sans référence"}
+                    </p>
+
+                    <Badge style={getConvocationStatusStyle(convocation.statut)}>
+                      {convocation.statut_label || convocation.statut}
+                    </Badge>
+                  </div>
+
+                  <p style={styles.procurationDetails}>
+                    Lot :{" "}
+                    {convocation.lot_label ||
+                      convocation.lot_reference ||
+                      convocation.lot_numero ||
+                      "—"}
+                  </p>
+
+                  <p style={styles.procurationDetails}>
+                    Canal : {convocation.canal_label || convocation.canal || "—"}
+                  </p>
+
+                  <p style={styles.procurationDetails}>
+                    Générée le {formatDate(convocation.generated_at)}
+                  </p>
+
+                  {convocation.sent_at ? (
+                    <p style={styles.procurationDetails}>
+                      Envoyée le {formatDate(convocation.sent_at)}
+                    </p>
+                  ) : null}
+
+                  {convocation.consulted_at ? (
+                    <p style={styles.procurationDetails}>
+                      Consultée le {formatDate(convocation.consulted_at)}
+                    </p>
+                  ) : null}
+
+                  {convocation.message ? (
+                    <p style={styles.procurationDetails}>
+                      {convocation.message}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div style={styles.procurationActions}>
+                  {convocation.document_url ? (
+                    <button
+                      type="button"
+                      onClick={() => openDocument(convocation.document_url)}
+                      style={styles.procurationDocButton}
+                    >
+                      Ouvrir le document
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    disabled={isConsulted || isCanceled || consulting}
+                    onClick={() => onConsult(convocation)}
+                    style={{
+                      ...styles.procurationDocButton,
+                      ...(isConsulted || isCanceled || consulting
+                        ? styles.cancelProcurationButtonDisabled
+                        : {}),
+                    }}
+                  >
+                    {consulting
+                      ? "Consultation..."
+                      : isConsulted
+                        ? "Déjà consultée"
+                        : "Consulter la convocation"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1742,6 +1953,51 @@ function getPresenceStyle(status: string | null | undefined): CSSProperties {
       background: "#fffbeb",
       color: "#b45309",
       borderColor: "#fde68a",
+    };
+  }
+
+  return {
+    background: "#f8fafc",
+    color: "#475569",
+    borderColor: "#e2e8f0",
+  };
+}
+
+
+function getConvocationStatusStyle(
+  statut: string | null | undefined,
+): CSSProperties {
+  const value = normalize(statut);
+
+  if (value === "CONSULTEE") {
+    return {
+      background: "#ecfdf5",
+      color: "#047857",
+      borderColor: "#a7f3d0",
+    };
+  }
+
+  if (value === "ENVOYEE") {
+    return {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      borderColor: "#bfdbfe",
+    };
+  }
+
+  if (value === "GENEREE") {
+    return {
+      background: "#fffbeb",
+      color: "#b45309",
+      borderColor: "#fde68a",
+    };
+  }
+
+  if (value === "ANNULEE") {
+    return {
+      background: "#fff1f2",
+      color: "#be123c",
+      borderColor: "#fecdd3",
     };
   }
 
@@ -2672,7 +2928,7 @@ const styles: Record<string, CSSProperties> = {
 
   cardStats: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: 10,
     borderTop: "1px solid #e2e8f0",
     paddingTop: 16,

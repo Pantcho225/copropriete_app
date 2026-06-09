@@ -13,7 +13,14 @@ from rest_framework.response import Response
 from rest_framework.serializers import IntegerField, Serializer, SerializerMethodField
 from rest_framework.views import APIView
 
-from apps.ag.models import AGProcuration, AssembleeGenerale, PresenceLot, Resolution, Vote
+from apps.ag.models import (
+    AGProcuration,
+    AgConvocation,
+    AssembleeGenerale,
+    PresenceLot,
+    Resolution,
+    Vote,
+)
 from apps.ag.serializers import AGProcurationSerializer
 from apps.owners.models import Coproprietaire, ProprietaireLot
 
@@ -516,6 +523,130 @@ def _resolution_payload(resolution: Resolution, lot_ids: list[int]) -> dict[str,
     }
 
 
+def _coproprietaire_label(coproprietaire) -> str:
+    if not coproprietaire:
+        return ""
+
+    parts = []
+
+    for field_name in ["nom", "last_name", "name"]:
+        value = getattr(coproprietaire, field_name, None)
+        if value:
+            parts.append(str(value).strip())
+            break
+
+    for field_name in ["prenoms", "prenom", "first_name"]:
+        value = getattr(coproprietaire, field_name, None)
+        if value:
+            parts.append(str(value).strip())
+            break
+
+    label = " ".join(part for part in parts if part).strip()
+
+    if label:
+        return label
+
+    user = getattr(coproprietaire, "user_account", None) or getattr(
+        coproprietaire,
+        "user",
+        None,
+    )
+
+    if user:
+        user_label = (
+            getattr(user, "get_full_name", lambda: "")()
+            or getattr(user, "username", "")
+            or getattr(user, "email", "")
+        )
+        if user_label:
+            return str(user_label).strip()
+
+    return str(coproprietaire)
+
+
+def _convocation_payload(convocation: AgConvocation, request) -> dict[str, Any]:
+    ag = getattr(convocation, "ag", None)
+    lot = getattr(convocation, "lot", None)
+    coproprietaire = getattr(convocation, "coproprietaire", None)
+    document = getattr(convocation, "document", None)
+
+    document_url = None
+
+    if document:
+        file_value = (
+            getattr(document, "file", None)
+            or getattr(document, "fichier", None)
+            or getattr(document, "document", None)
+        )
+        document_url = _absolute_file_url(request, file_value)
+
+    ag_date = _value(
+        ag,
+        "date_ag",
+        "date_assemblee",
+        "date_reunion",
+        "scheduled_at",
+        "date",
+    )
+
+    return {
+        "id": convocation.id,
+        "reference": convocation.reference,
+        "ag": getattr(ag, "id", None),
+        "ag_titre": _value(ag, "titre", "title", "objet", "libelle") if ag else "",
+        "ag_date_ag": ag_date.isoformat() if hasattr(ag_date, "isoformat") else ag_date,
+        "copropriete": getattr(convocation, "copropriete_id", None),
+        "copropriete_label": str(getattr(convocation, "copropriete", "") or ""),
+        "coproprietaire": getattr(coproprietaire, "id", None),
+        "coproprietaire_label": _coproprietaire_label(coproprietaire),
+        "lot": getattr(lot, "id", None),
+        "lot_label": _lot_label(lot),
+        "lot_reference": getattr(lot, "reference", "") if lot else "",
+        "lot_numero": getattr(lot, "numero", "") if lot else "",
+        "document": getattr(document, "id", None) if document else None,
+        "document_url": document_url,
+        "statut": convocation.statut,
+        "statut_label": (
+            convocation.get_statut_display()
+            if hasattr(convocation, "get_statut_display")
+            else convocation.statut
+        ),
+        "canal": convocation.canal,
+        "canal_label": (
+            convocation.get_canal_display()
+            if hasattr(convocation, "get_canal_display")
+            else convocation.canal
+        ),
+        "objet": convocation.objet,
+        "message": convocation.message,
+        "generated_at": (
+            convocation.generated_at.isoformat()
+            if convocation.generated_at
+            else None
+        ),
+        "sent_at": convocation.sent_at.isoformat() if convocation.sent_at else None,
+        "consulted_at": (
+            convocation.consulted_at.isoformat()
+            if convocation.consulted_at
+            else None
+        ),
+        "cancelled_at": (
+            convocation.cancelled_at.isoformat()
+            if convocation.cancelled_at
+            else None
+        ),
+        "created_at": (
+            convocation.created_at.isoformat()
+            if convocation.created_at
+            else None
+        ),
+        "updated_at": (
+            convocation.updated_at.isoformat()
+            if convocation.updated_at
+            else None
+        ),
+    }
+
 class CoproprietaireAGSerializer(Serializer):
     id = IntegerField(read_only=True)
 
@@ -621,6 +752,122 @@ class CoproprietaireAGSerializer(Serializer):
 
         return [_resolution_payload(resolution, lot_ids) for resolution in qs]
 
+
+class CoproprietaireConvocationsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        coproprietaire = _get_current_coproprietaire(request.user)
+
+        if not coproprietaire:
+            return Response(
+                {
+                    "count": 0,
+                    "convocations": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        owner_lots = _get_active_owner_lots(coproprietaire)
+        lot_ids = _get_lot_ids(owner_lots)
+
+        if not lot_ids:
+            return Response(
+                {
+                    "count": 0,
+                    "convocations": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        qs = (
+            AgConvocation.objects.select_related(
+                "ag",
+                "copropriete",
+                "coproprietaire",
+                "lot",
+                "document",
+            )
+            .filter(
+                coproprietaire=coproprietaire,
+                lot_id__in=lot_ids,
+            )
+            .exclude(ag__titre__startswith="[ARCHIVE TEST]")
+            .order_by("-generated_at", "-created_at", "-id")
+        )
+
+        ag_id = request.query_params.get("ag")
+        if ag_id:
+            qs = qs.filter(ag_id=ag_id)
+
+        statut = request.query_params.get("statut")
+        if statut:
+            qs = qs.filter(statut=str(statut).strip().upper())
+
+        return Response(
+            {
+                "count": qs.count(),
+                "convocations": [
+                    _convocation_payload(convocation, request)
+                    for convocation in qs
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CoproprietaireConvocationConsulterAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, convocation_id: int):
+        coproprietaire = _get_current_coproprietaire(request.user)
+
+        if not coproprietaire:
+            raise PermissionDenied(
+                "Aucun profil copropriétaire actif ne correspond à cette convocation."
+            )
+
+        owner_lots = _get_active_owner_lots(coproprietaire)
+        lot_ids = _get_lot_ids(owner_lots)
+
+        convocation = (
+            AgConvocation.objects.select_related(
+                "ag",
+                "copropriete",
+                "coproprietaire",
+                "lot",
+                "document",
+            )
+            .filter(
+                pk=convocation_id,
+                coproprietaire=coproprietaire,
+                lot_id__in=lot_ids,
+            )
+            .exclude(ag__titre__startswith="[ARCHIVE TEST]")
+            .first()
+        )
+
+        if not convocation:
+            raise ValidationError({"detail": "Convocation introuvable."})
+
+        if convocation.statut == "ANNULEE":
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Cette convocation est annulée et ne peut plus être consultée."
+                    )
+                }
+            )
+
+        convocation.mark_consulted()
+
+        return Response(
+            {
+                "detail": "Convocation consultée avec succès.",
+                "convocation": _convocation_payload(convocation, request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class CoproprietaireAssembleesAPIView(APIView):
     permission_classes = [IsAuthenticated]

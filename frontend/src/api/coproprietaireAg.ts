@@ -48,6 +48,73 @@ export type GetAssembleesGeneralesCoproprietaireParams = {
   statut?: string;
 };
 
+export type CoproprietaireAgConvocationStatut =
+  | "GENEREE"
+  | "ENVOYEE"
+  | "CONSULTEE"
+  | "ANNULEE";
+
+export type CoproprietaireAgConvocationCanal =
+  | "PLATEFORME"
+  | "EMAIL"
+  | "SMS"
+  | "WHATSAPP"
+  | "PAPIER";
+
+export type CoproprietaireAgConvocation = {
+  id: number;
+  reference: string;
+
+  ag: number;
+  ag_titre: string;
+  ag_date_ag: string | null;
+
+  copropriete: number | null;
+  copropriete_label: string;
+
+  coproprietaire: number | null;
+  coproprietaire_label: string;
+
+  lot: number | null;
+  lot_label: string;
+  lot_reference: string;
+  lot_numero: string;
+
+  document: number | null;
+  document_url: string | null;
+
+  statut: CoproprietaireAgConvocationStatut;
+  statut_label: string;
+
+  canal: CoproprietaireAgConvocationCanal;
+  canal_label: string;
+
+  objet: string;
+  message: string;
+
+  generated_at: string | null;
+  sent_at: string | null;
+  consulted_at: string | null;
+  cancelled_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CoproprietaireAgConvocationsResponse = {
+  count: number;
+  convocations: CoproprietaireAgConvocation[];
+};
+
+export type GetConvocationsCoproprietaireParams = {
+  ag?: number | string;
+  statut?: CoproprietaireAgConvocationStatut | string;
+};
+
+export type ConsulterConvocationCoproprietaireResponse = {
+  detail: string;
+  convocation: CoproprietaireAgConvocation;
+};
+
 export async function getAssembleesGeneralesCoproprietaire(
   params?: GetAssembleesGeneralesCoproprietaireParams,
 ): Promise<CoproprietaireAGResponse> {
@@ -56,6 +123,29 @@ export async function getAssembleesGeneralesCoproprietaire(
     {
       params,
     },
+  );
+
+  return response.data;
+}
+
+export async function getConvocationsCoproprietaire(
+  params?: GetConvocationsCoproprietaireParams,
+): Promise<CoproprietaireAgConvocationsResponse> {
+  const response = await api.get<CoproprietaireAgConvocationsResponse>(
+    "/api/ag/coproprietaire/convocations/",
+    {
+      params,
+    },
+  );
+
+  return response.data;
+}
+
+export async function consulterConvocationCoproprietaire(
+  convocationId: number | string,
+): Promise<ConsulterConvocationCoproprietaireResponse> {
+  const response = await api.post<ConsulterConvocationCoproprietaireResponse>(
+    `/api/ag/coproprietaire/convocations/${convocationId}/consulter/`,
   );
 
   return response.data;

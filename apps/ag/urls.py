@@ -4,6 +4,8 @@ from rest_framework.routers import DefaultRouter
 
 from .coproprietaire_views import (
     CoproprietaireAssembleesAPIView,
+    CoproprietaireConvocationConsulterAPIView,
+    CoproprietaireConvocationsAPIView,
     CoproprietairePresenceAPIView,
     CoproprietaireProcurationAnnulerAPIView,
     CoproprietaireProcurationsAPIView,
@@ -58,6 +60,16 @@ urlpatterns = [
         "coproprietaire/assemblees/",
         CoproprietaireAssembleesAPIView.as_view(),
         name="coproprietaire-assemblees",
+    ),
+    path(
+        "coproprietaire/convocations/",
+        CoproprietaireConvocationsAPIView.as_view(),
+        name="coproprietaire-convocations",
+    ),
+    path(
+        "coproprietaire/convocations/<int:convocation_id>/consulter/",
+        CoproprietaireConvocationConsulterAPIView.as_view(),
+        name="coproprietaire-convocation-consulter",
     ),
     path(
         "coproprietaire/assemblees/<int:ag_id>/presence/",
