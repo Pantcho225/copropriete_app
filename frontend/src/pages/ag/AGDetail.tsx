@@ -9,6 +9,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import { genererConvocationsAg } from "../../api/agConvocations";
 
 type LoadState = "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
@@ -1466,6 +1467,55 @@ function AGDetail() {
     }
   }, [agId, busyAction, detail, fetchDetail, isReadOnly, showFlash]);
 
+
+  const handleGenerateConvocationsAG = useCallback(async () => {
+    if (!detail) return;
+
+    if (isReadOnly) {
+      showFlash(
+        "info",
+        "Assemblée déjà clôturée, archivée ou annulée. Génération des convocations indisponible.",
+      );
+      return;
+    }
+
+    if (busyAction) return;
+
+    const confirmed = window.confirm(
+      "Générer les convocations pour cette assemblée générale ?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("generate-convocations-ag");
+
+      const result = await genererConvocationsAg(agId);
+
+      const created = result.created ?? 0;
+      const skipped = result.skipped_existing ?? 0;
+      const total = result.total ?? created + skipped;
+
+      showFlash(
+        "success",
+        `Convocations AG générées : ${created} créée(s), ${skipped} déjà existante(s), ${total} au total.`,
+      );
+
+      await fetchDetail();
+    } catch (error) {
+      console.error(error);
+      showFlash(
+        "error",
+        getBackendErrorMessage(
+          error,
+          "Impossible de générer les convocations AG.",
+        ),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [agId, busyAction, detail, fetchDetail, isReadOnly, showFlash]);
+
   if (loadState === "loading") {
     return (
       <PageShell>
@@ -1541,6 +1591,23 @@ function AGDetail() {
 
               <AppButton onClick={() => navigate("/ag/resolutions")} variant="secondary">
                 Voir les résolutions
+              </AppButton>
+
+              <AppButton
+                onClick={() => void handleGenerateConvocationsAG()}
+                variant="secondary"
+                disabled={isReadOnly || busyAction === "generate-convocations-ag"}
+              >
+                {busyAction === "generate-convocations-ag"
+                  ? "Génération convocations..."
+                  : "Générer les convocations"}
+              </AppButton>
+
+              <AppButton
+                onClick={() => navigate(`/ag/convocations?ag=${agId}`)}
+                variant="secondary"
+              >
+                Voir les convocations
               </AppButton>
 
               <AppButton

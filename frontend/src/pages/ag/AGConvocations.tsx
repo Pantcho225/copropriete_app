@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   annulerAgConvocation,
   genererConvocationsAg,
@@ -154,8 +155,11 @@ function StatusBadge({ convocation }: { convocation: AgConvocation }) {
 }
 
 export default function AGConvocations() {
+  const [searchParams] = useSearchParams();
+  const agFromUrl = searchParams.get("ag") ?? "";
+
   const [convocations, setConvocations] = useState<AgConvocation[]>([]);
-  const [agFilter, setAgFilter] = useState("");
+  const [agFilter, setAgFilter] = useState(agFromUrl);
   const [statutFilter, setStatutFilter] = useState<AgConvocationStatut | "">("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -185,6 +189,12 @@ export default function AGConvocations() {
   useEffect(() => {
     void loadConvocations();
   }, [loadConvocations]);
+
+  useEffect(() => {
+    const nextAg = searchParams.get("ag") ?? "";
+
+    setAgFilter((current) => (current === nextAg ? current : nextAg));
+  }, [searchParams]);
 
   const filteredConvocations = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
