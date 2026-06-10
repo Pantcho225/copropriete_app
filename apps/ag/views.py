@@ -98,6 +98,19 @@ def _assert_ag_writable(ag: AssembleeGenerale):
         raise ValidationError({"detail": "PV verrouillé : modification interdite."})
 
 
+
+def _assert_ag_has_ordre_du_jour(ag: AssembleeGenerale):
+    if not ag.resolutions.exists():
+        raise ValidationError(
+            {
+                "detail": (
+                    "Impossible de générer les convocations : l’ordre du jour de cette AG est vide. "
+                    "Ajoutez au moins une résolution avant de générer les convocations."
+                )
+            }
+        )
+
+
 def _ag_status_label(ag: AssembleeGenerale) -> str:
     statut = str(getattr(ag, "statut", "") or "").strip().upper()
 
@@ -698,6 +711,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         ag = self.get_object()
         _assert_same_copro(request, ag)
         _assert_ag_writable(ag)
+        _assert_ag_has_ordre_du_jour(ag)
 
         if getattr(ag, "statut", None) == "ANNULEE":
             raise ValidationError(
@@ -749,6 +763,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             )
 
             _assert_ag_writable(ag)
+            _assert_ag_has_ordre_du_jour(ag)
 
             active_links = (
                 ProprietaireLot.objects.select_related("lot", "coproprietaire")
@@ -848,6 +863,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
     def generer_pdfs_convocations(self, request, pk=None):
         ag = self.get_object()
         _assert_same_copro(request, ag)
+        _assert_ag_has_ordre_du_jour(ag)
 
         if getattr(ag, "statut", None) == "ANNULEE":
             raise ValidationError(
@@ -1809,6 +1825,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
     def generer_pdf(self, request, pk=None):
         convocation = self.get_object()
         _assert_same_copro(request, convocation.ag)
+        _assert_ag_has_ordre_du_jour(convocation.ag)
 
         if convocation.statut == "ANNULEE":
             raise ValidationError(

@@ -1229,6 +1229,10 @@ function AGDetail() {
     realPresenceCount > 0 ? realPresenceCount : detail?.nb_presences ?? 0;
 
   const resolvedVotesCount = realVoteCount;
+  const hasOrdreDuJour = resolvedResolutionsCount > 0;
+  const ordreDuJourGuardMessage =
+    "Cette assemblée générale ne contient encore aucune résolution. Ajoutez au moins une résolution avant de générer les convocations.";
+
 
   const pvActionHint = getPVActionHint({
     isArchived: isArchivedPV,
@@ -1654,7 +1658,11 @@ function AGDetail() {
               <AppButton
                 onClick={() => void handleGenerateConvocationsAG()}
                 variant="secondary"
-                disabled={isReadOnly || busyAction === "generate-convocations-ag"}
+                disabled={
+                  isReadOnly ||
+                  !hasOrdreDuJour ||
+                  busyAction === "generate-convocations-ag"
+                }
               >
                 {busyAction === "generate-convocations-ag"
                   ? "Génération convocations..."
@@ -1664,7 +1672,11 @@ function AGDetail() {
               <AppButton
                 onClick={() => void handleGenerateConvocationPdfsAG()}
                 variant="secondary"
-                disabled={isReadOnly || busyAction === "generate-convocation-pdfs-ag"}
+                disabled={
+                  isReadOnly ||
+                  !hasOrdreDuJour ||
+                  busyAction === "generate-convocation-pdfs-ag"
+                }
               >
                 {busyAction === "generate-convocation-pdfs-ag"
                   ? "Génération PDF..."
@@ -1736,6 +1748,31 @@ function AGDetail() {
         </section>
 
         {flash ? <AlertBox kind={flash.kind}>{flash.message}</AlertBox> : null}
+
+        {!hasOrdreDuJour ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">
+                  Ordre du jour incomplet
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-amber-950">
+                  Impossible de générer les convocations pour le moment.
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-900">
+                  {ordreDuJourGuardMessage}
+                </p>
+              </div>
+
+              <AppButton
+                onClick={() => navigate(`/ag/assemblees/${agId}/resolutions`)}
+                variant="secondary"
+              >
+                Préparer l’ordre du jour
+              </AppButton>
+            </div>
+          </div>
+        ) : null}
 
         {convocationPdfBatchResult ? (
           <SectionCard
