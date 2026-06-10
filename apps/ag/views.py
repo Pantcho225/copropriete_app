@@ -2027,6 +2027,16 @@ class VoteViewSet(viewsets.ModelViewSet):
         copro_id = _require_copro_id(self.request)
         qs = super().get_queryset().filter(resolution__ag__copropriete_id=copro_id)
 
+        ag_id = (
+            self.request.query_params.get("ag")
+            or self.request.query_params.get("assemblee")
+            or self.request.query_params.get("assemblee_generale")
+            or self.request.query_params.get("ag_id")
+        )
+
+        if ag_id:
+            qs = qs.filter(resolution__ag_id=ag_id)
+
         resolution_id = self.request.query_params.get("resolution")
 
         if resolution_id:

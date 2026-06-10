@@ -1217,11 +1217,10 @@ function AGDetail() {
   }, [presenceRows, detail]);
 
   const realVoteCount = useMemo(() => {
-    if (resolutions.length > 0) return voteRows.length;
-    if (voteRows.length > 0) return voteRows.length;
+    if (resolutions.length === 0) return 0;
 
-    return detail?.nb_votes ?? 0;
-  }, [voteRows, resolutions.length, detail]);
+    return voteRows.length;
+  }, [voteRows.length, resolutions.length]);
 
   const resolvedResolutionsCount =
     resolutions.length > 0 ? resolutions.length : detail?.nb_resolutions ?? 0;
