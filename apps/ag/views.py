@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 import hashlib
+import json
 import os
 import tempfile
 from typing import Any, Optional, Iterable, List
@@ -603,14 +604,103 @@ def _convocation_pdf_payload(convocation: AgConvocation, request) -> dict:
     }
 
 
+def _ordre_du_jour_payload(ag: AssembleeGenerale) -> list[dict]:
+    resolutions = (
+        ag.resolutions.all()
+        .order_by("ordre", "id")
+        .values(
+            "id",
+            "ordre",
+            "titre",
+            "texte",
+            "type_majorite",
+            "budget_vote",
+        )
+    )
+
+    payload: list[dict] = []
+
+    for item in resolutions:
+        payload.append(
+            {
+                "id": item.get("id"),
+                "ordre": item.get("ordre"),
+                "titre": item.get("titre") or "",
+                "texte": item.get("texte") or "",
+                "type_majorite": item.get("type_majorite") or "",
+                "budget_vote": (
+                    str(item.get("budget_vote"))
+                    if item.get("budget_vote") is not None
+                    else ""
+                ),
+            }
+        )
+
+    return payload
+
+
+def _ordre_du_jour_hash(ag: AssembleeGenerale) -> tuple[str, list[dict]]:
+    payload = _ordre_du_jour_payload(ag)
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest(), payload
+
+
+def _convocation_document_ordre_du_jour_hash(convocation: AgConvocation) -> str:
+    document = getattr(convocation, "document", None)
+
+    if not document:
+        return ""
+
+    metadata = getattr(document, "metadata", None) or {}
+
+    if not isinstance(metadata, dict):
+        return ""
+
+    return str(metadata.get("ordre_du_jour_hash") or "")
+
+
+def _convocation_is_traced(convocation: AgConvocation) -> bool:
+    statut = str(getattr(convocation, "statut", "") or "").strip().upper()
+
+    return (
+        statut in {"ENVOYEE", "CONSULTEE"}
+        or getattr(convocation, "sent_at", None) is not None
+        or getattr(convocation, "consulted_at", None) is not None
+    )
+
+
+def _assert_can_replace_convocation_pdf(convocation: AgConvocation):
+    if _convocation_is_traced(convocation):
+        raise ValidationError(
+            {
+                "detail": (
+                    "Impossible de régénérer cette convocation : elle a déjà été envoyée ou consultée. "
+                    "L’ordre du jour a changé depuis la génération du PDF. "
+                    "Créez une convocation rectificative pour conserver la traçabilité."
+                )
+            }
+        )
+
+
 def _generate_convocation_pdf_document(
     *,
     convocation: AgConvocation,
     request,
     force: bool = False,
 ):
-    if not force and getattr(convocation, "document_id", None):
-        return convocation.document, False
+    current_hash, ordre_du_jour_payload = _ordre_du_jour_hash(convocation.ag)
+    existing_hash = _convocation_document_ordre_du_jour_hash(convocation)
+
+    if getattr(convocation, "document_id", None):
+        if existing_hash == current_hash:
+            if not force or _convocation_is_traced(convocation):
+                return convocation.document, False
+
+        if existing_hash != current_hash:
+            _assert_can_replace_convocation_pdf(convocation)
+
+        if not force and existing_hash == current_hash:
+            return convocation.document, False
 
     pdf_bytes = generate_convocation_ag_pdf_bytes(
         convocation=convocation,
@@ -640,6 +730,10 @@ def _generate_convocation_pdf_document(
             "coproprietaire_id": convocation.coproprietaire_id,
             "canal": convocation.canal,
             "statut": convocation.statut,
+            "ordre_du_jour_hash": current_hash,
+            "ordre_du_jour_count": len(ordre_du_jour_payload),
+            "resolution_ids": [item["id"] for item in ordre_du_jour_payload],
+            "ordre_du_jour_payload": ordre_du_jour_payload,
         },
     )
 
@@ -932,16 +1026,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                         )
                         continue
 
-                    if getattr(convocation, "document_id", None):
-                        skipped_items.append(
-                            {
-                                **_convocation_pdf_payload(convocation, request),
-                                "reason": "PDF déjà existant",
-                            }
-                        )
-                        continue
-
-                    _generate_convocation_pdf_document(
+                    _, was_generated = _generate_convocation_pdf_document(
                         convocation=convocation,
                         request=request,
                         force=False,
@@ -949,9 +1034,17 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
                     convocation.refresh_from_db()
 
-                    generated_items.append(
-                        _convocation_pdf_payload(convocation, request)
-                    )
+                    if was_generated:
+                        generated_items.append(
+                            _convocation_pdf_payload(convocation, request)
+                        )
+                    else:
+                        skipped_items.append(
+                            {
+                                **_convocation_pdf_payload(convocation, request),
+                                "reason": "PDF déjà à jour",
+                            }
+                        )
 
             except AgConvocation.DoesNotExist:
                 errors.append(

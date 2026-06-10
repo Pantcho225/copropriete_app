@@ -915,6 +915,39 @@ function EmptyState(props: {
   );
 }
 
+
+function formatApiErrorMessage(error: unknown): string {
+  if (error === null || error === undefined) {
+    return "Erreur non renseignée.";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (Array.isArray(error)) {
+    return error.map((item) => formatApiErrorMessage(item)).join(" ");
+  }
+
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+
+    if (typeof record.detail === "string") {
+      return record.detail;
+    }
+
+    if (Array.isArray(record.detail)) {
+      return record.detail.map((item) => formatApiErrorMessage(item)).join(" ");
+    }
+
+    return Object.entries(record)
+      .map(([key, value]) => `${key} : ${formatApiErrorMessage(value)}`)
+      .join(" ");
+  }
+
+  return String(error);
+}
+
 function AGDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -1820,7 +1853,7 @@ function AGDetail() {
             {convocationPdfBatchResult.errors.length > 0 ? (
               <AlertBox kind="error" title="Erreurs de génération">
                 {convocationPdfBatchResult.errors
-                  .map((item) => `Convocation #${item.id} : ${String(item.error)}`)
+                  .map((item) => `Convocation #${item.id} : ${formatApiErrorMessage(item.error)}`)
                   .join(" | ")}
               </AlertBox>
             ) : null}
