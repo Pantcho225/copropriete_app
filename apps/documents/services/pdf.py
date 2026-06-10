@@ -60,12 +60,25 @@ def _date(value) -> str:
         return str(value)
 
 
+def _datetime(value) -> str:
+    if not value:
+        return ""
+
+    try:
+        if hasattr(value, "tzinfo"):
+            value = timezone.localtime(value)
+        return value.strftime("%d/%m/%Y à %H:%M")
+    except Exception:
+        return str(value)
+
+
 def _owner_name(owner) -> str:
     if not owner:
         return "Copropriétaire"
 
     parts = [
         _value(owner, "prenom"),
+        _value(owner, "prenoms"),
         _value(owner, "nom"),
     ]
     name = " ".join(part for part in parts if part).strip()
@@ -315,8 +328,10 @@ def _html_base(*, title: str, copropriete, reference: str, body_html: str) -> st
 def make_reference(prefix: str, source_id: int | str | None = None) -> str:
     today = timezone.localtime(timezone.now()).strftime("%Y%m%d")
     suffix = uuid4().hex[:6].upper()
+
     if source_id:
         return f"{prefix}-{today}-{source_id}-{suffix}"
+
     return f"{prefix}-{today}-{suffix}"
 
 
@@ -538,6 +553,168 @@ def generate_mandat_ag_pdf_bytes(
     return render_pdf_bytes(html, request=request)
 
 
+def generate_convocation_ag_pdf_bytes(
+    *,
+    convocation,
+    request=None,
+) -> bytes:
+    ag = getattr(convocation, "ag", None)
+    copropriete = getattr(convocation, "copropriete", None)
+    coproprietaire = getattr(convocation, "coproprietaire", None)
+    lot = getattr(convocation, "lot", None)
+
+    ag_title = escape(
+        getattr(ag, "titre", "")
+        or getattr(ag, "title", "")
+        or getattr(ag, "objet", "")
+        or f"Assemblée Générale #{getattr(ag, 'id', '')}"
+    )
+    ag_date = escape(
+        _datetime(getattr(ag, "date_ag", None))
+        or _datetime(getattr(ag, "date_assemblee", None))
+        or _datetime(getattr(ag, "date_reunion", None))
+        or _datetime(getattr(ag, "scheduled_at", None))
+        or _date(getattr(ag, "date", None))
+        or "Date non renseignée"
+    )
+    ag_lieu = escape(
+        getattr(ag, "lieu", "")
+        or getattr(ag, "location", "")
+        or getattr(ag, "adresse", "")
+        or "Lieu non renseigné"
+    )
+
+    owner_name = escape(_owner_name(coproprietaire))
+    lot_label = escape(_lot_label(lot))
+    lot_building = escape(_lot_building_label(lot))
+
+    reference = getattr(convocation, "reference", "") or make_reference(
+        "CONV-AG",
+        getattr(convocation, "id", None),
+    )
+
+    objet = escape(
+        getattr(convocation, "objet", "")
+        or "Convocation à l’assemblée générale"
+    )
+    message = escape(
+        getattr(convocation, "message", "")
+        or "Vous êtes convoqué à l’assemblée générale de la copropriété."
+    ).replace(chr(10), "<br>")
+
+    statut_label = escape(
+        convocation.get_statut_display()
+        if hasattr(convocation, "get_statut_display")
+        else getattr(convocation, "statut", "")
+    )
+    canal_label = escape(
+        convocation.get_canal_display()
+        if hasattr(convocation, "get_canal_display")
+        else getattr(convocation, "canal", "")
+    )
+
+    generated_at = escape(_datetime(getattr(convocation, "generated_at", None)) or "Non renseignée")
+    sent_at = escape(_datetime(getattr(convocation, "sent_at", None)) or "Non envoyée")
+    consulted_at = escape(_datetime(getattr(convocation, "consulted_at", None)) or "Non consultée")
+
+    body = f"""
+  <div class="section">
+    <p>
+      Madame, Monsieur,
+    </p>
+
+    <p>
+      Vous êtes officiellement convoqué(e) à l’Assemblée Générale indiquée ci-dessous.
+      Ce document récapitule les informations de séance, le lot concerné et la
+      traçabilité de la convocation.
+    </p>
+
+    <table class="grid">
+      <tr>
+        <td class="label">Assemblée Générale</td>
+        <td>{ag_title}</td>
+      </tr>
+      <tr>
+        <td class="label">Date et heure</td>
+        <td>{ag_date}</td>
+      </tr>
+      <tr>
+        <td class="label">Lieu</td>
+        <td>{ag_lieu}</td>
+      </tr>
+      <tr>
+        <td class="label">Copropriétaire</td>
+        <td>{owner_name}</td>
+      </tr>
+      <tr>
+        <td class="label">Lot concerné</td>
+        <td>{lot_label}</td>
+      </tr>
+      <tr>
+        <td class="label">Bâtiment / Étage</td>
+        <td>{lot_building or "&nbsp;"}</td>
+      </tr>
+      <tr>
+        <td class="label">Canal de convocation</td>
+        <td>{canal_label or "&nbsp;"}</td>
+      </tr>
+      <tr>
+        <td class="label">Statut</td>
+        <td>{statut_label or "&nbsp;"}</td>
+      </tr>
+    </table>
+
+    <div class="box">
+      <strong>Objet :</strong><br>
+      {objet}
+    </div>
+
+    <div class="box">
+      <strong>Message :</strong><br>
+      {message}
+    </div>
+
+    <div class="warning">
+      Merci de confirmer votre présence depuis votre espace copropriétaire ou de
+      transmettre un mandat de représentation si vous ne pouvez pas participer
+      personnellement à l’assemblée.
+    </div>
+
+    <table class="grid">
+      <tr>
+        <td class="label">Convocation générée le</td>
+        <td>{generated_at}</td>
+      </tr>
+      <tr>
+        <td class="label">Convocation envoyée le</td>
+        <td>{sent_at}</td>
+      </tr>
+      <tr>
+        <td class="label">Convocation consultée le</td>
+        <td>{consulted_at}</td>
+      </tr>
+    </table>
+
+    <div class="signature-row">
+      <div class="signature-cell">
+        <span class="signature-line">Le syndic / Gestionnaire</span>
+      </div>
+      <div class="signature-cell">
+        <span class="signature-line">Accusé de réception</span>
+      </div>
+    </div>
+  </div>
+"""
+
+    html = _html_base(
+        title="Convocation à l’Assemblée Générale",
+        copropriete=copropriete,
+        reference=reference,
+        body_html=body,
+    )
+    return render_pdf_bytes(html, request=request)
+
+
 def save_generated_document(
     *,
     copropriete,
@@ -579,3 +756,43 @@ def save_generated_document(
     document.file.save(filename, ContentFile(pdf_bytes), save=False)
     document.save()
     return document
+
+
+def save_generated_pdf_document(
+    *,
+    copropriete,
+    document_type: str,
+    title: str,
+    reference: str,
+    pdf_bytes: bytes,
+    created_by=None,
+    related_owner=None,
+    related_lot=None,
+    related_ag=None,
+    related_dossier_impaye=None,
+    related_relance=None,
+    visible_to_owner: bool | None = None,
+    is_visible_to_owner: bool = False,
+    metadata: dict | None = None,
+) -> GeneratedDocument:
+    final_visible_to_owner = (
+        bool(visible_to_owner)
+        if visible_to_owner is not None
+        else bool(is_visible_to_owner)
+    )
+
+    return save_generated_document(
+        copropriete=copropriete,
+        document_type=document_type,
+        title=title,
+        reference=reference,
+        pdf_bytes=pdf_bytes,
+        created_by=created_by,
+        related_owner=related_owner,
+        related_lot=related_lot,
+        related_ag=related_ag,
+        related_dossier_impaye=related_dossier_impaye,
+        related_relance=related_relance,
+        is_visible_to_owner=final_visible_to_owner,
+        metadata=metadata,
+    )

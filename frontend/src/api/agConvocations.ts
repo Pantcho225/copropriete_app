@@ -96,6 +96,11 @@ export interface GenererConvocationsResponse {
   convocations?: AgConvocation[];
 }
 
+export interface GenererPdfConvocationResponse {
+  detail: string;
+  convocation: AgConvocation;
+}
+
 function cleanParams(filters?: AgConvocationFilters) {
   const params: Record<string, string | number> = {};
 
@@ -146,6 +151,17 @@ export async function genererConvocationsAg(
 ): Promise<GenererConvocationsResponse> {
   const response = await api.post<GenererConvocationsResponse>(
     `/api/ag/ags/${agId}/generer-convocations/`,
+  );
+
+  return response.data;
+}
+
+
+export async function genererPdfConvocationAg(
+  convocationId: number | string,
+): Promise<GenererPdfConvocationResponse> {
+  const response = await api.post<GenererPdfConvocationResponse>(
+    `/api/ag/convocations/${convocationId}/generer-pdf/`,
   );
 
   return response.data;

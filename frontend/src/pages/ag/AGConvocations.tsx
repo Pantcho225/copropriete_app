@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
+
+import api from "../../api/axios";
 import {
   annulerAgConvocation,
   genererConvocationsAg,
@@ -41,6 +43,35 @@ const STATUT_STYLES: Record<AgConvocationStatut, CSSProperties> = {
   },
 };
 
+type ConvocationWithDocument = AgConvocation & {
+  document?: number | null;
+  document_url?: string | null;
+  document_reference?: string | null;
+  document_title?: string | null;
+};
+
+type ConvocationDisplayFields = ConvocationWithDocument & {
+  ag_titre?: string | null;
+  ag_title?: string | null;
+  ag_libelle?: string | null;
+  ag_display?: string | null;
+  coproprietaire_label?: string | null;
+  coproprietaire_nom?: string | null;
+  coproprietaire_display?: string | null;
+  owner_nom?: string | null;
+  owner_name?: string | null;
+  lot_label?: string | null;
+  lot_numero?: string | null;
+  lot_reference?: string | null;
+  lot_display?: string | null;
+  canal_label?: string | null;
+};
+
+type GeneratePdfResponse = {
+  detail?: string;
+  convocation?: ConvocationWithDocument;
+};
+
 function formatDate(value?: string | null) {
   if (!value) {
     return "—";
@@ -59,46 +90,64 @@ function formatDate(value?: string | null) {
 }
 
 function getConvocationOwner(convocation: AgConvocation) {
+  const item = convocation as ConvocationDisplayFields;
+
   return (
-    convocation.coproprietaire_label ||
-    convocation.coproprietaire_nom ||
-    convocation.coproprietaire_display ||
-    convocation.owner_nom ||
-    convocation.owner_name ||
+    item.coproprietaire_label ||
+    item.coproprietaire_nom ||
+    item.coproprietaire_display ||
+    item.owner_nom ||
+    item.owner_name ||
     "Copropriétaire non renseigné"
   );
 }
 
 function getConvocationLot(convocation: AgConvocation) {
+  const item = convocation as ConvocationDisplayFields;
+
   return (
-    convocation.lot_label ||
-    convocation.lot_numero ||
-    convocation.lot_reference ||
-    convocation.lot_display ||
-    (convocation.lot ? `Lot #${convocation.lot}` : "Lot non renseigné")
+    item.lot_label ||
+    item.lot_numero ||
+    item.lot_reference ||
+    item.lot_display ||
+    (item.lot ? `Lot #${item.lot}` : "Lot non renseigné")
   );
 }
 
 function getConvocationAg(convocation: AgConvocation) {
+  const item = convocation as ConvocationDisplayFields;
+
   return (
-    convocation.ag_titre ||
-    convocation.ag_title ||
-    convocation.ag_libelle ||
-    convocation.ag_display ||
-    `AG #${convocation.ag}`
+    item.ag_titre ||
+    item.ag_title ||
+    item.ag_libelle ||
+    item.ag_display ||
+    `AG #${item.ag}`
   );
 }
 
 function getConvocationCanal(convocation: AgConvocation) {
-  return convocation.canal_label || convocation.canal;
+  const item = convocation as ConvocationDisplayFields;
+
+  return item.canal_label || item.canal || "—";
 }
 
-function getConvocationStatutLabel(convocation: AgConvocation) {
-  return (
-    convocation.statut_label ||
-    STATUT_LABELS[convocation.statut] ||
-    convocation.statut
-  );
+function getDocumentUrl(convocation: AgConvocation) {
+  const withDocument = convocation as ConvocationWithDocument;
+  return withDocument.document_url || "";
+}
+
+function getDocumentReference(convocation: AgConvocation) {
+  const withDocument = convocation as ConvocationWithDocument;
+  return withDocument.document_reference || "";
+}
+
+function openDocument(url: string) {
+  if (!url) {
+    return;
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function getErrorMessage(error: unknown) {
@@ -141,29 +190,25 @@ function getErrorMessage(error: unknown) {
   return possibleAxiosError.message || "Une erreur est survenue.";
 }
 
-function StatusBadge({ convocation }: { convocation: AgConvocation }) {
+function StatusBadge({ statut }: { statut: AgConvocationStatut }) {
   return (
-    <span
-      style={{
-        ...styles.statusBadge,
-        ...STATUT_STYLES[convocation.statut],
-      }}
-    >
-      {getConvocationStatutLabel(convocation)}
+    <span style={{ ...styles.statusBadge, ...STATUT_STYLES[statut] }}>
+      {STATUT_LABELS[statut] ?? statut}
     </span>
   );
 }
 
 export default function AGConvocations() {
   const [searchParams] = useSearchParams();
-  const agFromUrl = searchParams.get("ag") ?? "";
+  const initialAgFilter = searchParams.get("ag") || "";
 
   const [convocations, setConvocations] = useState<AgConvocation[]>([]);
-  const [agFilter, setAgFilter] = useState(agFromUrl);
+  const [agFilter, setAgFilter] = useState(initialAgFilter);
   const [statutFilter, setStatutFilter] = useState<AgConvocationStatut | "">("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -190,12 +235,6 @@ export default function AGConvocations() {
     void loadConvocations();
   }, [loadConvocations]);
 
-  useEffect(() => {
-    const nextAg = searchParams.get("ag") ?? "";
-
-    setAgFilter((current) => (current === nextAg ? current : nextAg));
-  }, [searchParams]);
-
   const filteredConvocations = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -210,7 +249,9 @@ export default function AGConvocations() {
         getConvocationLot(convocation),
         getConvocationAg(convocation),
         getConvocationCanal(convocation),
-        getConvocationStatutLabel(convocation),
+        getDocumentReference(convocation),
+        convocation.statut,
+        convocation.canal,
       ];
 
       return values.some((value) =>
@@ -264,6 +305,52 @@ export default function AGConvocations() {
       setError(getErrorMessage(err));
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleGeneratePdf(convocation: AgConvocation) {
+    if (convocation.statut === "ANNULEE") {
+      setError("Impossible de générer le PDF d’une convocation annulée.");
+      setSuccess("");
+      return;
+    }
+
+    setPdfLoadingId(convocation.id);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await api.post<GeneratePdfResponse>(
+        `/api/ag/convocations/${convocation.id}/generer-pdf/`,
+      );
+
+      const updatedConvocation = response.data.convocation;
+
+      if (updatedConvocation) {
+        setConvocations((current) =>
+          current.map((item) =>
+            item.id === updatedConvocation.id ? updatedConvocation : item,
+          ),
+        );
+      }
+
+      setSuccess(
+        response.data.detail || "PDF de convocation généré avec succès.",
+      );
+
+      await loadConvocations();
+
+      const pdfUrl =
+        (updatedConvocation && getDocumentUrl(updatedConvocation)) ||
+        getDocumentUrl(convocation);
+
+      if (pdfUrl) {
+        openDocument(pdfUrl);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setPdfLoadingId(null);
     }
   }
 
@@ -423,8 +510,8 @@ export default function AGConvocations() {
           <div>
             <h2 style={styles.sectionTitle}>Liste des convocations</h2>
             <p style={styles.sectionSubtitle}>
-              Chaque ligne conserve la référence, le copropriétaire, le lot et
-              les dates clés de traçabilité.
+              Chaque ligne conserve la référence, le copropriétaire, le lot,
+              les documents PDF et les dates clés de traçabilité.
             </p>
           </div>
         </div>
@@ -449,6 +536,7 @@ export default function AGConvocations() {
                   <th style={styles.th}>Générée</th>
                   <th style={styles.th}>Envoyée</th>
                   <th style={styles.th}>Consultée</th>
+                  <th style={styles.th}>PDF</th>
                   <th style={styles.th}>Actions</th>
                 </tr>
               </thead>
@@ -456,11 +544,16 @@ export default function AGConvocations() {
               <tbody>
                 {filteredConvocations.map((convocation) => {
                   const isActionLoading = actionLoadingId === convocation.id;
+                  const isPdfLoading = pdfLoadingId === convocation.id;
+                  const pdfUrl = getDocumentUrl(convocation);
+
                   const canSend = convocation.statut === "GENEREE";
                   const canMarkConsulted =
                     convocation.statut === "GENEREE" ||
                     convocation.statut === "ENVOYEE";
                   const canCancel = convocation.statut !== "ANNULEE";
+                  const canGeneratePdf =
+                    convocation.statut !== "ANNULEE" && !isPdfLoading;
 
                   return (
                     <tr key={convocation.id}>
@@ -483,7 +576,7 @@ export default function AGConvocations() {
                       </td>
 
                       <td style={styles.td}>
-                        <StatusBadge convocation={convocation} />
+                        <StatusBadge statut={convocation.statut} />
                       </td>
 
                       <td style={styles.td}>
@@ -496,6 +589,30 @@ export default function AGConvocations() {
 
                       <td style={styles.td}>
                         {formatDate(convocation.consulted_at)}
+                      </td>
+
+                      <td style={styles.td}>
+                        {pdfUrl ? (
+                          <button
+                            type="button"
+                            style={styles.pdfButton}
+                            onClick={() => openDocument(pdfUrl)}
+                          >
+                            Ouvrir PDF
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            style={{
+                              ...styles.pdfButton,
+                              ...(!canGeneratePdf ? styles.buttonDisabled : {}),
+                            }}
+                            disabled={!canGeneratePdf}
+                            onClick={() => void handleGeneratePdf(convocation)}
+                          >
+                            {isPdfLoading ? "PDF..." : "Générer PDF"}
+                          </button>
+                        )}
                       </td>
 
                       <td style={styles.td}>
@@ -512,8 +629,7 @@ export default function AGConvocations() {
                             onClick={() =>
                               void runConvocationAction(
                                 convocation.id,
-                                () =>
-                                  marquerConvocationEnvoyee(convocation.id),
+                                () => marquerConvocationEnvoyee(convocation.id),
                                 "Convocation marquée comme envoyée.",
                               )
                             }
@@ -738,7 +854,7 @@ const styles: Record<string, CSSProperties> = {
   },
   table: {
     width: "100%",
-    minWidth: 1180,
+    minWidth: 1280,
     borderCollapse: "collapse",
   },
   th: {
@@ -788,6 +904,17 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
+  },
+  pdfButton: {
+    border: "1px solid #c7d2fe",
+    borderRadius: 999,
+    padding: "8px 11px",
+    background: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
   dangerButton: {
     border: "1px solid #fecaca",

@@ -1226,9 +1226,13 @@ function ConvocationsPanel({
                       onClick={() => openDocument(convocation.document_url)}
                       style={styles.procurationDocButton}
                     >
-                      Ouvrir le document
+                      Ouvrir la convocation PDF
                     </button>
-                  ) : null}
+                  ) : (
+                    <span style={styles.pvHintMuted}>
+                      PDF non encore généré
+                    </span>
+                  )}
 
                   <button
                     type="button"

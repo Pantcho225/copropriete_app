@@ -8,6 +8,7 @@ from typing import Any, Optional, Iterable, List
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
+from apps.documents.models import GeneratedDocument
 from django.db import transaction
 from django.utils import timezone
 
@@ -19,8 +20,19 @@ from rest_framework.response import Response
 
 from apps.lots.models import Lot
 
-from .models import AGProcuration, AgConvocation, AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import (
+    AGProcuration,
+    AgConvocation,
+    AssembleeGenerale,
+    PresenceLot,
+    Resolution,
+    Vote,
+)
 from .permissions import IsSyndicOrAdmin
+from apps.documents.services.pdf import (
+    generate_convocation_ag_pdf_bytes,
+    save_generated_pdf_document,
+)
 from .serializers import (
     AGProcurationSerializer,
     AgConvocationSerializer,
@@ -34,6 +46,7 @@ from .services.results import compute_resolution_result
 
 def generate_ag_pv_pdf_bytes(ag: AssembleeGenerale, *, request) -> bytes:
     from .services.pdf import generate_ag_pv_pdf_bytes as _impl
+
     return _impl(ag, request=request)
 
 
@@ -46,6 +59,7 @@ def sign_pdf_pades(
     location: str,
 ):
     from .services.pades import sign_pdf_pades as _impl
+
     return _impl(
         pdf_bytes=pdf_bytes,
         pfx_path=pfx_path,
@@ -57,22 +71,29 @@ def sign_pdf_pades(
 
 def _require_copro_id(request) -> str:
     copro_id = getattr(request, "copropriete_id", None)
+
     if not copro_id:
         copro_id = request.headers.get("X-Copropriete-Id")
+
     if not copro_id:
         raise ValidationError({"detail": "En-tête X-Copropriete-Id requis."})
+
     return str(copro_id)
 
 
 def _assert_same_copro(request, ag: AssembleeGenerale):
     copro_id = _require_copro_id(request)
+
     if str(ag.copropriete_id) != str(copro_id):
-        raise ValidationError({"detail": "AG hors périmètre de la copropriété courante."})
+        raise ValidationError(
+            {"detail": "AG hors périmètre de la copropriété courante."}
+        )
 
 
 def _assert_ag_writable(ag: AssembleeGenerale):
     if getattr(ag, "statut", None) == "CLOTUREE":
         raise ValidationError({"detail": "AG clôturée : modification interdite."})
+
     if getattr(ag, "pv_locked", False):
         raise ValidationError({"detail": "PV verrouillé : modification interdite."})
 
@@ -116,10 +137,13 @@ def _ag_not_open_message(ag: AssembleeGenerale, *, what: str) -> str:
 
 def _assert_ag_open_and_writable(ag: AssembleeGenerale, *, what: str):
     statut = getattr(ag, "statut", None)
+
     if statut != "OUVERTE":
         raise ValidationError({"detail": _ag_not_open_message(ag, what=what)})
+
     if statut == "CLOTUREE":
         raise ValidationError({"detail": f"AG clôturée : {what} interdit."})
+
     if getattr(ag, "pv_locked", False):
         raise ValidationError({"detail": f"PV verrouillé : {what} interdit."})
 
@@ -153,7 +177,11 @@ def _get_ag_closing_blockers(ag: AssembleeGenerale) -> list[str]:
     if getattr(ag, "statut", None) == "ANNULEE":
         blockers.append("AG annulée : clôture interdite.")
 
-    if not getattr(ag, "pv_signed_pdf", None) or not getattr(ag, "pv_signed_hash", "") or not getattr(ag, "pv_signed_at", None):
+    if (
+        not getattr(ag, "pv_signed_pdf", None)
+        or not getattr(ag, "pv_signed_hash", "")
+        or not getattr(ag, "pv_signed_at", None)
+    ):
         blockers.append("PV signé obligatoire avant clôture.")
 
     if not getattr(ag, "pv_locked", False):
@@ -180,8 +208,11 @@ def _get_ag_closing_blockers(ag: AssembleeGenerale) -> list[str]:
 
 def _assert_ag_closable(ag: AssembleeGenerale):
     blockers = _get_ag_closing_blockers(ag)
+
     if blockers:
-        raise ValidationError({"detail": "Clôture impossible.", "blocking_reasons": blockers})
+        raise ValidationError(
+            {"detail": "Clôture impossible.", "blocking_reasons": blockers}
+        )
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -193,12 +224,14 @@ def _parse_decimal(value: Any, field_name: str) -> Decimal:
         d = Decimal(str(value))
     except (InvalidOperation, TypeError):
         raise ValidationError({field_name: "Format invalide. Exemple: 1400000.00"})
+
     return d
 
 
 def _safe_uploaded_filename(name: str) -> str:
     if not name:
         return ""
+
     return os.path.basename(name)
 
 
@@ -217,8 +250,10 @@ def _safe_save(obj, update_fields: Iterable[str] | None = None):
     if not update_fields:
         obj.save()
         return
+
     names = _model_field_names(obj)
     filtered = [f for f in update_fields if f in names]
+
     if filtered:
         obj.save(update_fields=filtered)
     else:
@@ -229,6 +264,7 @@ def _getattr_any(obj, candidates: List[str], default=None):
     for name in candidates:
         if hasattr(obj, name):
             return getattr(obj, name)
+
     return default
 
 
@@ -244,7 +280,11 @@ def _fetch_dossier_travaux_for_resolution(*, res: Resolution):
         .first()
     )
 
-    if dossier is None and _has_model_field(res, "travaux_dossier") and getattr(res, "travaux_dossier_id", None):
+    if (
+        dossier is None
+        and _has_model_field(res, "travaux_dossier")
+        and getattr(res, "travaux_dossier_id", None)
+    ):
         dossier = (
             DossierTravaux.objects.select_for_update()
             .filter(pk=res.travaux_dossier_id, copropriete_id=res.ag.copropriete_id)
@@ -257,7 +297,12 @@ def _fetch_dossier_travaux_for_resolution(*, res: Resolution):
 def _sync_resolution_dossier_links(*, res: Resolution, dossier):
     if getattr(dossier, "resolution_validation_id", None) not in (None, res.id):
         raise ValidationError(
-            {"detail": "Incohérence: le dossier est déjà lié (resolution_validation) à une autre résolution."}
+            {
+                "detail": (
+                    "Incohérence: le dossier est déjà lié "
+                    "(resolution_validation) à une autre résolution."
+                )
+            }
         )
 
     if getattr(dossier, "resolution_validation_id", None) != res.id:
@@ -269,7 +314,12 @@ def _sync_resolution_dossier_links(*, res: Resolution, dossier):
 
     if getattr(res, "travaux_dossier_id", None) not in (None, dossier.id):
         raise ValidationError(
-            {"detail": "Incohérence: cette résolution est déjà liée à un autre dossier (travaux_dossier)."}
+            {
+                "detail": (
+                    "Incohérence: cette résolution est déjà liée à un autre "
+                    "dossier (travaux_dossier)."
+                )
+            }
         )
 
     if getattr(res, "travaux_dossier_id", None) != dossier.id:
@@ -301,10 +351,16 @@ def _validate_and_lock_dossier_if_adoptee(
             "dossier_id": dossier.id,
             "statut": dossier_statut,
             "detail": "Dossier déjà verrouillé : aucune modification.",
-            "budget_vote": str(getattr(dossier, "budget_vote", None))
-            if getattr(dossier, "budget_vote", None) is not None
-            else None,
-            "locked_at": dossier.locked_at.isoformat() if getattr(dossier, "locked_at", None) else None,
+            "budget_vote": (
+                str(getattr(dossier, "budget_vote", None))
+                if getattr(dossier, "budget_vote", None) is not None
+                else None
+            ),
+            "locked_at": (
+                dossier.locked_at.isoformat()
+                if getattr(dossier, "locked_at", None)
+                else None
+            ),
             "locked_by": getattr(dossier, "locked_by_id", None),
         }
 
@@ -319,7 +375,10 @@ def _validate_and_lock_dossier_if_adoptee(
         return {
             "dossier_id": dossier.id,
             "statut": dossier_statut,
-            "detail": "Décision ADOPTEE mais dossier non en statut SOUMIS_AG : non validé (politique production).",
+            "detail": (
+                "Décision ADOPTEE mais dossier non en statut SOUMIS_AG : "
+                "non validé (politique production)."
+            ),
         }
 
     if hasattr(dossier, "statut"):
@@ -330,10 +389,14 @@ def _validate_and_lock_dossier_if_adoptee(
     if hasattr(dossier, "budget_vote"):
         if budget_vote is not None:
             dossier.budget_vote = budget_vote
-        elif getattr(dossier, "budget_vote", None) is None and hasattr(dossier, "budget_estime"):
+        elif getattr(dossier, "budget_vote", None) is None and hasattr(
+            dossier,
+            "budget_estime",
+        ):
             dossier.budget_vote = getattr(dossier, "budget_estime", None)
 
     user = request.user if getattr(request.user, "is_authenticated", False) else None
+
     if hasattr(dossier, "lock") and callable(getattr(dossier, "lock")):
         try:
             dossier.lock(user=user, save=False)
@@ -342,7 +405,12 @@ def _validate_and_lock_dossier_if_adoptee(
     else:
         if hasattr(dossier, "locked_at") and not getattr(dossier, "locked_at", None):
             dossier.locked_at = timezone.now()
-        if hasattr(dossier, "locked_by") and user and not getattr(dossier, "locked_by_id", None):
+
+        if hasattr(dossier, "locked_by") and user and not getattr(
+            dossier,
+            "locked_by_id",
+            None,
+        ):
             dossier.locked_by = user
 
     _safe_save(
@@ -362,15 +430,22 @@ def _validate_and_lock_dossier_if_adoptee(
             res.budget_vote = budget_vote
         elif getattr(res, "budget_vote", None) is None:
             res.budget_vote = getattr(dossier, "budget_vote", None)
+
         _safe_save(res, update_fields=["budget_vote"])
 
     return {
         "dossier_id": dossier.id,
         "statut": _getattr_any(dossier, ["statut", "status"], default=None),
-        "budget_vote": str(getattr(dossier, "budget_vote", None))
-        if getattr(dossier, "budget_vote", None) is not None
-        else None,
-        "locked_at": dossier.locked_at.isoformat() if getattr(dossier, "locked_at", None) else None,
+        "budget_vote": (
+            str(getattr(dossier, "budget_vote", None))
+            if getattr(dossier, "budget_vote", None) is not None
+            else None
+        ),
+        "locked_at": (
+            dossier.locked_at.isoformat()
+            if getattr(dossier, "locked_at", None)
+            else None
+        ),
         "locked_by": getattr(dossier, "locked_by_id", None),
     }
 
@@ -390,6 +465,7 @@ def _close_resolution_and_apply_travaux(
 
     dossier_payload = None
     dossier, DossierTravaux = _fetch_dossier_travaux_for_resolution(res=res)
+
     if dossier and DossierTravaux:
         _sync_resolution_dossier_links(res=res, dossier=dossier)
 
@@ -413,12 +489,19 @@ except Exception:
 
 def _client_ip(request) -> str | None:
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
+
     if xff:
         return xff.split(",")[0].strip()
+
     return request.META.get("REMOTE_ADDR")
 
 
-def _log_ag_event(request, ag: AssembleeGenerale, event: str, meta: dict | None = None):
+def _log_ag_event(
+    request,
+    ag: AssembleeGenerale,
+    event: str,
+    meta: dict | None = None,
+):
     if not AGAuditLog:
         return
 
@@ -485,7 +568,9 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "tantiemes_presents": float(presents),
                 "quorum_atteint": bool(atteint),
                 "seuil": 0.50,
-                "has_zero_tantieme_lots": ag.presences.filter(tantiemes__lte=0).exists(),
+                "has_zero_tantieme_lots": ag.presences.filter(
+                    tantiemes__lte=0
+                ).exists(),
             },
             status=status.HTTP_200_OK,
         )
@@ -497,15 +582,26 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         _assert_ag_writable(ag)
 
         if getattr(ag, "statut", None) == "ANNULEE":
-            raise ValidationError({"detail": "AG annulée : génération des convocations interdite."})
+            raise ValidationError(
+                {"detail": "AG annulée : génération des convocations interdite."}
+            )
 
         canal = "PLATEFORME"
+
         if request.data and request.data.get("canal"):
             canal = str(request.data.get("canal") or "").strip().upper()
 
         allowed_canaux = {choice[0] for choice in AgConvocation.CANAL_CHOICES}
+
         if canal not in allowed_canaux:
-            raise ValidationError({"canal": f"Canal invalide. Valeurs autorisées : {', '.join(sorted(allowed_canaux))}."})
+            raise ValidationError(
+                {
+                    "canal": (
+                        "Canal invalide. Valeurs autorisées : "
+                        f"{', '.join(sorted(allowed_canaux))}."
+                    )
+                }
+            )
 
         objet = ""
         message = ""
@@ -524,7 +620,9 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         try:
             from apps.owners.models import ProprietaireLot
         except Exception as exc:
-            raise ValidationError({"detail": f"Impossible de charger ProprietaireLot : {str(exc)}"})
+            raise ValidationError(
+                {"detail": f"Impossible de charger ProprietaireLot : {str(exc)}"}
+            )
 
         with transaction.atomic():
             ag = AssembleeGenerale.objects.select_for_update().get(
@@ -564,6 +662,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                     continue
 
                 owner_is_active = getattr(coproprietaire, "actif", True)
+
                 if owner_is_active is False:
                     skipped_inactive_owner += 1
                     continue
@@ -634,8 +733,12 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         _assert_ag_open_and_writable(ag, what="initialisation des présences")
 
         lots = Lot.objects.filter(copropriete_id=ag.copropriete_id).order_by("id")
+
         if not lots.exists():
-            return Response({"detail": "Aucun lot dans cette copropriété."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Aucun lot dans cette copropriété."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         created = 0
         skipped = 0
@@ -647,6 +750,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                     lot_id=lot.id,
                     defaults={"present_ou_represente": False},
                 )
+
                 if was_created:
                     created += 1
                 else:
@@ -660,7 +764,12 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         )
 
         return Response(
-            {"ag_id": ag.id, "lots_total": lots.count(), "created": created, "skipped_existing": skipped},
+            {
+                "ag_id": ag.id,
+                "lots_total": lots.count(),
+                "created": created,
+                "skipped_existing": skipped,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -670,6 +779,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         _assert_same_copro(request, ag)
 
         from .services.pdf import generate_ag_pv_pdf
+
         return generate_ag_pv_pdf(ag, request=request)
 
     @action(detail=True, methods=["post"], url_path="pv/archive")
@@ -679,15 +789,22 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         if ag.statut == "CLOTUREE":
             raise ValidationError({"detail": "AG clôturée : archivage interdit."})
+
         if ag.pv_locked:
             raise ValidationError({"detail": "PV verrouillé : archivage interdit."})
 
         with transaction.atomic():
-            ag = AssembleeGenerale.objects.select_for_update().get(pk=ag.pk, copropriete_id=ag.copropriete_id)
+            ag = AssembleeGenerale.objects.select_for_update().get(
+                pk=ag.pk,
+                copropriete_id=ag.copropriete_id,
+            )
 
             pdf_bytes = generate_ag_pv_pdf_bytes(ag, request=request)
+
             if not pdf_bytes:
-                raise ValidationError({"detail": "Impossible de générer le PV PDF (bytes vides)."})
+                raise ValidationError(
+                    {"detail": "Impossible de générer le PV PDF (bytes vides)."}
+                )
 
             sha = _sha256_bytes(pdf_bytes)
 
@@ -699,12 +816,16 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
             if _has_model_field(ag, "pv_signed_pdf"):
                 ag.pv_signed_pdf = None
+
             if _has_model_field(ag, "pv_signed_hash"):
                 ag.pv_signed_hash = ""
+
             if _has_model_field(ag, "pv_signed_at"):
                 ag.pv_signed_at = None
+
             if _has_model_field(ag, "pv_signer_subject"):
                 ag.pv_signer_subject = ""
+
             if _has_model_field(ag, "pv_locked"):
                 ag.pv_locked = False
 
@@ -726,7 +847,10 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             request,
             ag,
             event="PV_ARCHIVED",
-            meta={"pv_pdf": getattr(ag.pv_pdf, "name", ""), "pv_pdf_hash": ag.pv_pdf_hash},
+            meta={
+                "pv_pdf": getattr(ag.pv_pdf, "name", ""),
+                "pv_pdf_hash": ag.pv_pdf_hash,
+            },
         )
 
         return Response(
@@ -735,10 +859,20 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "archived": True,
                 "pv_pdf": getattr(ag.pv_pdf, "name", None),
                 "pv_pdf_hash": ag.pv_pdf_hash,
-                "pv_generated_at": ag.pv_generated_at.isoformat() if ag.pv_generated_at else None,
-                "pv_signed_pdf": getattr(getattr(ag, "pv_signed_pdf", None), "name", None),
+                "pv_generated_at": (
+                    ag.pv_generated_at.isoformat() if ag.pv_generated_at else None
+                ),
+                "pv_signed_pdf": getattr(
+                    getattr(ag, "pv_signed_pdf", None),
+                    "name",
+                    None,
+                ),
                 "pv_signed_hash": getattr(ag, "pv_signed_hash", ""),
-                "pv_signed_at": ag.pv_signed_at.isoformat() if getattr(ag, "pv_signed_at", None) else None,
+                "pv_signed_at": (
+                    ag.pv_signed_at.isoformat()
+                    if getattr(ag, "pv_signed_at", None)
+                    else None
+                ),
                 "pv_signer_subject": getattr(ag, "pv_signer_subject", ""),
                 "pv_locked": getattr(ag, "pv_locked", False),
                 "pv_status": "ARCHIVE",
@@ -761,6 +895,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         if ag.pv_locked:
             raise ValidationError({"detail": "PV déjà verrouillé. Signature refusée."})
+
         if getattr(ag, "pv_signed_pdf", None):
             raise ValidationError({"detail": "PV déjà signé. Re-signature refusée."})
 
@@ -768,29 +903,40 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "PV non archivé. Faites d'abord pv/archive."})
 
         pfx_file = request.FILES.get("pfx")
-        pfx_password = (request.data.get("password") or "")
+        pfx_password = request.data.get("password") or ""
+
         if not pfx_file or not pfx_password:
-            raise ValidationError({"detail": "Fournir pfx (.p12/.pfx) et password (form-data)."})
+            raise ValidationError(
+                {"detail": "Fournir pfx (.p12/.pfx) et password (form-data)."}
+            )
 
         pfx_password = str(pfx_password).strip().replace("\x00", "")
+
         if not pfx_password:
-            raise ValidationError({"detail": "Mot de passe PKCS#12 invalide (vide après nettoyage)."})
+            raise ValidationError(
+                {"detail": "Mot de passe PKCS#12 invalide (vide après nettoyage)."}
+            )
 
         original_pdf_bytes = ag.pv_pdf.read()
+
         if not original_pdf_bytes:
             raise ValidationError({"detail": "PV archivé illisible (bytes vides)."})
 
         original_hash = _sha256_bytes(original_pdf_bytes)
 
         if ag.pv_pdf_hash and ag.pv_pdf_hash != original_hash:
-            raise ValidationError({"detail": "Incohérence hash PV. Réarchivez le PV (pv/archive)."})
+            raise ValidationError(
+                {"detail": "Incohérence hash PV. Réarchivez le PV (pv/archive)."}
+            )
 
         pfx_bytes = pfx_file.read()
+
         if not pfx_bytes:
             raise ValidationError({"detail": "Fichier PKCS#12 vide ou illisible."})
 
         suffix = ".p12"
         upname = (getattr(pfx_file, "name", "") or "").lower()
+
         if upname.endswith(".pfx"):
             suffix = ".pfx"
 
@@ -810,20 +956,34 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"detail": f"Erreur signature PAdES: {str(e)}"})
 
         signed_bytes = sign_result.signed_pdf_bytes
+
         if not signed_bytes:
-            raise ValidationError({"detail": "Signature PAdES impossible (bytes signés vides)."})
+            raise ValidationError(
+                {"detail": "Signature PAdES impossible (bytes signés vides)."}
+            )
 
         signed_hash = _sha256_bytes(signed_bytes)
 
         with transaction.atomic():
-            ag = AssembleeGenerale.objects.select_for_update().get(pk=ag.pk, copropriete_id=ag.copropriete_id)
+            ag = AssembleeGenerale.objects.select_for_update().get(
+                pk=ag.pk,
+                copropriete_id=ag.copropriete_id,
+            )
 
             if ag.pv_locked:
-                raise ValidationError({"detail": "PV déjà verrouillé (concurrence). Signature refusée."})
+                raise ValidationError(
+                    {"detail": "PV déjà verrouillé (concurrence). Signature refusée."}
+                )
+
             if getattr(ag, "pv_signed_pdf", None):
-                raise ValidationError({"detail": "PV déjà signé (concurrence). Signature refusée."})
+                raise ValidationError(
+                    {"detail": "PV déjà signé (concurrence). Signature refusée."}
+                )
+
             if ag.statut == "CLOTUREE":
-                raise ValidationError({"detail": "AG clôturée (concurrence). Signature refusée."})
+                raise ValidationError(
+                    {"detail": "AG clôturée (concurrence). Signature refusée."}
+                )
 
             if not ag.pv_pdf_hash:
                 ag.pv_pdf_hash = original_hash
@@ -857,7 +1017,9 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_signed_hash": ag.pv_signed_hash,
                 "pv_signed_pdf": getattr(ag.pv_signed_pdf, "name", ""),
                 "pv_signer_subject": ag.pv_signer_subject,
-                "pfx_uploaded_name": _safe_uploaded_filename(getattr(pfx_file, "name", "")),
+                "pfx_uploaded_name": _safe_uploaded_filename(
+                    getattr(pfx_file, "name", "")
+                ),
             },
         )
 
@@ -868,7 +1030,9 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "pv_pdf_hash": ag.pv_pdf_hash,
                 "pv_signed_pdf": getattr(ag.pv_signed_pdf, "name", None),
                 "pv_signed_hash": ag.pv_signed_hash,
-                "pv_signed_at": ag.pv_signed_at.isoformat() if ag.pv_signed_at else None,
+                "pv_signed_at": (
+                    ag.pv_signed_at.isoformat() if ag.pv_signed_at else None
+                ),
                 "pv_signer_subject": ag.pv_signer_subject,
                 "pv_locked": ag.pv_locked,
                 "pv_status": "VERROUILLE",
@@ -900,27 +1064,43 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         if ag.statut == "CLOTUREE":
             return Response(
-                {"ag_id": ag.id, "pv_locked": True, "detail": "AG clôturée : PV déjà gelé."},
+                {
+                    "ag_id": ag.id,
+                    "pv_locked": True,
+                    "detail": "AG clôturée : PV déjà gelé.",
+                },
                 status=status.HTTP_200_OK,
             )
 
         if ag.pv_locked:
             return Response(
-                {"ag_id": ag.id, "pv_locked": True, "detail": "Déjà verrouillé."},
+                {
+                    "ag_id": ag.id,
+                    "pv_locked": True,
+                    "detail": "Déjà verrouillé.",
+                },
                 status=status.HTTP_200_OK,
             )
 
         if not ag.pv_pdf:
-            raise ValidationError({"detail": "Impossible de verrouiller: PV non archivé (pv_pdf manquant)."})
+            raise ValidationError(
+                {"detail": "Impossible de verrouiller: PV non archivé (pv_pdf manquant)."}
+            )
+
         if not getattr(ag, "pv_signed_pdf", None):
-            raise ValidationError({"detail": "Impossible de verrouiller: PV non signé (faites pv/sign)."})
+            raise ValidationError(
+                {"detail": "Impossible de verrouiller: PV non signé (faites pv/sign)."}
+            )
 
         ag.pv_locked = True
         _safe_save(ag, update_fields=["pv_locked"])
 
         _log_ag_event(request, ag, event="PV_LOCKED", meta={"pv_locked": True})
 
-        return Response({"ag_id": ag.id, "pv_locked": True, "pv_status": "VERROUILLE"}, status=status.HTTP_200_OK)
+        return Response(
+            {"ag_id": ag.id, "pv_locked": True, "pv_status": "VERROUILLE"},
+            status=status.HTTP_200_OK,
+        )
 
     @action(
         detail=True,
@@ -934,7 +1114,11 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         if ag.statut == "CLOTUREE":
             return Response(
-                {"ag_id": ag.id, "statut": ag.statut, "detail": "AG déjà clôturée."},
+                {
+                    "ag_id": ag.id,
+                    "statut": ag.statut,
+                    "detail": "AG déjà clôturée.",
+                },
                 status=status.HTTP_200_OK,
             )
 
@@ -945,17 +1129,29 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
         dossiers = []
 
         with transaction.atomic():
-            ag = AssembleeGenerale.objects.select_for_update().get(pk=ag.pk, copropriete_id=ag.copropriete_id)
+            ag = AssembleeGenerale.objects.select_for_update().get(
+                pk=ag.pk,
+                copropriete_id=ag.copropriete_id,
+            )
 
             if ag.statut == "CLOTUREE":
                 return Response(
-                    {"ag_id": ag.id, "statut": ag.statut, "detail": "AG déjà clôturée."},
+                    {
+                        "ag_id": ag.id,
+                        "statut": ag.statut,
+                        "detail": "AG déjà clôturée.",
+                    },
                     status=status.HTTP_200_OK,
                 )
 
             _assert_ag_closable(ag)
 
-            qs = Resolution.objects.select_for_update().filter(ag_id=ag.id, cloturee=False).order_by("ordre", "id")
+            qs = (
+                Resolution.objects.select_for_update()
+                .filter(ag_id=ag.id, cloturee=False)
+                .order_by("ordre", "id")
+            )
+
             for res in qs:
                 result, dossier_payload = _close_resolution_and_apply_travaux(
                     request=request,
@@ -963,22 +1159,33 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                     budget_vote=None,
                 )
                 closed_resolutions += 1
+
                 if dossier_payload:
                     dossiers.append(dossier_payload)
+
                     if dossier_payload.get("statut") == "VALIDE":
                         dossiers_valides += 1
 
             ag.statut = "CLOTUREE"
             ag.closed_at = timezone.now()
-            ag.closed_by = request.user if getattr(request.user, "is_authenticated", False) else None
+            ag.closed_by = (
+                request.user if getattr(request.user, "is_authenticated", False) else None
+            )
             ag.pv_locked = True
-            _safe_save(ag, update_fields=["statut", "closed_at", "closed_by", "pv_locked"])
+            _safe_save(
+                ag,
+                update_fields=["statut", "closed_at", "closed_by", "pv_locked"],
+            )
 
         _log_ag_event(
             request,
             ag,
             event="AG_CLOSED",
-            meta={"statut": ag.statut, "closed_resolutions": closed_resolutions, "dossiers_count": len(dossiers)},
+            meta={
+                "statut": ag.statut,
+                "closed_resolutions": closed_resolutions,
+                "dossiers_count": len(dossiers),
+            },
         )
 
         return Response(
@@ -1006,6 +1213,7 @@ class PresenceLotViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset().filter(ag__copropriete_id=copro_id)
 
         ag_id = self.request.query_params.get("ag")
+
         if ag_id:
             qs = qs.filter(ag_id=ag_id)
 
@@ -1014,9 +1222,11 @@ class PresenceLotViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _require_copro_id(self.request)
         ag = serializer.validated_data.get("ag")
+
         if ag:
             _assert_same_copro(self.request, ag)
             _assert_ag_open_and_writable(ag, what="création des présences")
+
         serializer.save()
 
     def perform_update(self, serializer):
@@ -1063,18 +1273,22 @@ class AGProcurationViewSet(viewsets.ModelViewSet):
             qs = qs.exclude(ag__titre__startswith="[ARCHIVE TEST]")
 
         ag_id = self.request.query_params.get("ag")
+
         if ag_id:
             qs = qs.filter(ag_id=ag_id)
 
         statut = self.request.query_params.get("statut")
+
         if statut:
             qs = qs.filter(statut=str(statut).strip().upper())
 
         lot_id = self.request.query_params.get("lot")
+
         if lot_id:
             qs = qs.filter(lot_id=lot_id)
 
         coproprietaire_id = self.request.query_params.get("coproprietaire")
+
         if coproprietaire_id:
             qs = qs.filter(coproprietaire_id=coproprietaire_id)
 
@@ -1164,9 +1378,7 @@ class AGProcurationViewSet(viewsets.ModelViewSet):
         _assert_same_copro(request, procuration.ag)
 
         motif = str(
-            request.data.get("motif_rejet")
-            or request.data.get("motif")
-            or ""
+            request.data.get("motif_rejet") or request.data.get("motif") or ""
         ).strip()
 
         try:
@@ -1216,22 +1428,27 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             qs = qs.exclude(ag__titre__startswith="[ARCHIVE TEST]")
 
         ag_id = self.request.query_params.get("ag")
+
         if ag_id:
             qs = qs.filter(ag_id=ag_id)
 
         statut = self.request.query_params.get("statut")
+
         if statut:
             qs = qs.filter(statut=str(statut).strip().upper())
 
         canal = self.request.query_params.get("canal")
+
         if canal:
             qs = qs.filter(canal=str(canal).strip().upper())
 
         lot_id = self.request.query_params.get("lot")
+
         if lot_id:
             qs = qs.filter(lot_id=lot_id)
 
         coproprietaire_id = self.request.query_params.get("coproprietaire")
+
         if coproprietaire_id:
             qs = qs.filter(coproprietaire_id=coproprietaire_id)
 
@@ -1306,6 +1523,57 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
 
         instance.delete()
 
+    @action(detail=True, methods=["post"], url_path="generer-pdf")
+    def generer_pdf(self, request, pk=None):
+        convocation = self.get_object()
+        _assert_same_copro(request, convocation.ag)
+
+        if convocation.statut == "ANNULEE":
+            raise ValidationError(
+                {"detail": "Convocation annulée : génération PDF interdite."}
+            )
+
+        pdf_bytes = generate_convocation_ag_pdf_bytes(
+            convocation=convocation,
+            request=request,
+        )
+
+        document = save_generated_pdf_document(
+            copropriete=convocation.copropriete,
+            document_type=GeneratedDocument.Type.CONVOCATION_AG,
+            title=f"Convocation AG — {convocation.reference}",
+            reference=convocation.reference,
+            pdf_bytes=pdf_bytes,
+            created_by=request.user,
+            related_owner=convocation.coproprietaire,
+            related_lot=convocation.lot,
+            related_ag=convocation.ag,
+            is_visible_to_owner=True,
+            metadata={
+                "source": "ag_convocation",
+                "convocation_id": convocation.id,
+                "ag_id": convocation.ag_id,
+                "copropriete_id": convocation.copropriete_id,
+                "lot_id": convocation.lot_id,
+                "coproprietaire_id": convocation.coproprietaire_id,
+                "canal": convocation.canal,
+                "statut": convocation.statut,
+            },
+        )
+
+        convocation.document = document
+        convocation.save(update_fields=["document", "updated_at"])
+
+        serializer = self.get_serializer(convocation)
+
+        return Response(
+            {
+                "detail": "PDF de convocation généré avec succès.",
+                "convocation": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=True, methods=["post"], url_path="marquer-envoyee")
     def marquer_envoyee(self, request, pk=None):
         convocation = self.get_object()
@@ -1315,13 +1583,20 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "Convocation annulée : envoi interdit."})
 
         canal = None
+
         if request.data and request.data.get("canal"):
             canal = str(request.data.get("canal") or "").strip().upper()
 
             allowed_canaux = {choice[0] for choice in AgConvocation.CANAL_CHOICES}
+
             if canal not in allowed_canaux:
                 raise ValidationError(
-                    {"canal": f"Canal invalide. Valeurs autorisées : {', '.join(sorted(allowed_canaux))}."}
+                    {
+                        "canal": (
+                            "Canal invalide. Valeurs autorisées : "
+                            f"{', '.join(sorted(allowed_canaux))}."
+                        )
+                    }
                 )
 
         try:
@@ -1338,7 +1613,9 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
         _assert_same_copro(request, convocation.ag)
 
         if convocation.statut == "ANNULEE":
-            raise ValidationError({"detail": "Convocation annulée : consultation interdite."})
+            raise ValidationError(
+                {"detail": "Convocation annulée : consultation interdite."}
+            )
 
         try:
             convocation.mark_consulted()
@@ -1354,11 +1631,16 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
         _assert_same_copro(request, convocation.ag)
 
         if convocation.statut == "CONSULTEE":
-            raise ValidationError({"detail": "Convocation déjà consultée : annulation interdite."})
+            raise ValidationError(
+                {"detail": "Convocation déjà consultée : annulation interdite."}
+            )
 
         reason = ""
+
         if request.data:
-            reason = str(request.data.get("reason") or request.data.get("motif") or "").strip()
+            reason = str(
+                request.data.get("reason") or request.data.get("motif") or ""
+            ).strip()
 
         try:
             convocation.cancel(user=request.user, reason=reason)
@@ -1379,6 +1661,7 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset().filter(ag__copropriete_id=copro_id)
 
         ag_id = self.request.query_params.get("ag")
+
         if ag_id:
             qs = qs.filter(ag_id=ag_id)
 
@@ -1400,8 +1683,10 @@ class ResolutionViewSet(viewsets.ModelViewSet):
         _assert_ag_open_and_writable(res.ag, what="clôture de résolution")
 
         budget_vote: Optional[Decimal] = None
+
         if request.data and request.data.get("budget_vote") is not None:
             budget_vote = _parse_decimal(request.data.get("budget_vote"), "budget_vote")
+
             if budget_vote < 0:
                 raise ValidationError({"budget_vote": "Doit être >= 0."})
 
@@ -1415,6 +1700,7 @@ class ResolutionViewSet(viewsets.ModelViewSet):
 
                 if res.cloturee:
                     result = compute_resolution_result(res)
+
                     return Response(
                         {
                             "resolution_id": res.id,
@@ -1452,9 +1738,11 @@ class ResolutionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _require_copro_id(self.request)
         ag = serializer.validated_data.get("ag")
+
         if ag:
             _assert_same_copro(self.request, ag)
             _assert_resolution_writable(ag, what="création des résolutions")
+
         serializer.save()
 
     def perform_update(self, serializer):
@@ -1481,6 +1769,7 @@ class VoteViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset().filter(resolution__ag__copropriete_id=copro_id)
 
         resolution_id = self.request.query_params.get("resolution")
+
         if resolution_id:
             qs = qs.filter(resolution_id=resolution_id)
 
@@ -1489,6 +1778,7 @@ class VoteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _require_copro_id(self.request)
         resolution = serializer.validated_data.get("resolution")
+
         if resolution:
             _assert_same_copro(self.request, resolution.ag)
             _assert_ag_open_and_writable(resolution.ag, what="création des votes")
@@ -1498,12 +1788,23 @@ class VoteViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             if hasattr(e, "message_dict"):
                 raise ValidationError(e.message_dict)
+
             if hasattr(e, "messages"):
                 raise ValidationError({"detail": e.messages})
+
             raise ValidationError({"detail": str(e)})
 
     def perform_update(self, serializer):
-        raise ValidationError({"detail": "La modification d’un vote est désactivée. Supprimez et recréez si nécessaire."})
+        raise ValidationError(
+            {
+                "detail": (
+                    "La modification d’un vote est désactivée. "
+                    "Supprimez et recréez si nécessaire."
+                )
+            }
+        )
 
     def perform_destroy(self, instance):
-        raise ValidationError({"detail": "La suppression d’un vote est désactivée. Contactez un administrateur."})
+        raise ValidationError(
+            {"detail": "La suppression d’un vote est désactivée. Contactez un administrateur."}
+        )
