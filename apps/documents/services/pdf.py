@@ -617,6 +617,104 @@ def generate_convocation_ag_pdf_bytes(
     sent_at = escape(_datetime(getattr(convocation, "sent_at", None)) or "Non envoyée")
     consulted_at = escape(_datetime(getattr(convocation, "consulted_at", None)) or "Non consultée")
 
+    if ag is not None and hasattr(ag, "resolutions"):
+        try:
+            resolutions = ag.resolutions.all().order_by("ordre", "id")
+        except Exception:
+            resolutions = []
+    else:
+        resolutions = []
+
+    resolution_rows = []
+
+    for resolution in resolutions:
+        ordre = escape(str(getattr(resolution, "ordre", "") or ""))
+        titre = escape(
+            getattr(resolution, "titre", "")
+            or getattr(resolution, "title", "")
+            or getattr(resolution, "objet", "")
+            or f"Résolution #{getattr(resolution, 'id', '')}"
+        )
+
+        texte = escape(
+            getattr(resolution, "texte", "")
+            or getattr(resolution, "description", "")
+            or getattr(resolution, "contenu", "")
+            or ""
+        ).replace(chr(10), "<br>")
+
+        majorite_label = ""
+
+        if hasattr(resolution, "get_type_majorite_display"):
+            try:
+                majorite_label = str(resolution.get_type_majorite_display() or "").strip()
+            except Exception:
+                majorite_label = ""
+
+        if not majorite_label:
+            majorite_value = (
+                getattr(resolution, "type_majorite", None)
+                or getattr(resolution, "majorite", None)
+                or getattr(resolution, "majorite_requise", None)
+                or ""
+            )
+            majorite_label = str(majorite_value or "").strip()
+
+        majorite_labels = {
+            "SIMPLE": "Majorité simple",
+            "ABSOLUE": "Majorité absolue",
+            "QUALIFIEE": "Majorité qualifiée",
+            "QUALIFIEE_2_3": "Majorité qualifiée des deux tiers",
+            "UNANIMITE": "Unanimité",
+            "UNANIMITÉ": "Unanimité",
+        }
+
+        majorite = escape(
+            majorite_labels.get(majorite_label, majorite_label or "Non renseignée")
+        )
+
+        budget_vote = getattr(resolution, "budget_vote", None)
+
+        if budget_vote is None:
+            budget_vote = getattr(resolution, "budget", None)
+
+        budget_label = (
+            f"{escape(str(budget_vote))} FCFA"
+            if budget_vote not in (None, "")
+            else "Non renseigné"
+        )
+
+        resolution_rows.append(
+            f"""
+      <tr>
+        <td class="label">Point {ordre or '&nbsp;'}</td>
+        <td>
+          <strong>{titre}</strong><br>
+          {texte or '<em>Texte non renseigné.</em>'}<br>
+          <small>Majorité : {majorite or 'Non renseignée'} — Budget soumis au vote : {budget_label}</small>
+        </td>
+      </tr>
+"""
+        )
+
+    if resolution_rows:
+        ordre_du_jour_html = f"""
+    <div class="box">
+      <strong>Ordre du jour :</strong><br>
+      <p>Les résolutions suivantes sont inscrites à l’ordre du jour de cette assemblée générale.</p>
+      <table class="grid">
+        {''.join(resolution_rows)}
+      </table>
+    </div>
+"""
+    else:
+        ordre_du_jour_html = """
+    <div class="warning">
+      <strong>Ordre du jour :</strong><br>
+      Aucune résolution n’est encore rattachée à cette assemblée générale.
+    </div>
+"""
+
     body = f"""
   <div class="section">
     <p>
@@ -673,6 +771,8 @@ def generate_convocation_ag_pdf_bytes(
       <strong>Message :</strong><br>
       {message}
     </div>
+
+    {ordre_du_jour_html}
 
     <div class="warning">
       Merci de confirmer votre présence depuis votre espace copropriétaire ou de
