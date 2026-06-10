@@ -518,6 +518,124 @@ def _log_ag_event(
     )
 
 
+def _build_absolute_file_url(request, file_or_url) -> str | None:
+    if not file_or_url:
+        return None
+
+    url = None
+
+    if isinstance(file_or_url, str):
+        url = file_or_url
+    else:
+        try:
+            url = file_or_url.url
+        except (AttributeError, ValueError):
+            url = None
+
+    if not url:
+        return None
+
+    try:
+        return request.build_absolute_uri(url)
+    except Exception:
+        return url
+
+
+def _generated_document_url(document, request) -> str | None:
+    if not document:
+        return None
+
+    for attr in (
+        "file",
+        "fichier",
+        "fichier_pdf",
+        "pdf",
+        "pdf_file",
+        "document",
+        "document_file",
+    ):
+        file_obj = getattr(document, attr, None)
+        url = _build_absolute_file_url(request, file_obj)
+
+        if url:
+            return url
+
+    for attr in ("url", "file_url", "document_url"):
+        value = getattr(document, attr, None)
+
+        if callable(value):
+            try:
+                value = value()
+            except TypeError:
+                value = None
+
+        url = _build_absolute_file_url(request, value)
+
+        if url:
+            return url
+
+    return None
+
+
+def _convocation_pdf_payload(convocation: AgConvocation, request) -> dict:
+    document = getattr(convocation, "document", None)
+
+    return {
+        "id": convocation.id,
+        "reference": getattr(convocation, "reference", ""),
+        "lot_id": getattr(convocation, "lot_id", None),
+        "coproprietaire_id": getattr(convocation, "coproprietaire_id", None),
+        "document_id": getattr(convocation, "document_id", None),
+        "document_url": _generated_document_url(document, request),
+    }
+
+
+def _generate_convocation_pdf_document(
+    *,
+    convocation: AgConvocation,
+    request,
+    force: bool = False,
+):
+    if not force and getattr(convocation, "document_id", None):
+        return convocation.document, False
+
+    pdf_bytes = generate_convocation_ag_pdf_bytes(
+        convocation=convocation,
+        request=request,
+    )
+
+    if not pdf_bytes:
+        raise ValidationError({"detail": "Impossible de générer le PDF (bytes vides)."})
+
+    document = save_generated_pdf_document(
+        copropriete=convocation.copropriete,
+        document_type=GeneratedDocument.Type.CONVOCATION_AG,
+        title=f"Convocation AG — {convocation.reference}",
+        reference=convocation.reference,
+        pdf_bytes=pdf_bytes,
+        created_by=request.user,
+        related_owner=convocation.coproprietaire,
+        related_lot=convocation.lot,
+        related_ag=convocation.ag,
+        is_visible_to_owner=True,
+        metadata={
+            "source": "ag_convocation",
+            "convocation_id": convocation.id,
+            "ag_id": convocation.ag_id,
+            "copropriete_id": convocation.copropriete_id,
+            "lot_id": convocation.lot_id,
+            "coproprietaire_id": convocation.coproprietaire_id,
+            "canal": convocation.canal,
+            "statut": convocation.statut,
+        },
+    )
+
+    convocation.document = document
+    convocation.save(update_fields=["document", "updated_at"])
+
+    return document, True
+
+
 class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSyndicOrAdmin]
     serializer_class = AssembleeGeneraleSerializer
@@ -724,6 +842,170 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 "convocations": serializer.data,
             },
             status=status.HTTP_201_CREATED if created_count else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="generer-pdfs-convocations")
+    def generer_pdfs_convocations(self, request, pk=None):
+        ag = self.get_object()
+        _assert_same_copro(request, ag)
+
+        if getattr(ag, "statut", None) == "ANNULEE":
+            raise ValidationError(
+                {"detail": "AG annulée : génération des PDF de convocations interdite."}
+            )
+
+        convocation_ids = list(
+            AgConvocation.objects.filter(
+                ag_id=ag.id,
+                copropriete_id=ag.copropriete_id,
+            )
+            .order_by("id")
+            .values_list("id", flat=True)
+        )
+
+        total = len(convocation_ids)
+
+        if total == 0:
+            return Response(
+                {
+                    "detail": (
+                        "Aucune convocation n'existe encore pour cette assemblée générale. "
+                        "Générez d'abord les convocations."
+                    ),
+                    "ag_id": ag.id,
+                    "total": 0,
+                    "generated": 0,
+                    "skipped": 0,
+                    "errors_count": 0,
+                    "generated_items": [],
+                    "skipped_items": [],
+                    "errors": [],
+                    "convocations": [],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        generated_items = []
+        skipped_items = []
+        errors = []
+
+        for convocation_id in convocation_ids:
+            try:
+                with transaction.atomic():
+                    convocation = (
+                        AgConvocation.objects.select_for_update()
+                        .select_related(
+                            "ag",
+                            "copropriete",
+                            "coproprietaire",
+                            "lot",
+                        )
+                        .get(
+                            pk=convocation_id,
+                            ag_id=ag.id,
+                            copropriete_id=ag.copropriete_id,
+                        )
+                    )
+
+                    if convocation.statut == "ANNULEE":
+                        skipped_items.append(
+                            {
+                                **_convocation_pdf_payload(convocation, request),
+                                "reason": "Convocation annulée",
+                            }
+                        )
+                        continue
+
+                    if getattr(convocation, "document_id", None):
+                        skipped_items.append(
+                            {
+                                **_convocation_pdf_payload(convocation, request),
+                                "reason": "PDF déjà existant",
+                            }
+                        )
+                        continue
+
+                    _generate_convocation_pdf_document(
+                        convocation=convocation,
+                        request=request,
+                        force=False,
+                    )
+
+                    convocation.refresh_from_db()
+
+                    generated_items.append(
+                        _convocation_pdf_payload(convocation, request)
+                    )
+
+            except AgConvocation.DoesNotExist:
+                errors.append(
+                    {
+                        "id": convocation_id,
+                        "error": "Convocation introuvable ou hors périmètre.",
+                    }
+                )
+            except ValidationError as exc:
+                errors.append(
+                    {
+                        "id": convocation_id,
+                        "error": exc.detail,
+                    }
+                )
+            except Exception as exc:
+                errors.append(
+                    {
+                        "id": convocation_id,
+                        "error": str(exc),
+                    }
+                )
+
+        convocations = (
+            AgConvocation.objects.select_related(
+                "ag",
+                "copropriete",
+                "coproprietaire",
+                "lot",
+                "document",
+                "generated_by",
+                "sent_by",
+                "cancelled_by",
+            )
+            .filter(ag_id=ag.id, copropriete_id=ag.copropriete_id)
+            .order_by("-created_at", "-id")
+        )
+
+        serializer = AgConvocationSerializer(
+            convocations,
+            many=True,
+            context={"request": request},
+        )
+
+        _log_ag_event(
+            request,
+            ag,
+            event="AG_CONVOCATION_PDFS_BATCH_GENERATED",
+            meta={
+                "total": total,
+                "generated": len(generated_items),
+                "skipped": len(skipped_items),
+                "errors_count": len(errors),
+            },
+        )
+
+        return Response(
+            {
+                "detail": "Génération PDF des convocations terminée.",
+                "ag_id": ag.id,
+                "total": total,
+                "generated": len(generated_items),
+                "skipped": len(skipped_items),
+                "errors_count": len(errors),
+                "generated_items": generated_items,
+                "skipped_items": skipped_items,
+                "errors": errors,
+                "convocations": serializer.data,
+            },
+            status=status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["post"], url_path="init-presences")
@@ -1533,36 +1815,13 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 {"detail": "Convocation annulée : génération PDF interdite."}
             )
 
-        pdf_bytes = generate_convocation_ag_pdf_bytes(
+        _generate_convocation_pdf_document(
             convocation=convocation,
             request=request,
+            force=True,
         )
 
-        document = save_generated_pdf_document(
-            copropriete=convocation.copropriete,
-            document_type=GeneratedDocument.Type.CONVOCATION_AG,
-            title=f"Convocation AG — {convocation.reference}",
-            reference=convocation.reference,
-            pdf_bytes=pdf_bytes,
-            created_by=request.user,
-            related_owner=convocation.coproprietaire,
-            related_lot=convocation.lot,
-            related_ag=convocation.ag,
-            is_visible_to_owner=True,
-            metadata={
-                "source": "ag_convocation",
-                "convocation_id": convocation.id,
-                "ag_id": convocation.ag_id,
-                "copropriete_id": convocation.copropriete_id,
-                "lot_id": convocation.lot_id,
-                "coproprietaire_id": convocation.coproprietaire_id,
-                "canal": convocation.canal,
-                "statut": convocation.statut,
-            },
-        )
-
-        convocation.document = document
-        convocation.save(update_fields=["document", "updated_at"])
+        convocation.refresh_from_db()
 
         serializer = self.get_serializer(convocation)
 

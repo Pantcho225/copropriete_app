@@ -88,9 +88,13 @@ export interface AgConvocationFilters {
 }
 
 export interface GenererConvocationsResponse {
+  ag_id?: number;
   ag?: number;
   created?: number;
   skipped_existing?: number;
+  skipped_duplicate_link?: number;
+  skipped_inactive_owner?: number;
+  skipped_without_owner?: number;
   total?: number;
   message?: string;
   convocations?: AgConvocation[];
@@ -99,6 +103,38 @@ export interface GenererConvocationsResponse {
 export interface GenererPdfConvocationResponse {
   detail: string;
   convocation: AgConvocation;
+}
+
+export interface GenererPdfsConvocationsItem {
+  id: number;
+  reference?: string | null;
+  lot_id?: number | null;
+  coproprietaire_id?: number | null;
+  document_id?: number | null;
+  document_url?: string | null;
+}
+
+export interface GenererPdfsConvocationsSkippedItem
+  extends GenererPdfsConvocationsItem {
+  reason: string;
+}
+
+export interface GenererPdfsConvocationsErrorItem {
+  id: number;
+  error: unknown;
+}
+
+export interface GenererPdfsConvocationsResponse {
+  detail: string;
+  ag_id: number;
+  total: number;
+  generated: number;
+  skipped: number;
+  errors_count: number;
+  generated_items: GenererPdfsConvocationsItem[];
+  skipped_items: GenererPdfsConvocationsSkippedItem[];
+  errors: GenererPdfsConvocationsErrorItem[];
+  convocations?: AgConvocation[];
 }
 
 function cleanParams(filters?: AgConvocationFilters) {
@@ -156,6 +192,15 @@ export async function genererConvocationsAg(
   return response.data;
 }
 
+export async function genererPdfsConvocationsAg(
+  agId: number | string,
+): Promise<GenererPdfsConvocationsResponse> {
+  const response = await api.post<GenererPdfsConvocationsResponse>(
+    `/api/ag/ags/${agId}/generer-pdfs-convocations/`,
+  );
+
+  return response.data;
+}
 
 export async function genererPdfConvocationAg(
   convocationId: number | string,

@@ -9,7 +9,11 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
-import { genererConvocationsAg } from "../../api/agConvocations";
+import {
+  genererConvocationsAg,
+  genererPdfsConvocationsAg,
+  type GenererPdfsConvocationsResponse,
+} from "../../api/agConvocations";
 
 type LoadState = "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
@@ -925,6 +929,8 @@ function AGDetail() {
   const [quorum, setQuorum] = useState<QuorumResponse | null>(null);
   const [flash, setFlash] = useState<{ kind: FlashKind; message: string } | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [convocationPdfBatchResult, setConvocationPdfBatchResult] =
+    useState<GenererPdfsConvocationsResponse | null>(null);
 
   const [showSignModal, setShowSignModal] = useState(false);
   const [signPassword, setSignPassword] = useState("");
@@ -1489,6 +1495,7 @@ function AGDetail() {
 
     try {
       setBusyAction("generate-convocations-ag");
+      setConvocationPdfBatchResult(null);
 
       const result = await genererConvocationsAg(agId);
 
@@ -1509,6 +1516,58 @@ function AGDetail() {
         getBackendErrorMessage(
           error,
           "Impossible de générer les convocations AG.",
+        ),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [agId, busyAction, detail, fetchDetail, isReadOnly, showFlash]);
+
+  const handleGenerateConvocationPdfsAG = useCallback(async () => {
+    if (!detail) return;
+
+    if (isReadOnly) {
+      showFlash(
+        "info",
+        "Assemblée déjà clôturée, archivée ou annulée. Génération des PDF de convocations indisponible.",
+      );
+      return;
+    }
+
+    if (busyAction) return;
+
+    const confirmed = window.confirm(
+      "Générer les PDF manquants des convocations de cette assemblée générale ? Les PDF déjà existants seront conservés.",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("generate-convocation-pdfs-ag");
+      setConvocationPdfBatchResult(null);
+
+      const result = await genererPdfsConvocationsAg(agId);
+
+      setConvocationPdfBatchResult(result);
+
+      const generated = result.generated ?? 0;
+      const skipped = result.skipped ?? 0;
+      const errorsCount = result.errors_count ?? 0;
+      const total = result.total ?? generated + skipped + errorsCount;
+
+      showFlash(
+        errorsCount > 0 ? "info" : "success",
+        `PDF convocations AG : ${generated} généré(s), ${skipped} ignoré(s), ${errorsCount} erreur(s), ${total} au total.`,
+      );
+
+      await fetchDetail();
+    } catch (error) {
+      console.error(error);
+      showFlash(
+        "error",
+        getBackendErrorMessage(
+          error,
+          "Impossible de générer les PDF des convocations AG.",
         ),
       );
     } finally {
@@ -1604,6 +1663,16 @@ function AGDetail() {
               </AppButton>
 
               <AppButton
+                onClick={() => void handleGenerateConvocationPdfsAG()}
+                variant="secondary"
+                disabled={isReadOnly || busyAction === "generate-convocation-pdfs-ag"}
+              >
+                {busyAction === "generate-convocation-pdfs-ag"
+                  ? "Génération PDF..."
+                  : "Générer les PDF des convocations"}
+              </AppButton>
+
+              <AppButton
                 onClick={() => navigate(`/ag/convocations?ag=${agId}`)}
                 variant="secondary"
               >
@@ -1668,6 +1737,59 @@ function AGDetail() {
         </section>
 
         {flash ? <AlertBox kind={flash.kind}>{flash.message}</AlertBox> : null}
+
+        {convocationPdfBatchResult ? (
+          <SectionCard
+            title="Dernière génération PDF des convocations"
+            subtitle="Résumé de la dernière génération en lot lancée depuis cette assemblée."
+            right={
+              <AppButton
+                onClick={() => navigate(`/ag/convocations?ag=${agId}`)}
+                variant="secondary"
+              >
+                Voir les convocations
+              </AppButton>
+            }
+          >
+            <div className="agdetail-kpi-grid">
+              <SummaryCard
+                label="Convocations"
+                value={formatNumber(convocationPdfBatchResult.total)}
+                helper="Convocations rattachées à cette AG."
+                tone="neutral"
+              />
+
+              <SummaryCard
+                label="PDF générés"
+                value={formatNumber(convocationPdfBatchResult.generated)}
+                helper="PDF nouvellement créés."
+                tone="success"
+              />
+
+              <SummaryCard
+                label="Ignorées"
+                value={formatNumber(convocationPdfBatchResult.skipped)}
+                helper="PDF déjà existants ou convocations non traitées."
+                tone="warning"
+              />
+
+              <SummaryCard
+                label="Erreurs"
+                value={formatNumber(convocationPdfBatchResult.errors_count)}
+                helper="Convocations en échec de génération."
+                tone={convocationPdfBatchResult.errors_count > 0 ? "danger" : "success"}
+              />
+            </div>
+
+            {convocationPdfBatchResult.errors.length > 0 ? (
+              <AlertBox kind="error" title="Erreurs de génération">
+                {convocationPdfBatchResult.errors
+                  .map((item) => `Convocation #${item.id} : ${String(item.error)}`)
+                  .join(" | ")}
+              </AlertBox>
+            ) : null}
+          </SectionCard>
+        ) : null}
 
         <div className="agdetail-main-grid">
           <SectionCard
