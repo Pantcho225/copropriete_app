@@ -912,6 +912,9 @@ class ResolutionSerializer(serializers.ModelSerializer):
             return None
 
     def get_decision(self, obj):
+        if not getattr(obj, "cloturee", False):
+            return "EN_ATTENTE"
+
         result = self._build_resolution_result(obj)
 
         if isinstance(result, dict):
@@ -943,7 +946,11 @@ class ResolutionSerializer(serializers.ModelSerializer):
         tantiemes = result.get("tantiemes") if isinstance(result.get("tantiemes"), dict) else {}
 
         return {
-            "decision": str(result.get("decision", "EN_ATTENTE")).strip().upper() or "EN_ATTENTE",
+            "decision": (
+                str(result.get("decision", "EN_ATTENTE")).strip().upper() or "EN_ATTENTE"
+            )
+            if getattr(obj, "cloturee", False)
+            else "EN_ATTENTE",
             "type_majorite": result.get("type_majorite") or getattr(obj, "type_majorite", None),
             "tantiemes": {
                 "pour": float(tantiemes.get("pour", 0.0) or 0.0),
