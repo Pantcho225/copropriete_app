@@ -2155,6 +2155,131 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(convocation)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+
+    @action(detail=True, methods=["post"], url_path="notifier")
+    def notifier(self, request, pk=None):
+        convocation = self.get_object()
+        _assert_same_copro(request, convocation.ag)
+
+        if convocation.statut == "ANNULEE":
+            raise ValidationError(
+                {"detail": "Convocation annulée : notification interdite."}
+            )
+
+        canal = str(
+            (request.data or {}).get("canal")
+            or convocation.canal
+            or "PLATEFORME"
+        ).strip().upper()
+
+        allowed_canaux = {choice[0] for choice in AgConvocation.CANAL_CHOICES}
+
+        if canal not in allowed_canaux:
+            raise ValidationError(
+                {
+                    "canal": (
+                        "Canal invalide. Valeurs autorisées : "
+                        f"{', '.join(sorted(allowed_canaux))}."
+                    )
+                }
+            )
+
+        document_generated = False
+
+        if not getattr(convocation, "document_id", None):
+            _assert_ag_has_ordre_du_jour(convocation.ag)
+
+            _generate_convocation_pdf_document(
+                convocation=convocation,
+                request=request,
+                force=False,
+            )
+
+            convocation.refresh_from_db()
+            document_generated = True
+
+        already_sent = convocation.statut in {"ENVOYEE", "CONSULTEE"}
+
+        if not already_sent:
+            try:
+                convocation.mark_sent(user=request.user, canal=canal)
+            except DjangoValidationError as exc:
+                _raise_drf_validation(exc)
+
+            convocation.refresh_from_db()
+
+        now = timezone.now()
+
+        metadata = convocation.metadata or {}
+
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        notification_payload = {
+            "type": "RECTIFICATIVE" if convocation.is_rectificative else "INITIALE",
+            "canal": canal,
+            "notified_at": now.isoformat(),
+            "notified_by_id": getattr(request.user, "id", None),
+            "notified_by_label": (
+                request.user.get_full_name()
+                if getattr(request.user, "is_authenticated", False)
+                and hasattr(request.user, "get_full_name")
+                else ""
+            )
+            or getattr(request.user, "username", "")
+            or getattr(request.user, "email", "")
+            or "",
+            "document_id": convocation.document_id,
+            "document_generated": document_generated,
+            "already_sent": already_sent,
+            "is_rectificative": bool(convocation.is_rectificative),
+            "version": convocation.version,
+            "parent_convocation_id": convocation.parent_convocation_id,
+            "motif_rectification": convocation.motif_rectification or "",
+        }
+
+        history = metadata.get("notifications_history")
+
+        if not isinstance(history, list):
+            history = []
+
+        history.append(notification_payload)
+
+        metadata["last_notification"] = notification_payload
+        metadata["notifications_history"] = history[-20:]
+        metadata["notification_count"] = len(history)
+
+        if convocation.is_rectificative:
+            metadata["rectificative_notified_at"] = now.isoformat()
+            metadata["rectificative_notified_by_id"] = getattr(request.user, "id", None)
+
+        convocation.metadata = metadata
+        convocation.save(update_fields=["metadata"])
+
+        convocation.refresh_from_db()
+        serializer = self.get_serializer(convocation)
+
+        label = (
+            "Convocation rectificative"
+            if convocation.is_rectificative
+            else "Convocation"
+        )
+
+        if already_sent:
+            detail = f"{label} déjà envoyée ; notification retracée."
+        else:
+            detail = f"{label} notifiée avec succès."
+
+        return Response(
+            {
+                "detail": detail,
+                "document_generated": document_generated,
+                "already_sent": already_sent,
+                "convocation": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=True, methods=["post"], url_path="marquer-consultee")
     def marquer_consultee(self, request, pk=None):
         convocation = self.get_object()

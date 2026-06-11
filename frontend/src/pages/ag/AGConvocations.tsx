@@ -12,7 +12,7 @@ import {
   marquerConvocationEnvoyee,
   type AgConvocation,
   type AgConvocationStatut,
-} from "../../api/agConvocations";
+  notifierAgConvocation,} from "../../api/agConvocations";
 
 const STATUT_LABELS: Record<AgConvocationStatut, string> = {
   GENEREE: "Générée",
@@ -377,7 +377,18 @@ export default function AGConvocations() {
 
   function handleCancel(convocation: AgConvocation) {
     const confirmed = window.confirm(
-      `Voulez-vous vraiment annuler la convocation ${convocation.reference} ?`,
+      `Voulez-vous vraiment annuler la convocation ${convocation.reference}
+                  {convocation.is_rectificative ? (
+                    <div style={styles.rectificativeInfo}>
+                      Rectificative v{convocation.version ?? "—"}
+                      {convocation.motif_rectification ? (
+                        <span style={styles.rectificativeMotif}>
+                          {" "}
+                          — {convocation.motif_rectification}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null} ?`,
     );
 
     if (!confirmed) {
@@ -679,6 +690,29 @@ export default function AGConvocations() {
 
                       <td style={styles.td}>
                         <div style={styles.actions}>
+                          {convocation.is_rectificative && convocation.statut === "GENEREE" ? (
+                            <button
+                              type="button"
+                              style={{
+                                ...styles.actionButton,
+                                ...(isActionLoading ? styles.buttonDisabled : {}),
+                              }}
+                              disabled={isActionLoading}
+                              onClick={() =>
+                                void runConvocationAction(
+                                  convocation.id,
+                                  () =>
+                                    notifierAgConvocation(convocation.id, {
+                                      canal: convocation.canal || "PLATEFORME",
+                                    }),
+                                  "Convocation rectificative notifiée au copropriétaire.",
+                                )
+                              }
+                            >
+                              Notifier rectificative
+                            </button>
+                          ) : null}
+
                           <button
                             type="button"
                             style={{

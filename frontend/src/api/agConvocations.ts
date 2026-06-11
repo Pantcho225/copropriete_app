@@ -77,7 +77,8 @@ export interface AgConvocation {
   cancellation_reason?: string | null;
 
   metadata?: Record<string, unknown> | null;
-}
+
+  parent_convocation_reference?: string | null;}
 
 export interface AgConvocationListResponse {
   count?: number;
@@ -263,3 +264,35 @@ export async function annulerAgConvocation(
 
   return response.data;
 }
+
+export type NotifierAgConvocationPayload = {
+  canal?: AgConvocationCanal;
+};
+
+export type NotifierAgConvocationResponse = {
+  detail?: string;
+  document_generated?: boolean;
+  already_sent?: boolean;
+  convocation?: AgConvocation;
+};
+
+export async function notifierAgConvocation(
+  convocationId: number,
+  payload: NotifierAgConvocationPayload = {},
+): Promise<AgConvocation> {
+  const response = await api.post<
+    NotifierAgConvocationResponse | AgConvocation
+  >(`/api/ag/convocations/${convocationId}/notifier/`, payload);
+
+  if (
+    response.data &&
+    typeof response.data === "object" &&
+    "convocation" in response.data &&
+    response.data.convocation
+  ) {
+    return response.data.convocation;
+  }
+
+  return response.data as AgConvocation;
+}
+

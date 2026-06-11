@@ -604,6 +604,13 @@ class AgConvocationSerializer(serializers.ModelSerializer):
     cancelled_by_label = serializers.SerializerMethodField(read_only=True)
     parent_reference = serializers.SerializerMethodField(read_only=True)
 
+    parent_convocation_reference = serializers.CharField(
+        source="parent_convocation.reference",
+        read_only=True,
+        allow_null=True,
+    )
+
+
     class Meta:
         model = AgConvocation
         fields = [
@@ -649,7 +656,8 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             "metadata",
             "created_at",
             "updated_at",
-        ]
+                    "parent_convocation_reference",
+]
         read_only_fields = [
             "id",
             "reference",
@@ -678,7 +686,10 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             "cancelled_by_label",
             "created_at",
             "updated_at",
-        ]
+                    "parent_convocation_reference",
+            "version",
+            "is_rectificative",
+]
 
     def get_copropriete_label(self, obj):
         copropriete = getattr(obj, "copropriete", None)
