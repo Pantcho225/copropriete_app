@@ -12,6 +12,8 @@ import { ENDPOINTS } from "../../api/endpoints";
 import {
   genererConvocationsAg,
   genererPdfsConvocationsAg,
+  listAgConvocations,
+  type AgConvocation,
   type GenererPdfsConvocationsResponse,
 } from "../../api/agConvocations";
 
@@ -601,6 +603,67 @@ function badgeToneForResolution(status: ResolutionStatus): BadgeKind {
   }
 }
 
+function badgeToneForConvocation(status?: string | null): BadgeKind {
+  const raw = normalizeText(status, "");
+
+  if (raw.includes("CONSUL")) return "success";
+  if (raw.includes("ENVOY")) return "info";
+  if (raw.includes("ANNU")) return "danger";
+  if (raw.includes("GENER")) return "warning";
+
+  return "neutral";
+}
+
+function labelForConvocation(status?: string | null, label?: string | null): string {
+  const cleanLabel = toText(label).trim();
+
+  if (cleanLabel) {
+    return cleanLabel;
+  }
+
+  const raw = normalizeText(status, "");
+
+  if (raw.includes("CONSUL")) return "Consultée";
+  if (raw.includes("ENVOY")) return "Envoyée";
+  if (raw.includes("ANNU")) return "Annulée";
+  if (raw.includes("GENER")) return "Générée";
+
+  return toText(status, "Non défini");
+}
+
+function getConvocationOwnerLabel(item: AgConvocation): string {
+  return (
+    item.coproprietaire_label ||
+    item.coproprietaire_display ||
+    item.coproprietaire_nom ||
+    item.owner_nom ||
+    item.owner_name ||
+    "Copropriétaire non renseigné"
+  );
+}
+
+function getConvocationLotLabel(item: AgConvocation): string {
+  return (
+    item.lot_label ||
+    item.lot_display ||
+    item.lot_reference ||
+    item.lot_numero ||
+    "Lot non renseigné"
+  );
+}
+
+function getConvocationParentReference(item: AgConvocation): string {
+  return item.parent_convocation_reference || item.parent_reference || "";
+}
+
+function getConvocationVersionLabel(item: AgConvocation): string {
+  if (item.is_rectificative) {
+    return item.version ? `Rectificative v${item.version}` : "Rectificative";
+  }
+
+  return "Convocation initiale";
+}
+
 function labelForResolution(status: ResolutionStatus): string {
   switch (status) {
     case "ADOPTEE":
@@ -964,6 +1027,7 @@ function AGDetail() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [convocationPdfBatchResult, setConvocationPdfBatchResult] =
     useState<GenererPdfsConvocationsResponse | null>(null);
+  const [convocations, setConvocations] = useState<AgConvocation[]>([]);
 
   const [showSignModal, setShowSignModal] = useState(false);
   const [signPassword, setSignPassword] = useState("");
@@ -1134,11 +1198,21 @@ function AGDetail() {
         quorumData = null;
       }
 
+      let fetchedConvocations: AgConvocation[] = [];
+
+      try {
+        fetchedConvocations = await listAgConvocations({ ag: agId });
+      } catch (error) {
+        console.error("Impossible de charger les convocations de l’AG.", error);
+        fetchedConvocations = [];
+      }
+
       setDetail(agData);
       setResolutions(resolutionItems);
       setPresenceRows(fetchedPresences);
       setVoteRows(fetchedVotes);
       setQuorum(quorumData);
+      setConvocations(fetchedConvocations);
       setLoadState("success");
     } catch (error) {
       console.error(error);
@@ -1254,6 +1328,42 @@ function AGDetail() {
 
     return voteRows.length;
   }, [voteRows.length, resolutions.length]);
+
+  const convocationStats = useMemo(() => {
+    const total = convocations.length;
+    const rectificatives = convocations.filter((item) => item.is_rectificative).length;
+    const initiales = total - rectificatives;
+    const envoyees = convocations.filter(
+      (item) => normalizeText(item.statut).includes("ENVOY") || normalizeText(item.statut).includes("CONSUL"),
+    ).length;
+    const consultees = convocations.filter((item) =>
+      normalizeText(item.statut).includes("CONSUL"),
+    ).length;
+    const pdfs = convocations.filter((item) => Boolean(item.document_url)).length;
+
+    return {
+      total,
+      initiales,
+      rectificatives,
+      envoyees,
+      consultees,
+      pdfs,
+    };
+  }, [convocations]);
+
+  const orderedConvocations = useMemo(() => {
+    return [...convocations].sort((a, b) => {
+      const versionDelta = Number(a.version ?? 1) - Number(b.version ?? 1);
+
+      if (versionDelta !== 0) {
+        return versionDelta;
+      }
+
+      return String(a.generated_at || a.created_at || "").localeCompare(
+        String(b.generated_at || b.created_at || ""),
+      );
+    });
+  }, [convocations]);
 
   const resolvedResolutionsCount =
     resolutions.length > 0 ? resolutions.length : detail?.nb_resolutions ?? 0;
@@ -1859,6 +1969,157 @@ function AGDetail() {
             ) : null}
           </SectionCard>
         ) : null}
+
+        <SectionCard
+          title="Historique des convocations"
+          subtitle="Suivi des versions générées pour cette assemblée : initiale, rectificatives, PDF, notifications et consultations."
+          right={
+            <AppButton
+              onClick={() => navigate(`/ag/convocations?ag=${agId}`)}
+              variant="secondary"
+            >
+              Gérer les convocations
+            </AppButton>
+          }
+        >
+          {convocations.length === 0 ? (
+            <div className="agdetail-empty">
+              <strong>Aucune convocation générée</strong>
+              <p>
+                Les convocations apparaîtront ici après génération depuis le cockpit
+                ou depuis le module Convocations AG.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="agdetail-kpi-grid">
+                <SummaryCard
+                  label="Convocations"
+                  value={formatNumber(convocationStats.total)}
+                  helper="Total rattaché à cette AG."
+                  tone="neutral"
+                />
+
+                <SummaryCard
+                  label="Initiales"
+                  value={formatNumber(convocationStats.initiales)}
+                  helper="Versions de départ."
+                  tone="info"
+                />
+
+                <SummaryCard
+                  label="Rectificatives"
+                  value={formatNumber(convocationStats.rectificatives)}
+                  helper="Versions de correction."
+                  tone={convocationStats.rectificatives > 0 ? "warning" : "neutral"}
+                />
+
+                <SummaryCard
+                  label="PDF disponibles"
+                  value={formatNumber(convocationStats.pdfs)}
+                  helper={`${formatNumber(convocationStats.envoyees)} envoyée(s), ${formatNumber(
+                    convocationStats.consultees,
+                  )} consultée(s).`}
+                  tone="success"
+                />
+              </div>
+
+              <div className="agdetail-convocation-timeline">
+                {orderedConvocations.map((convocation) => {
+                  const pdfUrl = buildMediaUrl(convocation.document_url || null);
+                  const parentReference = getConvocationParentReference(convocation);
+
+                  return (
+                    <article
+                      key={convocation.id}
+                      className={
+                        convocation.is_rectificative
+                          ? "agdetail-convocation-card agdetail-convocation-card-rectificative"
+                          : "agdetail-convocation-card"
+                      }
+                    >
+                      <div className="agdetail-convocation-card-head">
+                        <div>
+                          <div className="agdetail-convocation-reference">
+                            {convocation.reference || `Convocation #${convocation.id}`}
+                          </div>
+
+                          <div className="agdetail-badge-line">
+                            <Badge
+                              text={getConvocationVersionLabel(convocation)}
+                              kind={convocation.is_rectificative ? "warning" : "info"}
+                            />
+
+                            <Badge
+                              text={labelForConvocation(
+                                convocation.statut,
+                                convocation.statut_label,
+                              )}
+                              kind={badgeToneForConvocation(convocation.statut)}
+                            />
+                          </div>
+                        </div>
+
+                        {pdfUrl ? (
+                          <a
+                            href={pdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="agdetail-mini-link"
+                          >
+                            Ouvrir PDF
+                          </a>
+                        ) : (
+                          <Badge text="PDF absent" kind="neutral" />
+                        )}
+                      </div>
+
+                      {convocation.is_rectificative ? (
+                        <div className="agdetail-convocation-notice">
+                          <strong>Motif rectificatif :</strong>{" "}
+                          {convocation.motif_rectification ||
+                            "Motif non renseigné."}
+                          {parentReference ? (
+                            <span>
+                              Convocation remplacée : {parentReference}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className="agdetail-convocation-meta-grid">
+                        <DetailRow
+                          label="Copropriétaire"
+                          value={getConvocationOwnerLabel(convocation)}
+                        />
+                        <DetailRow
+                          label="Lot"
+                          value={getConvocationLotLabel(convocation)}
+                        />
+                        <DetailRow
+                          label="Canal"
+                          value={convocation.canal_label || convocation.canal || "—"}
+                        />
+                        <DetailRow
+                          label="Générée le"
+                          value={formatDateTime(convocation.generated_at)}
+                        />
+                        <DetailRow
+                          label="Notifiée le"
+                          value={formatDateTime(convocation.sent_at)}
+                        />
+                        <DetailRow
+                          label="Consultée le"
+                          value={formatDateTime(convocation.consulted_at)}
+                        />
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </SectionCard>
 
         <div className="agdetail-main-grid">
           <SectionCard
@@ -2854,6 +3115,69 @@ function AGDetailStyles() {
         font-size: 11.5px;
         line-height: 1.5;
         color: #475569;
+      }
+
+      .agdetail-convocation-timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .agdetail-convocation-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 12px;
+        background: #ffffff;
+        display: grid;
+        gap: 10px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.035);
+      }
+
+      .agdetail-convocation-card-rectificative {
+        border-color: #fde68a;
+        background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+      }
+
+      .agdetail-convocation-card-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .agdetail-convocation-reference {
+        margin-bottom: 7px;
+        font-size: 13px;
+        line-height: 1.25;
+        font-weight: 900;
+        color: #0f172a;
+      }
+
+      .agdetail-convocation-notice {
+        border: 1px solid #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        border-radius: 14px;
+        padding: 10px;
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .agdetail-convocation-notice strong {
+        color: #7c2d12;
+      }
+
+      .agdetail-convocation-notice span {
+        color: #64748b;
+        font-weight: 800;
+      }
+
+      .agdetail-convocation-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 14px;
       }
 
       .agdetail-table-wrap {
