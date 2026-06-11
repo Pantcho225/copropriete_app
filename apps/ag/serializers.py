@@ -251,6 +251,22 @@ class AssembleeGeneraleSerializer(serializers.ModelSerializer):
                 return None
         return None
 
+    def get_is_active_version(self, obj):
+        return bool(getattr(obj, "is_active_version", False))
+
+    def get_is_replaced_version(self, obj):
+        return bool(getattr(obj, "is_replaced_version", False))
+
+    def get_replaced_by(self, obj):
+        replacement = getattr(obj, "replaced_by", None)
+        return getattr(replacement, "pk", None) if replacement else None
+
+    def get_replaced_by_reference(self, obj):
+        return getattr(obj, "replaced_by_reference", "") or ""
+
+    def get_official_version_label(self, obj):
+        return getattr(obj, "official_version_label", "") or ""
+
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
 
@@ -603,6 +619,11 @@ class AgConvocationSerializer(serializers.ModelSerializer):
     sent_by_label = serializers.SerializerMethodField(read_only=True)
     cancelled_by_label = serializers.SerializerMethodField(read_only=True)
     parent_reference = serializers.SerializerMethodField(read_only=True)
+    is_active_version = serializers.SerializerMethodField(read_only=True)
+    is_replaced_version = serializers.SerializerMethodField(read_only=True)
+    replaced_by = serializers.SerializerMethodField(read_only=True)
+    replaced_by_reference = serializers.SerializerMethodField(read_only=True)
+    official_version_label = serializers.SerializerMethodField(read_only=True)
 
     parent_convocation_reference = serializers.CharField(
         source="parent_convocation.reference",
@@ -620,6 +641,11 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             "parent_reference",
             "version",
             "is_rectificative",
+            "is_active_version",
+            "is_replaced_version",
+            "replaced_by",
+            "replaced_by_reference",
+            "official_version_label",
             "motif_rectification",
             "ag",
             "ag_titre",
@@ -689,6 +715,11 @@ class AgConvocationSerializer(serializers.ModelSerializer):
                     "parent_convocation_reference",
             "version",
             "is_rectificative",
+            "is_active_version",
+            "is_replaced_version",
+            "replaced_by",
+            "replaced_by_reference",
+            "official_version_label",
 ]
 
     def get_copropriete_label(self, obj):
@@ -771,6 +802,22 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             return ""
 
         return getattr(parent, "reference", "") or f"Convocation #{getattr(parent, 'id', '')}"
+
+    def get_is_active_version(self, obj):
+        return bool(getattr(obj, "is_active_version", False))
+
+    def get_is_replaced_version(self, obj):
+        return bool(getattr(obj, "is_replaced_version", False))
+
+    def get_replaced_by(self, obj):
+        replacement = getattr(obj, "replaced_by", None)
+        return getattr(replacement, "pk", None) if replacement else None
+
+    def get_replaced_by_reference(self, obj):
+        return getattr(obj, "replaced_by_reference", "") or ""
+
+    def get_official_version_label(self, obj):
+        return getattr(obj, "official_version_label", "") or ""
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)

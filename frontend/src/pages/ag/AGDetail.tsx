@@ -2057,6 +2057,20 @@ function AGDetail() {
                               )}
                               kind={badgeToneForConvocation(convocation.statut)}
                             />
+
+                            {convocation.is_active_version ? (
+                              <Badge
+                                text="Version officielle actuelle"
+                                kind="info"
+                              />
+                            ) : null}
+
+                            {convocation.is_replaced_version ? (
+                              <Badge
+                                text="Version remplacée"
+                                kind="warning"
+                              />
+                            ) : null}
                           </div>
                         </div>
 
@@ -2084,6 +2098,15 @@ function AGDetail() {
                               Convocation remplacée : {parentReference}
                             </span>
                           ) : null}
+                        </div>
+                      ) : null}
+
+                      {convocation.is_replaced_version ? (
+                        <div className="agdetail-convocation-notice">
+                          <strong>Version historique :</strong>{" "}
+                          Cette convocation a été remplacée par{" "}
+                          {convocation.replaced_by_reference ||
+                            `convocation #${convocation.replaced_by || ""}`}.
                         </div>
                       ) : null}
 

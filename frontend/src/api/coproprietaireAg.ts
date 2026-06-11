@@ -71,6 +71,11 @@ export type CoproprietaireAgConvocation = {
   version?: number | null;
   is_rectificative?: boolean;
   motif_rectification?: string | null;
+  is_active_version?: boolean;
+  is_replaced_version?: boolean;
+  replaced_by?: number | null;
+  replaced_by_reference?: string | null;
+  official_version_label?: string | null;
 
   ag: number;
   ag_titre: string;

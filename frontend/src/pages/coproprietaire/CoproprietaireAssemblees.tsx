@@ -1191,6 +1191,8 @@ function ConvocationsPanel({
             const versionLabel = convocation.version
               ? `v${convocation.version}`
               : "version non précisée";
+            const isOfficialVersion = Boolean(convocation.is_active_version);
+            const isReplacedVersion = Boolean(convocation.is_replaced_version);
 
             return (
               <div
@@ -1223,6 +1225,18 @@ function ConvocationsPanel({
                         <Badge style={getConvocationStatusStyle(convocation.statut)}>
                           {convocation.statut_label || convocation.statut}
                         </Badge>
+
+                        {isOfficialVersion ? (
+                          <Badge style={styles.convocationInitialBadge}>
+                            Version officielle
+                          </Badge>
+                        ) : null}
+
+                        {isReplacedVersion ? (
+                          <Badge style={styles.convocationRectificativeBadge}>
+                            Ancienne version
+                          </Badge>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1238,6 +1252,15 @@ function ConvocationsPanel({
                           Convocation remplacée : {parentReference}
                         </span>
                       ) : null}
+                    </div>
+                  ) : null}
+
+                  {isReplacedVersion ? (
+                    <div style={styles.convocationRectificativeNotice}>
+                      <strong>Ancienne version :</strong>{" "}
+                      La version officielle actuelle est{" "}
+                      {convocation.replaced_by_reference ||
+                        `convocation #${convocation.replaced_by || ""}`}.
                     </div>
                   ) : null}
 

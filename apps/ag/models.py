@@ -431,6 +431,88 @@ class AgConvocation(models.Model):
     def __str__(self):
         return f"Convocation {self.reference or self.pk} - AG {self.ag_id}"
 
+    def _non_cancelled_versions_qs(self):
+        if not self.ag_id or not self.lot_id:
+            return AgConvocation.objects.none()
+
+        return AgConvocation.objects.filter(
+            ag_id=self.ag_id,
+            lot_id=self.lot_id,
+        ).exclude(statut="ANNULEE")
+
+    @property
+    def latest_official_convocation(self):
+        """
+        Dernière version non annulée pour le couple AG + lot.
+
+        Cette propriété donne la version officielle courante sans ajouter
+        de champ en base de données.
+        """
+        return (
+            self._non_cancelled_versions_qs()
+            .order_by("-version", "-id")
+            .first()
+        )
+
+    @property
+    def is_active_version(self) -> bool:
+        """
+        True si cette convocation est la dernière version non annulée.
+        """
+        if not self.pk or self.statut == "ANNULEE":
+            return False
+
+        latest = self.latest_official_convocation
+        return bool(latest and latest.pk == self.pk)
+
+    @property
+    def replaced_by(self):
+        """
+        Première version ultérieure non annulée qui remplace cette convocation.
+        """
+        if not self.pk or not self.ag_id or not self.lot_id:
+            return None
+
+        return (
+            AgConvocation.objects.filter(
+                ag_id=self.ag_id,
+                lot_id=self.lot_id,
+                version__gt=self.version,
+            )
+            .exclude(statut="ANNULEE")
+            .order_by("version", "id")
+            .first()
+        )
+
+    @property
+    def is_replaced_version(self) -> bool:
+        """
+        True si une version ultérieure non annulée existe.
+        """
+        return self.replaced_by is not None
+
+    @property
+    def replaced_by_reference(self) -> str:
+        replacement = self.replaced_by
+
+        if not replacement:
+            return ""
+
+        return replacement.reference or f"Convocation #{replacement.pk}"
+
+    @property
+    def official_version_label(self) -> str:
+        if self.statut == "ANNULEE":
+            return "Convocation annulée"
+
+        if self.is_active_version:
+            return "Version officielle actuelle"
+
+        if self.is_replaced_version:
+            return "Version remplacée"
+
+        return "Version historique"
+
     def clean(self):
         super().clean()
 

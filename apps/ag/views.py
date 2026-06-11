@@ -1933,6 +1933,21 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 {"detail": "Convocation annulée : rectificative interdite."}
             )
 
+        if not original.is_active_version:
+            replacement_ref = original.replaced_by_reference
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Cette convocation n’est plus la version officielle actuelle. "
+                        + (
+                            f"Créez la rectificative depuis {replacement_ref}."
+                            if replacement_ref
+                            else "Créez la rectificative depuis la dernière version non annulée."
+                        )
+                    )
+                }
+            )
+
         if not _convocation_is_traced(original):
             raise ValidationError(
                 {
@@ -1978,6 +1993,26 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
 
             _assert_ag_writable(original.ag)
             _assert_ag_has_ordre_du_jour(original.ag)
+
+            if original.statut == "ANNULEE":
+                raise ValidationError(
+                    {"detail": "Convocation annulée : rectificative interdite."}
+                )
+
+            if not original.is_active_version:
+                replacement_ref = original.replaced_by_reference
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Cette convocation n’est plus la version officielle actuelle. "
+                            + (
+                                f"Créez la rectificative depuis {replacement_ref}."
+                                if replacement_ref
+                                else "Créez la rectificative depuis la dernière version non annulée."
+                            )
+                        )
+                    }
+                )
 
             current_hash, _ = _ordre_du_jour_hash(original.ag)
             existing_hash = _convocation_document_ordre_du_jour_hash(original)

@@ -620,7 +620,7 @@ export default function AGConvocations() {
                   const canGeneratePdf =
                     convocation.statut !== "ANNULEE" && !isPdfLoading;
                   const canCreateRectificative =
-                    !convocation.is_rectificative &&
+                    Boolean(convocation.is_active_version) &&
                     (convocation.statut === "ENVOYEE" ||
                       convocation.statut === "CONSULTEE");
 
@@ -635,6 +635,18 @@ export default function AGConvocations() {
                           {" · Version "}
                           {convocation.version || 1}
                         </div>
+                        {convocation.is_active_version ? (
+                          <div style={styles.metaLine}>
+                            Version officielle actuelle
+                          </div>
+                        ) : null}
+                        {convocation.is_replaced_version ? (
+                          <div style={styles.metaLine}>
+                            Remplacée par{" "}
+                            {convocation.replaced_by_reference ||
+                              `convocation #${convocation.replaced_by || ""}`}
+                          </div>
+                        ) : null}
                         {convocation.parent_reference ? (
                           <div style={styles.metaLine}>
                             Parent : {convocation.parent_reference}
@@ -760,7 +772,7 @@ export default function AGConvocations() {
                             Consultée
                           </button>
 
-                          {!convocation.is_rectificative ? (
+                          {convocation.statut !== "ANNULEE" ? (
                             <button
                               type="button"
                               style={{
@@ -772,7 +784,9 @@ export default function AGConvocations() {
                               disabled={!canCreateRectificative || isActionLoading}
                               onClick={() => handleCreateRectificative(convocation)}
                             >
-                              Créer rectificative
+                              {convocation.is_rectificative
+                                ? "Créer nouvelle rectificative"
+                                : "Créer rectificative"}
                             </button>
                           ) : null}
 
