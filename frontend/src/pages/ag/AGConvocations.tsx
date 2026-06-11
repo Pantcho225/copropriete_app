@@ -155,6 +155,7 @@ function openDocument(url: string) {
 function getErrorMessage(error: unknown) {
   const possibleAxiosError = error as {
     response?: {
+      status?: number;
       data?:
         | string
         | {
@@ -168,9 +169,23 @@ function getErrorMessage(error: unknown) {
   };
 
   const data = possibleAxiosError.response?.data;
+  const status = possibleAxiosError.response?.status;
 
   if (typeof data === "string") {
-    return data;
+    const cleaned = data.trim();
+
+    if (
+      cleaned.startsWith("<!DOCTYPE") ||
+      cleaned.startsWith("<html") ||
+      cleaned.includes("<body") ||
+      cleaned.includes("Page not found")
+    ) {
+      return status === 404
+        ? "Action indisponible : l’endpoint demandé est introuvable côté serveur."
+        : "Le serveur a retourné une erreur HTML non exploitable. Vérifiez l’endpoint appelé.";
+    }
+
+    return cleaned;
   }
 
   if (data?.detail) {

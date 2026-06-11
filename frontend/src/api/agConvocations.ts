@@ -248,7 +248,7 @@ export async function creerRectificativeAgConvocation(
   motif?: string,
 ): Promise<CreerRectificativeAgConvocationResponse> {
   const response = await api.post<CreerRectificativeAgConvocationResponse>(
-    `/ag/convocations/${convocationId}/creer-rectificative/`,
+    `/api/ag/convocations/${convocationId}/creer-rectificative/`,
     { motif: motif || "Ordre du jour actualisé après envoi ou consultation." },
   );
 
