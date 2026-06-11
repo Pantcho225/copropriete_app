@@ -12,7 +12,8 @@ import {
   marquerConvocationEnvoyee,
   type AgConvocation,
   type AgConvocationStatut,
-  notifierAgConvocation,} from "../../api/agConvocations";
+  notifierAgConvocation,
+} from "../../api/agConvocations";
 
 const STATUT_LABELS: Record<AgConvocationStatut, string> = {
   GENEREE: "Générée",
@@ -376,22 +377,11 @@ export default function AGConvocations() {
   }
 
   function handleCancel(convocation: AgConvocation) {
-    const confirmed = window.confirm(
-      `Voulez-vous vraiment annuler la convocation ${convocation.reference}
-                  {convocation.is_rectificative ? (
-                    <div style={styles.rectificativeInfo}>
-                      Rectificative v{convocation.version ?? "—"}
-                      {convocation.motif_rectification ? (
-                        <span style={styles.rectificativeMotif}>
-                          {" "}
-                          — {convocation.motif_rectification}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null} ?`,
-    );
-
-    if (!confirmed) {
+    if (
+      !window.confirm(
+        `Voulez-vous vraiment annuler la convocation ${convocation.reference} ?`,
+      )
+    ) {
       return;
     }
 
@@ -401,6 +391,7 @@ export default function AGConvocations() {
       "Convocation annulée avec succès.",
     );
   }
+
 
   function handleCreateRectificative(convocation: AgConvocation) {
     const confirmed = window.confirm(
