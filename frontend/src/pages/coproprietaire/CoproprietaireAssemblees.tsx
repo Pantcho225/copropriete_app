@@ -1143,48 +1143,105 @@ function ConvocationsPanel({
   consultingConvocationId: number | null;
   onConsult: (convocation: CoproprietaireAgConvocation) => void;
 }) {
+  const orderedConvocations = [...convocations].sort((a, b) => {
+    const versionDelta = Number(b.version ?? 1) - Number(a.version ?? 1);
+
+    if (versionDelta !== 0) {
+      return versionDelta;
+    }
+
+    return String(b.generated_at || b.created_at || "").localeCompare(
+      String(a.generated_at || a.created_at || ""),
+    );
+  });
+
   return (
-    <div style={styles.procurationBox}>
-      <div style={styles.procurationHeader}>
+    <div style={styles.convocationBox}>
+      <div style={styles.convocationHeader}>
         <div>
-          <p style={styles.procurationTitle}>Mes convocations pour cette AG</p>
-          <p style={styles.procurationText}>
-            Consultez votre convocation personnelle, le lot concerné, le canal
-            d’envoi et le statut de lecture transmis au syndic.
+          <p style={styles.convocationTitle}>Mes convocations pour cette AG</p>
+          <p style={styles.convocationText}>
+            Retrouvez ici votre convocation initiale, les éventuelles
+            rectificatives, le motif de correction, le PDF et le statut de
+            consultation transmis au syndic.
           </p>
         </div>
 
-        <Badge style={styles.procurationCountBadge}>
+        <Badge style={styles.convocationCountBadge}>
           {formatNumber(convocations.length)}
         </Badge>
       </div>
 
-      {convocations.length === 0 ? (
-        <p style={styles.procurationEmpty}>
+      {orderedConvocations.length === 0 ? (
+        <p style={styles.convocationEmpty}>
           Aucune convocation personnelle n’est encore rattachée à cette
           assemblée.
         </p>
       ) : (
-        <div style={styles.procurationList}>
-          {convocations.map((convocation) => {
+        <div style={styles.convocationList}>
+          {orderedConvocations.map((convocation) => {
             const isConsulted = normalize(convocation.statut) === "CONSULTEE";
             const isCanceled = normalize(convocation.statut) === "ANNULEE";
             const consulting = consultingConvocationId === convocation.id;
+            const isRectificative = Boolean(convocation.is_rectificative);
+            const parentReference =
+              convocation.parent_convocation_reference ||
+              convocation.parent_reference ||
+              "";
+            const versionLabel = convocation.version
+              ? `v${convocation.version}`
+              : "version non précisée";
 
             return (
-              <div key={convocation.id} style={styles.procurationItem}>
-                <div style={styles.procurationItemMain}>
-                  <div style={styles.procurationItemHeader}>
-                    <p style={styles.procurationName}>
-                      {convocation.reference || "Convocation sans référence"}
-                    </p>
+              <div
+                key={convocation.id}
+                style={{
+                  ...styles.convocationItem,
+                  ...(isRectificative ? styles.convocationItemRectificative : {}),
+                }}
+              >
+                <div style={styles.convocationItemMain}>
+                  <div style={styles.convocationItemHeader}>
+                    <div>
+                      <p style={styles.convocationName}>
+                        {convocation.reference || "Convocation sans référence"}
+                      </p>
 
-                    <Badge style={getConvocationStatusStyle(convocation.statut)}>
-                      {convocation.statut_label || convocation.statut}
-                    </Badge>
+                      <div style={styles.convocationBadges}>
+                        <Badge
+                          style={
+                            isRectificative
+                              ? styles.convocationRectificativeBadge
+                              : styles.convocationInitialBadge
+                          }
+                        >
+                          {isRectificative
+                            ? `Rectificative ${versionLabel}`
+                            : "Convocation initiale"}
+                        </Badge>
+
+                        <Badge style={getConvocationStatusStyle(convocation.statut)}>
+                          {convocation.statut_label || convocation.statut}
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
 
-                  <p style={styles.procurationDetails}>
+                  {isRectificative ? (
+                    <div style={styles.convocationRectificativeNotice}>
+                      <strong>Rectificative :</strong>{" "}
+                      {convocation.motif_rectification ||
+                        "motif de rectification non renseigné."}
+                      {parentReference ? (
+                        <span style={styles.convocationParentReference}>
+                          {" "}
+                          Convocation remplacée : {parentReference}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <p style={styles.convocationDetails}>
                     Lot :{" "}
                     {convocation.lot_label ||
                       convocation.lot_reference ||
@@ -1192,44 +1249,44 @@ function ConvocationsPanel({
                       "—"}
                   </p>
 
-                  <p style={styles.procurationDetails}>
+                  <p style={styles.convocationDetails}>
                     Canal : {convocation.canal_label || convocation.canal || "—"}
                   </p>
 
-                  <p style={styles.procurationDetails}>
+                  <p style={styles.convocationDetails}>
                     Générée le {formatDate(convocation.generated_at)}
                   </p>
 
                   {convocation.sent_at ? (
-                    <p style={styles.procurationDetails}>
+                    <p style={styles.convocationDetails}>
                       Envoyée le {formatDate(convocation.sent_at)}
                     </p>
                   ) : null}
 
                   {convocation.consulted_at ? (
-                    <p style={styles.procurationDetails}>
+                    <p style={styles.convocationDetails}>
                       Consultée le {formatDate(convocation.consulted_at)}
                     </p>
                   ) : null}
 
                   {convocation.message ? (
-                    <p style={styles.procurationDetails}>
+                    <p style={styles.convocationMessage}>
                       {convocation.message}
                     </p>
                   ) : null}
                 </div>
 
-                <div style={styles.procurationActions}>
+                <div style={styles.convocationActions}>
                   {convocation.document_url ? (
                     <button
                       type="button"
                       onClick={() => openDocument(convocation.document_url)}
-                      style={styles.procurationDocButton}
+                      style={styles.convocationDocButton}
                     >
-                      Ouvrir la convocation PDF
+                      Ouvrir le PDF
                     </button>
                   ) : (
-                    <span style={styles.pvHintMuted}>
+                    <span style={styles.convocationPdfMissing}>
                       PDF non encore généré
                     </span>
                   )}
@@ -1239,9 +1296,9 @@ function ConvocationsPanel({
                     disabled={isConsulted || isCanceled || consulting}
                     onClick={() => onConsult(convocation)}
                     style={{
-                      ...styles.procurationDocButton,
+                      ...styles.convocationConsultButton,
                       ...(isConsulted || isCanceled || consulting
-                        ? styles.cancelProcurationButtonDisabled
+                        ? styles.convocationConsultButtonDisabled
                         : {}),
                     }}
                   >
@@ -1249,7 +1306,7 @@ function ConvocationsPanel({
                       ? "Consultation..."
                       : isConsulted
                         ? "Déjà consultée"
-                        : "Consulter la convocation"}
+                        : "Marquer consultée"}
                   </button>
                 </div>
               </div>
@@ -1260,6 +1317,7 @@ function ConvocationsPanel({
     </div>
   );
 }
+
 
 function ProcurationsPanel({
   procurations,

@@ -592,6 +592,18 @@ def _convocation_payload(convocation: AgConvocation, request) -> dict[str, Any]:
     return {
         "id": convocation.id,
         "reference": convocation.reference,
+        "parent_convocation": getattr(convocation, "parent_convocation_id", None),
+        "parent_reference": (
+            getattr(getattr(convocation, "parent_convocation", None), "reference", "")
+            or ""
+        ),
+        "parent_convocation_reference": (
+            getattr(getattr(convocation, "parent_convocation", None), "reference", "")
+            or ""
+        ),
+        "version": getattr(convocation, "version", 1) or 1,
+        "is_rectificative": bool(getattr(convocation, "is_rectificative", False)),
+        "motif_rectification": getattr(convocation, "motif_rectification", "") or "",
         "ag": getattr(ag, "id", None),
         "ag_titre": _value(ag, "titre", "title", "objet", "libelle") if ag else "",
         "ag_date_ag": ag_date.isoformat() if hasattr(ag_date, "isoformat") else ag_date,
@@ -787,6 +799,7 @@ class CoproprietaireConvocationsAPIView(APIView):
                 "coproprietaire",
                 "lot",
                 "document",
+                "parent_convocation",
             )
             .filter(
                 coproprietaire=coproprietaire,
@@ -837,6 +850,7 @@ class CoproprietaireConvocationConsulterAPIView(APIView):
                 "coproprietaire",
                 "lot",
                 "document",
+                "parent_convocation",
             )
             .filter(
                 pk=convocation_id,

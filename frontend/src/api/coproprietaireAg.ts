@@ -65,6 +65,13 @@ export type CoproprietaireAgConvocation = {
   id: number;
   reference: string;
 
+  parent_convocation?: number | null;
+  parent_reference?: string;
+  parent_convocation_reference?: string;
+  version?: number | null;
+  is_rectificative?: boolean;
+  motif_rectification?: string | null;
+
   ag: number;
   ag_titre: string;
   ag_date_ag: string | null;
