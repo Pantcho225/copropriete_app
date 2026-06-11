@@ -16,6 +16,11 @@ export type AgConvocationCanal =
 export interface AgConvocation {
   id: number;
   reference: string;
+  parent_convocation?: number | null;
+  parent_reference?: string;
+  version?: number;
+  is_rectificative?: boolean;
+  motif_rectification?: string;
 
   ag: number;
   ag_titre?: string | null;
@@ -137,6 +142,11 @@ export interface GenererPdfsConvocationsResponse {
   convocations?: AgConvocation[];
 }
 
+export interface CreerRectificativeAgConvocationResponse {
+  detail: string;
+  convocation: AgConvocation;
+}
+
 function cleanParams(filters?: AgConvocationFilters) {
   const params: Record<string, string | number> = {};
 
@@ -227,6 +237,18 @@ export async function marquerConvocationConsultee(
 ): Promise<AgConvocation> {
   const response = await api.post<AgConvocation>(
     `/api/ag/convocations/${convocationId}/marquer-consultee/`,
+  );
+
+  return response.data;
+}
+
+export async function creerRectificativeAgConvocation(
+  convocationId: number,
+  motif?: string,
+): Promise<CreerRectificativeAgConvocationResponse> {
+  const response = await api.post<CreerRectificativeAgConvocationResponse>(
+    `/ag/convocations/${convocationId}/creer-rectificative/`,
+    { motif: motif || "Ordre du jour actualisé après envoi ou consultation." },
   );
 
   return response.data;

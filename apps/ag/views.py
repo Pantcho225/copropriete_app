@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
 from apps.documents.models import GeneratedDocument
 from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from rest_framework import status, viewsets
@@ -601,6 +602,9 @@ def _convocation_pdf_payload(convocation: AgConvocation, request) -> dict:
         "coproprietaire_id": getattr(convocation, "coproprietaire_id", None),
         "document_id": getattr(convocation, "document_id", None),
         "document_url": _generated_document_url(document, request),
+        "parent_convocation_id": getattr(convocation, "parent_convocation_id", None),
+        "version": getattr(convocation, "version", 1),
+        "is_rectificative": getattr(convocation, "is_rectificative", False),
     }
 
 
@@ -897,12 +901,14 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
                 convocation, was_created = AgConvocation.objects.get_or_create(
                     ag=ag,
                     lot=lot,
+                    version=1,
                     defaults={
                         "copropriete": ag.copropriete,
                         "coproprietaire": coproprietaire,
                         "canal": canal,
                         "objet": objet or f"Convocation - {ag.titre}",
                         "message": message,
+                        "is_rectificative": False,
                         "metadata": {
                             "source": "generer-convocations",
                             "proprietaire_lot_id": link.id,
@@ -1798,6 +1804,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             "coproprietaire",
             "lot",
             "document",
+            "parent_convocation",
             "generated_by",
             "sent_by",
             "cancelled_by",
@@ -1913,6 +1920,178 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             )
 
         instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="creer-rectificative")
+    def creer_rectificative(self, request, pk=None):
+        original = self.get_object()
+        _assert_same_copro(request, original.ag)
+        _assert_ag_writable(original.ag)
+        _assert_ag_has_ordre_du_jour(original.ag)
+
+        if original.statut == "ANNULEE":
+            raise ValidationError(
+                {"detail": "Convocation annulée : rectificative interdite."}
+            )
+
+        if not _convocation_is_traced(original):
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Cette convocation n’a pas encore été envoyée ou consultée. "
+                        "Régénérez simplement son PDF au lieu de créer une rectificative."
+                    )
+                }
+            )
+
+        current_hash, _ = _ordre_du_jour_hash(original.ag)
+        existing_hash = _convocation_document_ordre_du_jour_hash(original)
+
+        if existing_hash == current_hash:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Le PDF de cette convocation est déjà cohérent avec l’ordre du jour actuel. "
+                        "Aucune convocation rectificative n’est nécessaire."
+                    )
+                }
+            )
+
+        motif = ""
+
+        if request.data:
+            motif = str(
+                request.data.get("motif")
+                or request.data.get("motif_rectification")
+                or ""
+            ).strip()
+
+        if not motif:
+            motif = (
+                "Ordre du jour modifié après envoi ou consultation de la convocation originale."
+            )
+
+        with transaction.atomic():
+            original = (
+                AgConvocation.objects.select_for_update()
+                .get(pk=original.pk, copropriete_id=original.copropriete_id)
+            )
+
+            _assert_ag_writable(original.ag)
+            _assert_ag_has_ordre_du_jour(original.ag)
+
+            current_hash, _ = _ordre_du_jour_hash(original.ag)
+            existing_hash = _convocation_document_ordre_du_jour_hash(original)
+
+            if existing_hash == current_hash:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Le PDF de cette convocation est déjà cohérent avec l’ordre du jour actuel. "
+                            "Aucune convocation rectificative n’est nécessaire."
+                        )
+                    }
+                )
+
+            if not _convocation_is_traced(original):
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Cette convocation n’a pas encore été envoyée ou consultée. "
+                            "Régénérez simplement son PDF au lieu de créer une rectificative."
+                        )
+                    }
+                )
+
+            existing_rectificative = (
+                AgConvocation.objects.select_for_update()
+                .filter(
+                    ag_id=original.ag_id,
+                    lot_id=original.lot_id,
+                    is_rectificative=True,
+                )
+                .exclude(statut="ANNULEE")
+                .order_by("-version", "-id")
+                .first()
+            )
+
+            if (
+                existing_rectificative
+                and _convocation_document_ordre_du_jour_hash(existing_rectificative)
+                == current_hash
+            ):
+                serializer = self.get_serializer(existing_rectificative)
+
+                return Response(
+                    {
+                        "detail": "Une convocation rectificative à jour existe déjà.",
+                        "convocation": serializer.data,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            max_version = (
+                AgConvocation.objects.select_for_update()
+                .filter(ag_id=original.ag_id, lot_id=original.lot_id)
+                .aggregate(max_version=Max("version"))
+                .get("max_version")
+                or 1
+            )
+
+            rectificative = AgConvocation.objects.create(
+                ag=original.ag,
+                copropriete=original.copropriete,
+                coproprietaire=original.coproprietaire,
+                lot=original.lot,
+                parent_convocation=original,
+                version=int(max_version) + 1,
+                is_rectificative=True,
+                canal=original.canal,
+                objet=f"Convocation rectificative - {original.ag.titre}",
+                message=(
+                    original.message
+                    or "Convocation rectificative liée à la mise à jour de l’ordre du jour."
+                ),
+                motif_rectification=motif,
+                metadata={
+                    "source": "ag_convocation_rectificative",
+                    "parent_convocation_id": original.id,
+                    "parent_reference": original.reference,
+                    "reason": motif,
+                },
+            )
+
+            rectificative.mark_generated(user=request.user)
+
+            document, _ = _generate_convocation_pdf_document(
+                convocation=rectificative,
+                request=request,
+                force=True,
+            )
+
+            rectificative.mark_generated(user=request.user, document=document)
+            rectificative.refresh_from_db()
+
+        serializer = self.get_serializer(rectificative)
+
+        _log_ag_event(
+            request,
+            rectificative.ag,
+            event="AG_CONVOCATION_RECTIFICATIVE_CREATED",
+            meta={
+                "original_convocation_id": original.id,
+                "rectificative_convocation_id": rectificative.id,
+                "version": rectificative.version,
+                "motif": motif,
+            },
+        )
+
+        return Response(
+            {
+                "detail": "Convocation rectificative créée avec succès.",
+                "convocation": serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["post"], url_path="generer-pdf")
     def generer_pdf(self, request, pk=None):

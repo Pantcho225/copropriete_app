@@ -602,12 +602,18 @@ class AgConvocationSerializer(serializers.ModelSerializer):
     generated_by_label = serializers.SerializerMethodField(read_only=True)
     sent_by_label = serializers.SerializerMethodField(read_only=True)
     cancelled_by_label = serializers.SerializerMethodField(read_only=True)
+    parent_reference = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = AgConvocation
         fields = [
             "id",
             "reference",
+            "parent_convocation",
+            "parent_reference",
+            "version",
+            "is_rectificative",
+            "motif_rectification",
             "ag",
             "ag_titre",
             "ag_date_ag",
@@ -746,6 +752,14 @@ class AgConvocationSerializer(serializers.ModelSerializer):
 
     def get_cancelled_by_label(self, obj):
         return self._user_label(getattr(obj, "cancelled_by", None))
+
+    def get_parent_reference(self, obj):
+        parent = getattr(obj, "parent_convocation", None)
+
+        if not parent:
+            return ""
+
+        return getattr(parent, "reference", "") or f"Convocation #{getattr(parent, 'id', '')}"
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)

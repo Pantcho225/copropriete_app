@@ -358,6 +358,17 @@ class AgConvocation(models.Model):
         related_name="ag_convocations",
     )
 
+    parent_convocation = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="rectificatives",
+    )
+    version = models.PositiveIntegerField(default=1)
+    is_rectificative = models.BooleanField(default=False)
+    motif_rectification = models.TextField(blank=True, default="")
+
     reference = models.CharField(max_length=80, unique=True, blank=True, default="")
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default="BROUILLON")
     canal = models.CharField(max_length=20, choices=CANAL_CHOICES, default="PLATEFORME")
@@ -402,14 +413,16 @@ class AgConvocation(models.Model):
         ordering = ["-created_at", "-id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["ag", "lot"],
-                name="unique_ag_convocation_by_lot",
+                fields=["ag", "lot", "version"],
+                name="unique_ag_convocation_by_lot_version",
             ),
         ]
         indexes = [
             models.Index(fields=["copropriete", "ag"]),
             models.Index(fields=["copropriete", "statut"]),
             models.Index(fields=["ag", "statut"]),
+            models.Index(fields=["ag", "lot", "version"]),
+            models.Index(fields=["parent_convocation"]),
             models.Index(fields=["coproprietaire", "statut"]),
             models.Index(fields=["lot", "statut"]),
             models.Index(fields=["reference"]),

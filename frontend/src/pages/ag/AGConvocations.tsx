@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../../api/axios";
 import {
   annulerAgConvocation,
+  creerRectificativeAgConvocation,
   genererConvocationsAg,
   listAgConvocations,
   marquerConvocationConsultee,
@@ -390,6 +391,53 @@ export default function AGConvocations() {
     );
   }
 
+  function handleCreateRectificative(convocation: AgConvocation) {
+    const confirmed = window.confirm(
+      `Créer une convocation rectificative pour ${convocation.reference} ?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoadingId(convocation.id);
+    setError("");
+    setSuccess("");
+
+    void (async () => {
+      try {
+        const result = await creerRectificativeAgConvocation(
+          convocation.id,
+          "Ordre du jour actualisé après envoi ou consultation.",
+        );
+
+        setSuccess(
+          result.detail || "Convocation rectificative créée avec succès.",
+        );
+
+        if (result.convocation) {
+          setConvocations((current) => {
+            const exists = current.some((item) => item.id === result.convocation.id);
+
+            if (exists) {
+              return current.map((item) =>
+                item.id === result.convocation.id ? result.convocation : item,
+              );
+            }
+
+            return [result.convocation, ...current];
+          });
+        }
+
+        await loadConvocations();
+      } catch (err) {
+        setError(getErrorMessage(err));
+      } finally {
+        setActionLoadingId(null);
+      }
+    })();
+  }
+
   return (
     <main style={styles.page}>
       <section style={styles.header}>
@@ -554,6 +602,10 @@ export default function AGConvocations() {
                   const canCancel = convocation.statut !== "ANNULEE";
                   const canGeneratePdf =
                     convocation.statut !== "ANNULEE" && !isPdfLoading;
+                  const canCreateRectificative =
+                    !convocation.is_rectificative &&
+                    (convocation.statut === "ENVOYEE" ||
+                      convocation.statut === "CONSULTEE");
 
                   return (
                     <tr key={convocation.id}>
@@ -561,6 +613,16 @@ export default function AGConvocations() {
                         <strong style={styles.reference}>
                           {convocation.reference}
                         </strong>
+                        <div style={styles.metaLine}>
+                          {convocation.is_rectificative ? "Rectificative" : "Originale"}
+                          {" · Version "}
+                          {convocation.version || 1}
+                        </div>
+                        {convocation.parent_reference ? (
+                          <div style={styles.metaLine}>
+                            Parent : {convocation.parent_reference}
+                          </div>
+                        ) : null}
                       </td>
 
                       <td style={styles.td}>{getConvocationAg(convocation)}</td>
@@ -657,6 +719,22 @@ export default function AGConvocations() {
                           >
                             Consultée
                           </button>
+
+                          {!convocation.is_rectificative ? (
+                            <button
+                              type="button"
+                              style={{
+                                ...styles.actionButton,
+                                ...(!canCreateRectificative || isActionLoading
+                                  ? styles.buttonDisabled
+                                  : {}),
+                              }}
+                              disabled={!canCreateRectificative || isActionLoading}
+                              onClick={() => handleCreateRectificative(convocation)}
+                            >
+                              Créer rectificative
+                            </button>
+                          ) : null}
 
                           <button
                             type="button"
