@@ -227,6 +227,68 @@ class CoproMembre(TimeStampedModel):
         return f"{username} — {copropriete} — {self.role}"
 
 
+    @property
+    def can_manage_copropriete(self) -> bool:
+        """
+        Droit de gestion générale de la copropriété.
+
+        Ce droit est volontairement large pour les profils d'administration
+        locale. Le Super Admin plateforme est traité dans les vues.
+        """
+        return self.is_active and self.role in {
+            self.Role.ADMIN,
+            self.Role.SYNDIC,
+            self.Role.GESTIONNAIRE,
+        }
+
+    @property
+    def can_manage_referentiel(self) -> bool:
+        """
+        Droit de gestion du référentiel : lots, copropriétaires,
+        occupants, tantièmes et rattachements métier.
+        """
+        return self.is_active and self.role in {
+            self.Role.ADMIN,
+            self.Role.SYNDIC,
+            self.Role.GESTIONNAIRE,
+        }
+
+    @property
+    def can_manage_users(self) -> bool:
+        """
+        Droit de gestion des membres et rôles locaux.
+        """
+        return self.is_active and self.role in {
+            self.Role.ADMIN,
+            self.Role.SYNDIC,
+        }
+
+    @property
+    def can_write_compta(self) -> bool:
+        """
+        Droit d'écriture comptable : mouvements, paiements,
+        rapprochements et opérations financières.
+        """
+        return self.is_active and self.role in {
+            self.Role.ADMIN,
+            self.Role.SYNDIC,
+            self.Role.COMPTABLE,
+        }
+
+    @property
+    def can_read_reports(self) -> bool:
+        """
+        Droit de lecture des tableaux de bord, exports et rapports.
+        """
+        return self.is_active and self.role in {
+            self.Role.ADMIN,
+            self.Role.SYNDIC,
+            self.Role.GESTIONNAIRE,
+            self.Role.COMPTABLE,
+            self.Role.CONSEIL,
+        }
+
+
 class UserSecurityProfile(TimeStampedModel):
     """
     Profil de sécurité rattaché à un utilisateur.

@@ -74,7 +74,7 @@ const API = {
   coproprietes: "/api/core/coproprietes/",
   coproprietaires: "/api/owners/coproprietaires/",
   lots: "/api/lots/",
-  tantiemes: "/api/tantiemes/",
+  tantiemes: "/api/lot-tantiemes/",
   tantiemeCategories: "/api/tantieme-categories/",
   membres: "/api/core/membres/",
 };
@@ -492,18 +492,60 @@ function extractRows<T>(payload: unknown): T[] {
 
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "response" in error) {
-    const response = (error as { response?: { data?: unknown } }).response;
-    const data = response?.data;
+    const response = (
+      error as {
+        response?: {
+          status?: number;
+          data?: unknown;
+        };
+      }
+    ).response;
 
-    if (typeof data === "string") return data;
+    const data = response?.data;
+    const status = response?.status;
+
+    if (typeof data === "string") {
+      const cleaned = data.trim();
+
+      if (
+        cleaned.startsWith("<!DOCTYPE") ||
+        cleaned.startsWith("<html") ||
+        cleaned.includes("<body") ||
+        cleaned.includes("Page not found") ||
+        cleaned.includes("Traceback") ||
+        cleaned.includes("AttributeError at") ||
+        cleaned.includes("Request Method:") ||
+        cleaned.includes("Exception Type:")
+      ) {
+        return status === 404
+          ? "Donnée référentielle indisponible : un endpoint appelé par le cockpit est introuvable."
+          : "Erreur serveur pendant le chargement du référentiel. Consultez le terminal backend pour le détail technique.";
+      }
+
+      return cleaned.length > 260
+        ? `${cleaned.slice(0, 260)}…`
+        : cleaned;
+    }
 
     if (data && typeof data === "object") {
-      const maybe = data as { detail?: unknown; message?: unknown };
+      const maybe = data as {
+        detail?: unknown;
+        message?: unknown;
+        error?: unknown;
+        non_field_errors?: unknown;
+      };
 
       if (typeof maybe.detail === "string") return maybe.detail;
       if (typeof maybe.message === "string") return maybe.message;
+      if (typeof maybe.error === "string") return maybe.error;
 
-      return JSON.stringify(data);
+      if (Array.isArray(maybe.non_field_errors)) {
+        return maybe.non_field_errors.map(String).join(" ");
+      }
+
+      return status
+        ? `Erreur ${status} pendant le chargement du référentiel.`
+        : "Une réponse API inattendue a été reçue pendant le chargement du référentiel.";
     }
   }
 
