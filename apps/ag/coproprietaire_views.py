@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from apps.ag.models import (
     AGProcuration,
     AgConvocation,
+    AgConvocationPreuve,
     AssembleeGenerale,
     PresenceLot,
     Resolution,
@@ -564,6 +565,64 @@ def _coproprietaire_label(coproprietaire) -> str:
     return str(coproprietaire)
 
 
+
+def _preuve_user_label(user) -> str:
+    if not user:
+        return ""
+
+    full_name = ""
+    try:
+        full_name = user.get_full_name()
+    except Exception:
+        full_name = ""
+
+    return (
+        full_name
+        or getattr(user, "username", "")
+        or getattr(user, "email", "")
+        or str(user)
+    )
+
+
+def _preuve_summary(preuve) -> dict[str, Any] | None:
+    if not preuve:
+        return None
+
+    created_at = getattr(preuve, "created_at", None)
+
+    return {
+        "id": getattr(preuve, "pk", None),
+        "reference": getattr(preuve, "reference", "") or "",
+        "type_evenement": getattr(preuve, "type_evenement", "") or "",
+        "type_evenement_label": (
+            preuve.get_type_evenement_display()
+            if hasattr(preuve, "get_type_evenement_display")
+            else getattr(preuve, "type_evenement", "") or ""
+        ),
+        "canal": getattr(preuve, "canal", "") or "",
+        "canal_label": (
+            preuve.get_canal_display()
+            if hasattr(preuve, "get_canal_display")
+            else getattr(preuve, "canal", "") or ""
+        ),
+        "statut": getattr(preuve, "statut", "") or "",
+        "statut_label": (
+            preuve.get_statut_display()
+            if hasattr(preuve, "get_statut_display")
+            else getattr(preuve, "statut", "") or ""
+        ),
+        "created_at": created_at.isoformat() if created_at else None,
+        "utilisateur_label": _preuve_user_label(getattr(preuve, "utilisateur", None)),
+        "commentaire": getattr(preuve, "commentaire", "") or "",
+    }
+
+
+def _convocation_preuves_by_type(convocation: AgConvocation, type_evenement: str):
+    try:
+        return convocation.preuves.filter(type_evenement=type_evenement)
+    except Exception:
+        return AgConvocationPreuve.objects.none()
+
 def _convocation_payload(convocation: AgConvocation, request) -> dict[str, Any]:
     ag = getattr(convocation, "ag", None)
     lot = getattr(convocation, "lot", None)
@@ -589,6 +648,23 @@ def _convocation_payload(convocation: AgConvocation, request) -> dict[str, Any]:
         "date",
     )
 
+    notification_preuves = _convocation_preuves_by_type(
+        convocation,
+        AgConvocationPreuve.TYPE_NOTIFICATION,
+    )
+    consultation_preuves = _convocation_preuves_by_type(
+        convocation,
+        AgConvocationPreuve.TYPE_CONSULTATION,
+    )
+    last_notification_proof = (
+        notification_preuves.order_by("-created_at", "-id").first()
+    )
+    last_consultation_proof = (
+        consultation_preuves.order_by("-created_at", "-id").first()
+    )
+    preuve_notification_count = notification_preuves.count()
+    preuve_consultation_count = consultation_preuves.count()
+
     return {
         "id": convocation.id,
         "reference": convocation.reference,
@@ -604,6 +680,17 @@ def _convocation_payload(convocation: AgConvocation, request) -> dict[str, Any]:
         "version": getattr(convocation, "version", 1) or 1,
         "is_rectificative": bool(getattr(convocation, "is_rectificative", False)),
         "motif_rectification": getattr(convocation, "motif_rectification", "") or "",
+        "is_active_version": bool(getattr(convocation, "is_active_version", False)),
+        "is_replaced_version": bool(getattr(convocation, "is_replaced_version", False)),
+        "replaced_by": getattr(getattr(convocation, "replaced_by", None), "pk", None),
+        "replaced_by_reference": getattr(convocation, "replaced_by_reference", "") or "",
+        "official_version_label": getattr(convocation, "official_version_label", "") or "",
+        "preuve_notification_count": preuve_notification_count,
+        "preuve_consultation_count": preuve_consultation_count,
+        "last_notification_proof": _preuve_summary(last_notification_proof),
+        "last_consultation_proof": _preuve_summary(last_consultation_proof),
+        "notification_traced": preuve_notification_count > 0,
+        "consultation_acknowledged": preuve_consultation_count > 0,
         "ag": getattr(ag, "id", None),
         "ag_titre": _value(ag, "titre", "title", "objet", "libelle") if ag else "",
         "ag_date_ag": ag_date.isoformat() if hasattr(ag_date, "isoformat") else ag_date,
@@ -765,6 +852,46 @@ class CoproprietaireAGSerializer(Serializer):
         return [_resolution_payload(resolution, lot_ids) for resolution in qs]
 
 
+def _request_ip_address(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip() or None
+
+    return request.META.get("REMOTE_ADDR") or None
+
+
+def _request_user_agent(request):
+    return request.META.get("HTTP_USER_AGENT", "") or ""
+
+
+def _convocation_destinataire_email(convocation):
+    owner = getattr(convocation, "coproprietaire", None)
+
+    if not owner:
+        return ""
+
+    return (
+        getattr(owner, "email", "")
+        or getattr(owner, "email_address", "")
+        or ""
+    )
+
+
+def _convocation_destinataire_telephone(convocation):
+    owner = getattr(convocation, "coproprietaire", None)
+
+    if not owner:
+        return ""
+
+    return (
+        getattr(owner, "telephone", "")
+        or getattr(owner, "phone", "")
+        or getattr(owner, "mobile", "")
+        or ""
+    )
+
+
 class CoproprietaireConvocationsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -873,15 +1000,86 @@ class CoproprietaireConvocationConsulterAPIView(APIView):
                 }
             )
 
-        convocation.mark_consulted()
+        if not convocation.is_active_version:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seule la version officielle actuelle peut être consultée. "
+                        "Cette convocation est une ancienne version."
+                    )
+                }
+            )
+
+        statut_initial = convocation.statut
+        already_consulted = convocation.statut == "CONSULTEE"
+
+        if not already_consulted:
+            try:
+                convocation.mark_consulted()
+            except DjangoValidationError as exc:
+                raise ValidationError({"detail": str(exc)})
+
+            convocation.refresh_from_db()
+
+        consultation_proof = (
+            AgConvocationPreuve.objects.filter(
+                convocation=convocation,
+                type_evenement=AgConvocationPreuve.TYPE_CONSULTATION,
+                statut=AgConvocationPreuve.STATUT_SUCCES,
+                metadata__source="espace_coproprietaire",
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+
+        if consultation_proof is None:
+            consultation_proof = AgConvocationPreuve.objects.create(
+                convocation=convocation,
+                ag=convocation.ag,
+                copropriete=convocation.copropriete,
+                coproprietaire=convocation.coproprietaire,
+                lot=convocation.lot,
+                utilisateur=request.user if request.user.is_authenticated else None,
+                type_evenement=AgConvocationPreuve.TYPE_CONSULTATION,
+                canal="PLATEFORME",
+                statut=AgConvocationPreuve.STATUT_SUCCES,
+                destinataire_email=_convocation_destinataire_email(convocation),
+                destinataire_telephone=_convocation_destinataire_telephone(convocation),
+                objet=convocation.objet or f"Convocation - {convocation.ag.titre}",
+                commentaire=(
+                    "Accusé de consultation de la convocation officielle actuelle "
+                    "depuis l’espace copropriétaire."
+                ),
+                ip_address=_request_ip_address(request),
+                user_agent=_request_user_agent(request),
+                metadata={
+                    "source": "espace_coproprietaire",
+                    "convocation_reference": convocation.reference,
+                    "ag_id": convocation.ag_id,
+                    "lot_id": convocation.lot_id,
+                    "coproprietaire_id": convocation.coproprietaire_id,
+                    "version": convocation.version,
+                    "is_rectificative": bool(convocation.is_rectificative),
+                    "statut_initial": statut_initial,
+                    "statut_final": convocation.statut,
+                    "already_consulted": already_consulted,
+                },
+            )
 
         return Response(
             {
-                "detail": "Convocation consultée avec succès.",
+                "detail": (
+                    "Convocation déjà consultée ; accusé existant conservé."
+                    if already_consulted
+                    else "Convocation consultée avec succès."
+                ),
+                "already_consulted": already_consulted,
+                "proof_reference": consultation_proof.reference,
                 "convocation": _convocation_payload(convocation, request),
             },
             status=status.HTTP_200_OK,
         )
+
 
 class CoproprietaireAssembleesAPIView(APIView):
     permission_classes = [IsAuthenticated]

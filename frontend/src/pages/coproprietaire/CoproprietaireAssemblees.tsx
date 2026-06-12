@@ -1324,6 +1324,15 @@ function ConvocationsPanel({
                     </p>
                   ) : null}
 
+                  {convocation.consultation_acknowledged ? (
+                    <p style={styles.convocationDetails}>
+                      Accusé de consultation enregistré
+                      {convocation.last_consultation_proof?.reference
+                        ? ` · ${convocation.last_consultation_proof.reference}`
+                        : ""}
+                    </p>
+                  ) : null}
+
                   {convocation.message ? (
                     <p style={styles.convocationMessage}>
                       {convocation.message}

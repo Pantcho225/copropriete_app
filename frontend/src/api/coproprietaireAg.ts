@@ -61,6 +61,20 @@ export type CoproprietaireAgConvocationCanal =
   | "WHATSAPP"
   | "PAPIER";
 
+export type CoproprietaireAgConvocationProofSummary = {
+  id?: number | null;
+  reference?: string | null;
+  type_evenement?: string | null;
+  type_evenement_label?: string | null;
+  canal?: string | null;
+  canal_label?: string | null;
+  statut?: string | null;
+  statut_label?: string | null;
+  created_at?: string | null;
+  utilisateur_label?: string | null;
+  commentaire?: string | null;
+};
+
 export type CoproprietaireAgConvocation = {
   id: number;
   reference: string;
@@ -76,6 +90,13 @@ export type CoproprietaireAgConvocation = {
   replaced_by?: number | null;
   replaced_by_reference?: string | null;
   official_version_label?: string | null;
+
+  preuve_notification_count?: number;
+  preuve_consultation_count?: number;
+  last_notification_proof?: CoproprietaireAgConvocationProofSummary | null;
+  last_consultation_proof?: CoproprietaireAgConvocationProofSummary | null;
+  notification_traced?: boolean;
+  consultation_acknowledged?: boolean;
 
   ag: number;
   ag_titre: string;
@@ -124,6 +145,8 @@ export type GetConvocationsCoproprietaireParams = {
 
 export type ConsulterConvocationCoproprietaireResponse = {
   detail: string;
+  already_consulted?: boolean;
+  proof_reference?: string;
   convocation: CoproprietaireAgConvocation;
 };
 

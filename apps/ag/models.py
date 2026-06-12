@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from decimal import Decimal
 
 from django.conf import settings
@@ -1261,3 +1263,155 @@ class Vote(models.Model):
         with transaction.atomic():
             self.full_clean()
             super().save(*args, **kwargs)
+
+
+class AgConvocationPreuve(models.Model):
+    TYPE_NOTIFICATION = "NOTIFICATION"
+    TYPE_CONSULTATION = "CONSULTATION"
+
+    TYPE_CHOICES = [
+        (TYPE_NOTIFICATION, "Notification"),
+        (TYPE_CONSULTATION, "Consultation"),
+    ]
+
+    CANAL_CHOICES = [
+        ("PLATEFORME", "Plateforme"),
+        ("EMAIL", "Email"),
+        ("WHATSAPP", "WhatsApp"),
+        ("PAPIER", "Papier"),
+        ("MANUEL", "Manuel"),
+        ("AUTRE", "Autre"),
+    ]
+
+    STATUT_SUCCES = "SUCCES"
+    STATUT_ECHEC = "ECHEC"
+
+    STATUT_CHOICES = [
+        (STATUT_SUCCES, "Succès"),
+        (STATUT_ECHEC, "Échec"),
+    ]
+
+    convocation = models.ForeignKey(
+        "ag.AgConvocation",
+        on_delete=models.CASCADE,
+        related_name="preuves",
+    )
+    ag = models.ForeignKey(
+        "ag.AssembleeGenerale",
+        on_delete=models.CASCADE,
+        related_name="preuves_convocations",
+    )
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="preuves_convocations_ag",
+    )
+    coproprietaire = models.ForeignKey(
+        "owners.Coproprietaire",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="preuves_convocations_ag",
+    )
+    lot = models.ForeignKey(
+        "lots.Lot",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="preuves_convocations_ag",
+    )
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="preuves_convocations_ag",
+    )
+
+    reference = models.CharField(max_length=80, unique=True, db_index=True, blank=True)
+    type_evenement = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    canal = models.CharField(max_length=30, choices=CANAL_CHOICES, default="PLATEFORME")
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default=STATUT_SUCCES)
+
+    destinataire_email = models.EmailField(blank=True, default="")
+    destinataire_telephone = models.CharField(max_length=50, blank=True, default="")
+    objet = models.CharField(max_length=255, blank=True, default="")
+    commentaire = models.TextField(blank=True, default="")
+
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["copropriete", "type_evenement"]),
+            models.Index(fields=["ag", "type_evenement"]),
+            models.Index(fields=["convocation", "type_evenement"]),
+            models.Index(fields=["coproprietaire", "type_evenement"]),
+            models.Index(fields=["lot", "type_evenement"]),
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["reference"]),
+        ]
+
+    def __str__(self):
+        return f"{self.reference or self.pk} - {self.type_evenement}"
+
+    def clean(self):
+        super().clean()
+
+        if self.convocation_id:
+            if self.ag_id and self.convocation.ag_id != self.ag_id:
+                raise ValidationError(
+                    {"ag": "La preuve doit appartenir à la même AG que la convocation."}
+                )
+
+            if self.copropriete_id and self.convocation.copropriete_id != self.copropriete_id:
+                raise ValidationError(
+                    {
+                        "copropriete": (
+                            "La preuve doit appartenir à la même copropriété que la convocation."
+                        )
+                    }
+                )
+
+            if self.lot_id and self.convocation.lot_id != self.lot_id:
+                raise ValidationError(
+                    {"lot": "La preuve doit concerner le même lot que la convocation."}
+                )
+
+            if (
+                self.coproprietaire_id
+                and self.convocation.coproprietaire_id != self.coproprietaire_id
+            ):
+                raise ValidationError(
+                    {
+                        "coproprietaire": (
+                            "La preuve doit concerner le même copropriétaire que la convocation."
+                        )
+                    }
+                )
+
+    def save(self, *args, **kwargs):
+        if self.convocation_id:
+            if not self.ag_id:
+                self.ag_id = self.convocation.ag_id
+
+            if not self.copropriete_id:
+                self.copropriete_id = self.convocation.copropriete_id
+
+            if not self.coproprietaire_id:
+                self.coproprietaire_id = self.convocation.coproprietaire_id
+
+            if not self.lot_id:
+                self.lot_id = self.convocation.lot_id
+
+        if not self.reference:
+            now = timezone.now()
+            self.reference = f"PREUVE-AG-{now:%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+

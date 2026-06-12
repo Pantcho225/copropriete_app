@@ -652,6 +652,28 @@ export default function AGConvocations() {
                             Parent : {convocation.parent_reference}
                           </div>
                         ) : null}
+
+                        {convocation.notification_traced ? (
+                          <div style={styles.metaLine}>
+                            Preuve notification :{" "}
+                            {convocation.last_notification_proof?.reference ||
+                              "enregistrée"}
+                            {convocation.last_notification_proof?.created_at
+                              ? ` · ${formatDate(convocation.last_notification_proof.created_at)}`
+                              : ""}
+                          </div>
+                        ) : null}
+
+                        {convocation.consultation_acknowledged ? (
+                          <div style={styles.metaLine}>
+                            Accusé consultation :{" "}
+                            {convocation.last_consultation_proof?.reference ||
+                              "enregistré"}
+                            {convocation.last_consultation_proof?.created_at
+                              ? ` · ${formatDate(convocation.last_consultation_proof.created_at)}`
+                              : ""}
+                          </div>
+                        ) : null}
                       </td>
 
                       <td style={styles.td}>{getConvocationAg(convocation)}</td>

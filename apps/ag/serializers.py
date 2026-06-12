@@ -4,7 +4,15 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import AGProcuration, AgConvocation, AssembleeGenerale, PresenceLot, Resolution, Vote
+from .models import (
+    AGProcuration,
+    AgConvocation,
+    AgConvocationPreuve,
+    AssembleeGenerale,
+    PresenceLot,
+    Resolution,
+    Vote,
+)
 from .services.results import compute_resolution_result
 
 
@@ -624,6 +632,12 @@ class AgConvocationSerializer(serializers.ModelSerializer):
     replaced_by = serializers.SerializerMethodField(read_only=True)
     replaced_by_reference = serializers.SerializerMethodField(read_only=True)
     official_version_label = serializers.SerializerMethodField(read_only=True)
+    preuve_notification_count = serializers.SerializerMethodField(read_only=True)
+    preuve_consultation_count = serializers.SerializerMethodField(read_only=True)
+    last_notification_proof = serializers.SerializerMethodField(read_only=True)
+    last_consultation_proof = serializers.SerializerMethodField(read_only=True)
+    notification_traced = serializers.SerializerMethodField(read_only=True)
+    consultation_acknowledged = serializers.SerializerMethodField(read_only=True)
 
     parent_convocation_reference = serializers.CharField(
         source="parent_convocation.reference",
@@ -646,6 +660,12 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             "replaced_by",
             "replaced_by_reference",
             "official_version_label",
+            "preuve_notification_count",
+            "preuve_consultation_count",
+            "last_notification_proof",
+            "last_consultation_proof",
+            "notification_traced",
+            "consultation_acknowledged",
             "motif_rectification",
             "ag",
             "ag_titre",
@@ -720,6 +740,12 @@ class AgConvocationSerializer(serializers.ModelSerializer):
             "replaced_by",
             "replaced_by_reference",
             "official_version_label",
+            "preuve_notification_count",
+            "preuve_consultation_count",
+            "last_notification_proof",
+            "last_consultation_proof",
+            "notification_traced",
+            "consultation_acknowledged",
 ]
 
     def get_copropriete_label(self, obj):
@@ -818,6 +844,81 @@ class AgConvocationSerializer(serializers.ModelSerializer):
 
     def get_official_version_label(self, obj):
         return getattr(obj, "official_version_label", "") or ""
+
+    def _preuves_qs(self, obj):
+        try:
+            return obj.preuves.all()
+        except Exception:
+            return AgConvocationPreuve.objects.none()
+
+    def _preuves_by_type(self, obj, type_evenement):
+        return self._preuves_qs(obj).filter(type_evenement=type_evenement)
+
+    def _preuve_summary(self, preuve):
+        if not preuve:
+            return None
+
+        created_at = getattr(preuve, "created_at", None)
+
+        return {
+            "id": getattr(preuve, "pk", None),
+            "reference": getattr(preuve, "reference", "") or "",
+            "type_evenement": getattr(preuve, "type_evenement", "") or "",
+            "type_evenement_label": (
+                preuve.get_type_evenement_display()
+                if hasattr(preuve, "get_type_evenement_display")
+                else getattr(preuve, "type_evenement", "") or ""
+            ),
+            "canal": getattr(preuve, "canal", "") or "",
+            "canal_label": (
+                preuve.get_canal_display()
+                if hasattr(preuve, "get_canal_display")
+                else getattr(preuve, "canal", "") or ""
+            ),
+            "statut": getattr(preuve, "statut", "") or "",
+            "statut_label": (
+                preuve.get_statut_display()
+                if hasattr(preuve, "get_statut_display")
+                else getattr(preuve, "statut", "") or ""
+            ),
+            "created_at": created_at.isoformat() if created_at else None,
+            "utilisateur_label": self._user_label(getattr(preuve, "utilisateur", None)),
+            "commentaire": getattr(preuve, "commentaire", "") or "",
+        }
+
+    def get_preuve_notification_count(self, obj):
+        return self._preuves_by_type(
+            obj,
+            AgConvocationPreuve.TYPE_NOTIFICATION,
+        ).count()
+
+    def get_preuve_consultation_count(self, obj):
+        return self._preuves_by_type(
+            obj,
+            AgConvocationPreuve.TYPE_CONSULTATION,
+        ).count()
+
+    def get_last_notification_proof(self, obj):
+        preuve = (
+            self._preuves_by_type(obj, AgConvocationPreuve.TYPE_NOTIFICATION)
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        return self._preuve_summary(preuve)
+
+    def get_last_consultation_proof(self, obj):
+        preuve = (
+            self._preuves_by_type(obj, AgConvocationPreuve.TYPE_CONSULTATION)
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        return self._preuve_summary(preuve)
+
+    def get_notification_traced(self, obj):
+        return self.get_preuve_notification_count(obj) > 0
+
+    def get_consultation_acknowledged(self, obj):
+        return self.get_preuve_consultation_count(obj) > 0
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)

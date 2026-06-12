@@ -25,6 +25,7 @@ from apps.lots.models import Lot
 from .models import (
     AGProcuration,
     AgConvocation,
+    AgConvocationPreuve,
     AssembleeGenerale,
     PresenceLot,
     Resolution,
@@ -1794,6 +1795,46 @@ class AGProcurationViewSet(viewsets.ModelViewSet):
         )
 
 
+def _request_ip_address(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip() or None
+
+    return request.META.get("REMOTE_ADDR") or None
+
+
+def _request_user_agent(request):
+    return request.META.get("HTTP_USER_AGENT", "") or ""
+
+
+def _convocation_destinataire_email(convocation):
+    owner = getattr(convocation, "coproprietaire", None)
+
+    if not owner:
+        return ""
+
+    return (
+        getattr(owner, "email", "")
+        or getattr(owner, "email_address", "")
+        or ""
+    )
+
+
+def _convocation_destinataire_telephone(convocation):
+    owner = getattr(convocation, "coproprietaire", None)
+
+    if not owner:
+        return ""
+
+    return (
+        getattr(owner, "telephone", "")
+        or getattr(owner, "phone", "")
+        or getattr(owner, "mobile", "")
+        or ""
+    )
+
+
 class AgConvocationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSyndicOrAdmin]
     serializer_class = AgConvocationSerializer
@@ -2201,6 +2242,16 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 {"detail": "Convocation annulée : notification interdite."}
             )
 
+        if not convocation.is_active_version:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seule la version officielle actuelle peut être notifiée. "
+                        "Cette convocation est une ancienne version."
+                    )
+                }
+            )
+
         canal = str(
             (request.data or {}).get("canal")
             or convocation.canal
@@ -2291,6 +2342,34 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
         convocation.metadata = metadata
         convocation.save(update_fields=["metadata"])
 
+        notification_proof = AgConvocationPreuve.objects.create(
+            convocation=convocation,
+            ag=convocation.ag,
+            copropriete=convocation.copropriete,
+            coproprietaire=convocation.coproprietaire,
+            lot=convocation.lot,
+            utilisateur=request.user if request.user.is_authenticated else None,
+            type_evenement=AgConvocationPreuve.TYPE_NOTIFICATION,
+            canal=canal,
+            statut=AgConvocationPreuve.STATUT_SUCCES,
+            destinataire_email=_convocation_destinataire_email(convocation),
+            destinataire_telephone=_convocation_destinataire_telephone(convocation),
+            objet=convocation.objet or f"Convocation - {convocation.ag.titre}",
+            commentaire=(
+                "Notification de la convocation officielle actuelle "
+                "depuis l’espace syndic/admin."
+            ),
+            ip_address=_request_ip_address(request),
+            user_agent=_request_user_agent(request),
+            metadata={
+                **notification_payload,
+                "convocation_reference": convocation.reference,
+                "ag_id": convocation.ag_id,
+                "lot_id": convocation.lot_id,
+                "coproprietaire_id": convocation.coproprietaire_id,
+            },
+        )
+
         convocation.refresh_from_db()
         serializer = self.get_serializer(convocation)
 
@@ -2310,6 +2389,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 "detail": detail,
                 "document_generated": document_generated,
                 "already_sent": already_sent,
+                "proof_reference": notification_proof.reference,
                 "convocation": serializer.data,
             },
             status=status.HTTP_200_OK,
@@ -2325,13 +2405,84 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 {"detail": "Convocation annulée : consultation interdite."}
             )
 
-        try:
-            convocation.mark_consulted()
-        except DjangoValidationError as exc:
-            _raise_drf_validation(exc)
+        if not convocation.is_active_version:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seule la version officielle actuelle peut être consultée. "
+                        "Cette convocation est une ancienne version."
+                    )
+                }
+            )
+
+        statut_initial = convocation.statut
+        already_consulted = convocation.statut == "CONSULTEE"
+
+        if not already_consulted:
+            try:
+                convocation.mark_consulted()
+            except DjangoValidationError as exc:
+                _raise_drf_validation(exc)
+
+            convocation.refresh_from_db()
+
+        consultation_proof = (
+            AgConvocationPreuve.objects.filter(
+                convocation=convocation,
+                type_evenement=AgConvocationPreuve.TYPE_CONSULTATION,
+                statut=AgConvocationPreuve.STATUT_SUCCES,
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+
+        if consultation_proof is None:
+            consultation_proof = AgConvocationPreuve.objects.create(
+                convocation=convocation,
+                ag=convocation.ag,
+                copropriete=convocation.copropriete,
+                coproprietaire=convocation.coproprietaire,
+                lot=convocation.lot,
+                utilisateur=request.user if request.user.is_authenticated else None,
+                type_evenement=AgConvocationPreuve.TYPE_CONSULTATION,
+                canal="PLATEFORME",
+                statut=AgConvocationPreuve.STATUT_SUCCES,
+                destinataire_email=_convocation_destinataire_email(convocation),
+                destinataire_telephone=_convocation_destinataire_telephone(convocation),
+                objet=convocation.objet or f"Convocation - {convocation.ag.titre}",
+                commentaire=(
+                    "Accusé de consultation de la convocation officielle actuelle."
+                ),
+                ip_address=_request_ip_address(request),
+                user_agent=_request_user_agent(request),
+                metadata={
+                    "convocation_reference": convocation.reference,
+                    "ag_id": convocation.ag_id,
+                    "lot_id": convocation.lot_id,
+                    "coproprietaire_id": convocation.coproprietaire_id,
+                    "version": convocation.version,
+                    "is_rectificative": bool(convocation.is_rectificative),
+                    "statut_initial": statut_initial,
+                    "statut_final": convocation.statut,
+                    "already_consulted": already_consulted,
+                },
+            )
 
         serializer = self.get_serializer(convocation)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                "detail": (
+                    "Convocation déjà consultée ; accusé existant conservé."
+                    if already_consulted
+                    else "Consultation de la convocation enregistrée avec succès."
+                ),
+                "already_consulted": already_consulted,
+                "proof_reference": consultation_proof.reference,
+                "convocation": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="annuler")
     def annuler(self, request, pk=None):
