@@ -1155,35 +1155,67 @@ function ConvocationsPanel({
     );
   });
 
+
+  const activeConvocations = orderedConvocations.filter(
+    (convocation) => convocation.is_active_version,
+  );
+
+  const fallbackOfficialConvocation =
+    activeConvocations.length === 0
+      ? orderedConvocations.find((convocation) => {
+          const statut = normalize(convocation.statut);
+
+          return (
+            !convocation.is_replaced_version && statut !== "ANNULEE"
+          );
+        }) ?? null
+      : null;
+
+  const displayedConvocations =
+    activeConvocations.length > 0
+      ? activeConvocations
+      : fallbackOfficialConvocation
+        ? [fallbackOfficialConvocation]
+        : [];
+
+  const displayedConvocationIds = new Set(
+    displayedConvocations.map((convocation) => convocation.id),
+  );
+
+  const historicalConvocations = orderedConvocations.filter(
+    (convocation) => !displayedConvocationIds.has(convocation.id),
+  );
+
   return (
     <div style={styles.convocationBox}>
       <div style={styles.convocationHeader}>
         <div>
           <p style={styles.convocationTitle}>Mes convocations pour cette AG</p>
           <p style={styles.convocationText}>
-            Retrouvez ici votre convocation initiale, les éventuelles
-            rectificatives, le motif de correction, le PDF et le statut de
-            consultation transmis au syndic.
+            Retrouvez ici la convocation officiellement applicable à cette
+            assemblée. Les anciennes versions sont conservées dans l’historique
+            afin d’éviter toute confusion.
           </p>
         </div>
 
         <Badge style={styles.convocationCountBadge}>
-          {formatNumber(convocations.length)}
+          {formatNumber(displayedConvocations.length)}
         </Badge>
       </div>
 
-      {orderedConvocations.length === 0 ? (
+      {convocations.length === 0 ? (
         <p style={styles.convocationEmpty}>
           Aucune convocation personnelle n’est encore rattachée à cette
           assemblée.
         </p>
       ) : (
-        <div style={styles.convocationList}>
-          {orderedConvocations.map((convocation) => {
+        <>
+          <div style={styles.convocationList}>
+            {displayedConvocations.map((convocation) => {
             const isConsulted = normalize(convocation.statut) === "CONSULTEE";
             const isCanceled = normalize(convocation.statut) === "ANNULEE";
             const consulting = consultingConvocationId === convocation.id;
-            const isRectificative = Boolean(convocation.is_rectificative);
+            const isRectificative = convocation.is_rectificative;
             const parentReference =
               convocation.parent_convocation_reference ||
               convocation.parent_reference ||
@@ -1191,8 +1223,8 @@ function ConvocationsPanel({
             const versionLabel = convocation.version
               ? `v${convocation.version}`
               : "version non précisée";
-            const isOfficialVersion = Boolean(convocation.is_active_version);
-            const isReplacedVersion = Boolean(convocation.is_replaced_version);
+            const isOfficialVersion = convocation.is_active_version;
+            const isReplacedVersion = convocation.is_replaced_version;
 
             return (
               <div
@@ -1249,7 +1281,7 @@ function ConvocationsPanel({
                       {parentReference ? (
                         <span style={styles.convocationParentReference}>
                           {" "}
-                          Convocation remplacée : {parentReference}
+                          Ancienne version remplacée : {parentReference}
                         </span>
                       ) : null}
                     </div>
@@ -1316,11 +1348,11 @@ function ConvocationsPanel({
 
                   <button
                     type="button"
-                    disabled={isConsulted || isCanceled || consulting}
+                    disabled={isConsulted || isCanceled || isReplacedVersion || consulting}
                     onClick={() => onConsult(convocation)}
                     style={{
                       ...styles.convocationConsultButton,
-                      ...(isConsulted || isCanceled || consulting
+                      ...(isConsulted || isCanceled || isReplacedVersion || consulting
                         ? styles.convocationConsultButtonDisabled
                         : {}),
                     }}
@@ -1335,7 +1367,42 @@ function ConvocationsPanel({
               </div>
             );
           })}
-        </div>
+          </div>
+
+          {historicalConvocations.length > 0 ? (
+            <details style={{ marginTop: 12 }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#475569",
+                }}
+              >
+                Historique des anciennes convocations (
+                {formatNumber(historicalConvocations.length)})
+              </summary>
+
+              <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                {historicalConvocations.map((convocation) => (
+                  <div
+                    key={convocation.id}
+                    style={styles.convocationRectificativeNotice}
+                  >
+                    <strong>
+                      {convocation.reference || "Convocation sans référence"}
+                    </strong>{" "}
+                    —{" "}
+                    {convocation.is_rectificative
+                      ? `Rectificative v${convocation.version ?? "?"}`
+                      : "Convocation initiale"}{" "}
+                    — {convocation.statut_label || convocation.statut}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </>
       )}
     </div>
   );
