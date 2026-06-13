@@ -29,13 +29,13 @@ const NAV_ITEMS: NavItem[] = [
     description: "Biens rattachés",
   },
   {
-    label: "Appels de charges",
+    label: "Mes appels de charges",
     path: "/coproprietaire/appels",
     icon: "📄",
-    description: "Échéances et frais",
+    description: "Montants appelés",
   },
   {
-    label: "Paiements",
+    label: "Mes paiements",
     path: "/coproprietaire/paiements",
     icon: "💳",
     description: "Règlements suivis",
@@ -44,31 +44,31 @@ const NAV_ITEMS: NavItem[] = [
     label: "Situation financière",
     path: "/coproprietaire/situation-financiere",
     icon: "📊",
-    description: "Vue globale",
+    description: "Synthèse globale",
   },
   {
-    label: "Relances",
+    label: "Mes relances",
     path: "/coproprietaire/relances",
     icon: "🔔",
-    description: "Suivi des rappels",
+    description: "Rappels éventuels",
   },
   {
-    label: "Documents",
+    label: "Mes documents",
     path: "/coproprietaire/documents",
     icon: "📁",
     description: "PV et pièces utiles",
   },
   {
-    label: "Assemblées générales",
+    label: "Mes assemblées générales",
     path: "/coproprietaire/ag",
     icon: "🗳️",
-    description: "Votes, mandats et PV",
+    description: "Présence, vote, PV",
   },
   {
-    label: "Règlement & textes",
+    label: "Textes utiles",
     path: "/coproprietaire/reglement-textes",
     icon: "📚",
-    description: "Règles utiles",
+    description: "Règlement et repères",
   },
 ];
 
@@ -76,21 +76,20 @@ const PAGE_META: Record<string, PageMeta> = {
   "/coproprietaire": {
     title: "Tableau de bord",
     subtitle:
-      "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
+      "Retrouvez vos lots, charges, paiements, documents, textes utiles et assemblées générales.",
   },
   "/coproprietaire/tableau-de-bord": {
     title: "Tableau de bord",
     subtitle:
-      "Retrouvez vos lots, charges, paiements, documents et informations de copropriété.",
+      "Retrouvez vos lots, charges, paiements, documents, textes utiles et assemblées générales.",
   },
   "/coproprietaire/mes-lots": {
     title: "Mes lots",
     subtitle: "Consultez les lots rattachés à votre compte copropriétaire.",
   },
   "/coproprietaire/appels": {
-    title: "Appels de charges",
-    subtitle:
-      "Suivez vos appels de fonds, échéances, montants dus et règlements.",
+    title: "Mes appels de charges",
+    subtitle: "Suivez vos appels de fonds, échéances, montants dus et règlements.",
   },
   "/coproprietaire/paiements": {
     title: "Mes paiements",
@@ -99,7 +98,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/coproprietaire/situation-financiere": {
     title: "Situation financière",
     subtitle:
-      "Consultez la synthèse financière globale de votre copropriété en lecture seule.",
+      "Visualisez votre situation individuelle et la synthèse financière de la copropriété.",
   },
   "/coproprietaire/relances": {
     title: "Mes relances",
@@ -107,18 +106,17 @@ const PAGE_META: Record<string, PageMeta> = {
   },
   "/coproprietaire/documents": {
     title: "Mes documents",
-    subtitle:
-      "Accédez à vos documents utiles, procès-verbaux et pièces partagées.",
+    subtitle: "Accédez à vos documents utiles, procès-verbaux et pièces partagées.",
   },
   "/coproprietaire/ag": {
-    title: "Assemblées générales",
+    title: "Mes assemblées générales",
     subtitle:
-      "Consultez vos assemblées, présences, votes, mandats de représentation et procès-verbaux.",
+      "Consultez vos convocations, confirmez votre présence, donnez procuration, votez et ouvrez les procès-verbaux.",
   },
   "/coproprietaire/reglement-textes": {
-    title: "Règlement & textes utiles",
+    title: "Textes utiles",
     subtitle:
-      "Consultez les règles de vie, documents de référence et textes utiles liés à votre copropriété.",
+      "Retrouvez les rappels de règlement intérieur, textes applicables et repères publiés par le syndic.",
   },
 };
 

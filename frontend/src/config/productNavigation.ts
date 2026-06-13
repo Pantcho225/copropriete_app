@@ -12,10 +12,28 @@ export type NavSection = {
 
 export const SIDEBAR_SECTIONS: NavSection[] = [
   {
+    title: "Parcours démo officiel",
+    items: [
+      { label: "Guide de démonstration", to: "/demo-officiel" },
+      { label: "1. Dashboard global", to: "/" },
+      {
+        label: "2. Référentiel copropriété",
+        to: "/platform-admin/referentiel-copropriete",
+      },
+      { label: "3. Espace copropriétaire", to: "/coproprietaire" },
+      { label: "4. AG clôturée #38", to: "/ag/assemblees/38" },
+      { label: "5. AG convocations #39", to: "/ag/assemblees/39" },
+      { label: "6. Convocations AG #39", to: "/ag/convocations?ag=39" },
+      { label: "7. Travaux officiel #10", to: "/travaux/dossiers/10" },
+      { label: "8. Comptabilité", to: "/compta" },
+      { label: "9. Relances", to: "/relances" },
+    ],
+  },
+  {
     title: "Gestion administrative",
     items: [
-      { label: "Vue d’ensemble", to: "/gestion-administrative" },
-      { label: "Copropriété", to: "/gestion-administrative/copropriete" },
+      { label: "Vue administrative", to: "/gestion-administrative" },
+      { label: "Fiche copropriété", to: "/gestion-administrative/copropriete" },
       {
         label: "Référentiel copropriété",
         to: "/platform-admin/referentiel-copropriete",
@@ -25,22 +43,15 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/coproprietaires",
       },
       {
-        label: "Lots & tantièmes",
+        label: "Lots, occupants & tantièmes",
         to: "/platform-admin/referentiel-copropriete/lots",
       },
       {
-        label: "Résidents des lots",
+        label: "Résidents / occupants",
         to: "/platform-admin/referentiel-copropriete/occupants",
       },
-      { label: "Assemblées générales", to: "/ag" },
-      { label: "Convocations AG", to: "/ag/convocations" },
-      { label: "Mandats de représentation", to: "/ag/procurations" },
       {
-        label: "Réunions & rencontres",
-        to: "/gestion-administrative/reunions-rencontres",
-      },
-      {
-        label: "Règlement & textes applicables",
+        label: "Textes réglementaires",
         to: "/gestion-administrative/reglement-textes",
       },
       {
@@ -50,19 +61,31 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: "Assemblées générales",
+    items: [
+      { label: "Vue d’ensemble AG", to: "/ag" },
+      { label: "Assemblées", to: "/ag/assemblees" },
+      { label: "Nouvelle assemblée", to: "/ag/assemblees/nouveau" },
+      { label: "Résolutions", to: "/ag/resolutions" },
+      { label: "Procurations", to: "/ag/procurations" },
+      { label: "Convocations", to: "/ag/convocations" },
+    ],
+  },
+  {
     title: "Gestion financière",
     items: [
       { label: "Cotisations mensuelles", to: "/billing/factures" },
       { label: "Paiements & facturation", to: "/billing" },
-      { label: "Entrées / Sorties", to: "/compta/mouvements" },
+      { label: "Entrées / sorties", to: "/compta/mouvements" },
       { label: "Comptabilité", to: "/compta" },
+      { label: "Imports bancaires", to: "/compta/imports" },
       { label: "Relances & impayés", to: "/relances" },
     ],
   },
   {
     title: "Travaux & exploitation",
     items: [
-      { label: "Travaux", to: "/travaux/dossiers" },
+      { label: "Dossiers de travaux", to: "/travaux/dossiers" },
       { label: "Prestataires", to: "/travaux/fournisseurs" },
       { label: "Ressources humaines", to: "/rh" },
     ],
@@ -71,7 +94,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: "Plateforme",
     items: [
       { label: "Administration plateforme", to: "/platform-admin" },
-      { label: "Copropriétés", to: "/platform-admin/coproprietes" },
+      { label: "Copropriétés clientes", to: "/platform-admin/coproprietes" },
       {
         label: "Utilisateurs & rôles",
         to: "/platform-admin/utilisateurs-roles",
@@ -82,6 +105,12 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
 
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Tableau de bord";
+  if (pathname === "/demo-officiel") return "Parcours démo officiel";
+
+if (pathname === "/demo-officiel") {
+  return "Suivez l’ordre officiel de présentation : dashboard, référentiel, portail copropriétaire, AG, convocations, travaux, comptabilité et relances.";
+}
+
 
   // Gestion administrative
   if (pathname === "/gestion-administrative") {

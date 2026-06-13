@@ -6,6 +6,7 @@ import AdminLayout from "./layout/AdminLayout";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import DemoOfficiel from "./pages/demo/DemoOfficiel";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import ResetPassword from "./pages/auth/ResetPassword";
 
@@ -145,6 +146,7 @@ export default function App() {
         >
           {/* Tableau de bord */}
           <Route index element={<Dashboard />} />
+          <Route path="demo-officiel" element={<DemoOfficiel />} />
 
           {/* Gestion administrative */}
           <Route path="gestion-administrative">
