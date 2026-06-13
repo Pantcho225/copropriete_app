@@ -721,14 +721,7 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
 
         security_profile, _ = UserSecurityProfile.objects.get_or_create(user=user)
         security_profile.must_change_password = True
-        security_profile.temporary_password_created_at = timezone.now()
-        security_profile.save(
-            update_fields=[
-                "must_change_password",
-                "temporary_password_created_at",
-                "updated_at",
-            ]
-        )
+        security_profile.save(update_fields=["must_change_password", "updated_at"])
 
         output = CoproprietaireSerializer(instance)
 
