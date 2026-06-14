@@ -487,6 +487,250 @@ def _vote_payload(vote: Vote) -> dict[str, Any]:
     }
 
 
+
+def _normalise_lookup_value(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _current_user_emails(user, coproprietaire) -> set[str]:
+    values: set[str] = set()
+
+    for value in [
+        getattr(user, "email", ""),
+        getattr(coproprietaire, "email", ""),
+    ]:
+        value = _normalise_lookup_value(value).lower()
+        if value:
+            values.add(value)
+
+    return values
+
+
+def _current_user_names(user, coproprietaire) -> set[str]:
+    values: set[str] = set()
+
+    candidates = [
+        getattr(user, "username", ""),
+        getattr(user, "get_full_name", lambda: "")(),
+        _coproprietaire_label(coproprietaire),
+        " ".join(
+            part
+            for part in [
+                getattr(coproprietaire, "prenom", ""),
+                getattr(coproprietaire, "nom", ""),
+            ]
+            if part
+        ),
+        " ".join(
+            part
+            for part in [
+                getattr(coproprietaire, "prenoms", ""),
+                getattr(coproprietaire, "nom", ""),
+            ]
+            if part
+        ),
+        " ".join(
+            part
+            for part in [
+                getattr(coproprietaire, "nom", ""),
+                getattr(coproprietaire, "prenom", ""),
+            ]
+            if part
+        ),
+        " ".join(
+            part
+            for part in [
+                getattr(coproprietaire, "nom", ""),
+                getattr(coproprietaire, "prenoms", ""),
+            ]
+            if part
+        ),
+    ]
+
+    for value in candidates:
+        value = _normalise_lookup_value(value)
+        if value:
+            values.add(value)
+
+    return values
+
+
+def _lot_ids_from_voting_rights(voting_rights: list[dict[str, Any]]) -> list[int]:
+    ids: list[int] = []
+
+    for right in voting_rights or []:
+        lot = right.get("lot")
+
+        if lot and getattr(lot, "id", None):
+            ids.append(lot.id)
+
+    return ids
+
+
+def _voting_rights_for_ag(coproprietaire, user, ag: AssembleeGenerale) -> list[dict[str, Any]]:
+    """
+    Retourne les droits de vote du copropriétaire connecté pour une AG :
+    - ses lots propres présents/représentés ;
+    - les lots qu'il représente via mandat validé.
+
+    Le vote reste toujours enregistré par couple résolution + lot.
+    """
+    if not coproprietaire or not ag:
+        return []
+
+    presences = {
+        presence.lot_id: presence
+        for presence in PresenceLot.objects.filter(
+            ag=ag,
+            present_ou_represente=True,
+        ).select_related("lot")
+        if presence.lot_id
+    }
+
+    rights_by_lot: dict[int, dict[str, Any]] = {}
+
+    owner_lots = _get_active_owner_lots(coproprietaire)
+
+    if _model_has_field(ProprietaireLot, "lot"):
+        owner_lots = owner_lots.filter(lot__copropriete_id=ag.copropriete_id)
+
+    owner_lots = owner_lots.select_related("lot").order_by(
+        "-principal",
+        "lot__reference",
+        "lot_id",
+        "-date_debut",
+        "-id",
+    )
+
+    for owner_lot in owner_lots:
+        lot = getattr(owner_lot, "lot", None)
+
+        if not lot or not getattr(lot, "id", None):
+            continue
+
+        presence = presences.get(lot.id)
+
+        if not presence:
+            continue
+
+        rights_by_lot[lot.id] = {
+            "kind": "PROPRIETAIRE",
+            "source": "PROPRIETAIRE",
+            "source_label": "Propriétaire",
+            "lot": lot,
+            "presence": presence,
+            "coproprietaire": coproprietaire,
+            "mandant": None,
+            "procuration": None,
+        }
+
+    emails = _current_user_emails(user, coproprietaire)
+    names = _current_user_names(user, coproprietaire)
+
+    lookup = Q()
+
+    for email in emails:
+        lookup |= Q(mandataire_email__iexact=email)
+
+    for name in names:
+        lookup |= Q(mandataire_nom__iexact=name)
+
+    if lookup:
+        validated_status = getattr(AGProcuration.Statut, "VALIDEE", "VALIDEE")
+
+        procurations = (
+            AGProcuration.objects.filter(
+                ag=ag,
+                statut=validated_status,
+            )
+            .filter(lookup)
+            .select_related("lot", "coproprietaire")
+            .order_by("lot__reference", "lot_id", "-validated_at", "-id")
+        )
+
+        for procuration in procurations:
+            lot = getattr(procuration, "lot", None)
+
+            if not lot or not getattr(lot, "id", None):
+                continue
+
+            presence = presences.get(lot.id)
+
+            if not presence:
+                continue
+
+            # Si la personne est propriétaire ET mandataire du même lot, on conserve
+            # la source propriétaire pour éviter un doublon de droit de vote.
+            if lot.id in rights_by_lot:
+                continue
+
+            mandant = getattr(procuration, "coproprietaire", None)
+            mandant_label = _coproprietaire_label(mandant) or "mandant"
+
+            rights_by_lot[lot.id] = {
+                "kind": "MANDAT",
+                "source": "MANDAT",
+                "source_label": f"Mandat {mandant_label}",
+                "lot": lot,
+                "presence": presence,
+                "coproprietaire": mandant or coproprietaire,
+                "mandant": mandant,
+                "procuration": procuration,
+            }
+
+    return list(rights_by_lot.values())
+
+
+def _voting_right_payload(
+    right: dict[str, Any],
+    resolution: Resolution | None = None,
+) -> dict[str, Any]:
+    lot = right.get("lot")
+    presence = right.get("presence")
+    mandant = right.get("mandant")
+    procuration = right.get("procuration")
+    existing_vote = None
+
+    if resolution is not None and lot is not None:
+        vote = (
+            Vote.objects.filter(
+                resolution=resolution,
+                lot=lot,
+            )
+            .select_related("lot", "resolution")
+            .first()
+        )
+
+        if vote:
+            existing_vote = _vote_payload(vote)
+
+    return {
+        "lot_id": getattr(lot, "id", None),
+        "lot": {
+            "id": getattr(lot, "id", None),
+            "label": _lot_label(lot),
+            "reference": getattr(lot, "reference", "") if lot else "",
+            "numero": getattr(lot, "numero", "") if lot else "",
+        },
+        "source": right.get("source") or right.get("kind") or "",
+        "source_label": right.get("source_label") or "",
+        "tantiemes": str(getattr(presence, "tantiemes", "0") or "0"),
+        "present_ou_represente": bool(getattr(presence, "present_ou_represente", False)),
+        "representant_nom": getattr(presence, "representant_nom", "") or "",
+        "mandant": (
+            {
+                "id": getattr(mandant, "id", None),
+                "label": _coproprietaire_label(mandant),
+            }
+            if mandant
+            else None
+        ),
+        "procuration_id": getattr(procuration, "id", None) if procuration else None,
+        "existing_vote": existing_vote,
+    }
+
+
+
 def _resolution_vote_summary(resolution: Resolution, lot_ids: list[int]) -> dict[str, Any]:
     qs = Vote.objects.filter(resolution=resolution)
 
@@ -507,7 +751,13 @@ def _resolution_vote_summary(resolution: Resolution, lot_ids: list[int]) -> dict
     }
 
 
-def _resolution_payload(resolution: Resolution, lot_ids: list[int]) -> dict[str, Any]:
+def _resolution_payload(
+    resolution: Resolution,
+    lot_ids: list[int],
+    voting_rights: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    voting_rights = voting_rights or []
+
     return {
         "id": resolution.id,
         "ordre": getattr(resolution, "ordre", None),
@@ -521,8 +771,11 @@ def _resolution_payload(resolution: Resolution, lot_ids: list[int]) -> dict[str,
             else None
         ),
         "vote_summary": _resolution_vote_summary(resolution, lot_ids),
+        "voting_rights": [
+            _voting_right_payload(right, resolution=resolution)
+            for right in voting_rights
+        ],
     }
-
 
 def _coproprietaire_label(coproprietaire) -> str:
     if not coproprietaire:
@@ -849,7 +1102,20 @@ class CoproprietaireAGSerializer(Serializer):
         lot_ids = self.context.get("lot_ids", [])
         qs = _resolution_qs_for_ag(obj).order_by("ordre", "id")
 
-        return [_resolution_payload(resolution, lot_ids) for resolution in qs]
+        request = self.context.get("request")
+        coproprietaire = self.context.get("coproprietaire")
+        voting_rights = self.context.get("voting_rights")
+
+        if voting_rights is None and request is not None and coproprietaire is not None:
+            voting_rights = _voting_rights_for_ag(coproprietaire, request.user, obj)
+
+        if voting_rights:
+            lot_ids = _lot_ids_from_voting_rights(voting_rights)
+
+        return [
+            _resolution_payload(resolution, lot_ids, voting_rights or [])
+            for resolution in qs
+        ]
 
 
 def _request_ip_address(request):
@@ -1179,6 +1445,8 @@ class CoproprietaireAssembleesAPIView(APIView):
             context={
                 "request": request,
                 "lot_ids": lot_ids,
+                "request": request,
+                "coproprietaire": coproprietaire,
             },
         )
 
@@ -1625,53 +1893,54 @@ class CoproprietaireVoteAPIView(APIView):
 
         lot_id = request.data.get("lot_id") or request.data.get("lot")
 
-        owner_lots = _get_active_owner_lots(coproprietaire)
+        voting_rights = _voting_rights_for_ag(coproprietaire, request.user, ag)
 
-        if _model_has_field(ProprietaireLot, "lot"):
-            owner_lots = owner_lots.filter(lot__copropriete_id=ag.copropriete_id)
-
-        if lot_id:
-            owner_lots = owner_lots.filter(lot_id=lot_id)
-
-        owner_lots = owner_lots.select_related("lot").order_by(
-            "-principal",
-            "lot__reference",
-            "lot_id",
-            "-date_debut",
-            "-id",
-        )
-
-        if not owner_lots.exists():
+        if not voting_rights:
             raise ValidationError(
                 {
                     "detail": (
-                        "Aucun lot actif rattaché à votre compte ne permet "
-                        "de voter sur cette résolution."
+                        "Aucun lot présent ou représenté ne vous donne un droit "
+                        "de vote sur cette résolution."
                     )
                 }
             )
 
-        if not lot_id and owner_lots.count() > 1:
+        if lot_id:
+            matching_rights = [
+                right
+                for right in voting_rights
+                if right.get("lot") and str(right["lot"].id) == str(lot_id)
+            ]
+        else:
+            matching_rights = voting_rights
+
+        if not matching_rights:
             raise ValidationError(
                 {
                     "lot_id": (
-                        "Vous possédez plusieurs lots. Veuillez préciser le lot "
-                        "concerné par ce vote."
+                        "Ce lot n’est pas disponible dans vos droits de vote "
+                        "pour cette assemblée."
                     )
                 }
             )
 
-        owner_lot = owner_lots.first()
-        lot = getattr(owner_lot, "lot", None)
+        if not lot_id and len(matching_rights) > 1:
+            raise ValidationError(
+                {
+                    "lot_id": (
+                        "Plusieurs lots ou mandats sont disponibles. Veuillez préciser "
+                        "le lot concerné par ce vote."
+                    )
+                }
+            )
+
+        voting_right = matching_rights[0]
+        lot = voting_right.get("lot")
+        presence = voting_right.get("presence")
+        vote_coproprietaire = voting_right.get("coproprietaire") or coproprietaire
 
         if not lot:
             raise ValidationError({"detail": "Lot introuvable pour ce vote."})
-
-        presence = PresenceLot.objects.filter(
-            ag=ag,
-            lot=lot,
-            present_ou_represente=True,
-        ).first()
 
         if not presence:
             raise ValidationError(
@@ -1720,7 +1989,7 @@ class CoproprietaireVoteAPIView(APIView):
                     resolution=locked_resolution,
                     lot=lot,
                     choix=choix,
-                    coproprietaire=coproprietaire,
+                    coproprietaire=vote_coproprietaire,
                     created_by=request.user,
                     source="ESPACE_COPROPRIETAIRE",
                     ip_address=client_ip,
@@ -1742,7 +2011,7 @@ class CoproprietaireVoteAPIView(APIView):
                 }
             )
 
-        lot_ids = _get_lot_ids(_get_active_owner_lots(coproprietaire))
+        lot_ids = _lot_ids_from_voting_rights(_voting_rights_for_ag(coproprietaire, request.user, ag))
 
         return Response(
             {

@@ -40,6 +40,27 @@ type VoteSummaryLike = {
   votes?: CoproprietaireVoteItem[];
 };
 
+type CoproprietaireVotingRight = {
+  lot_id?: number | string | null;
+  lot?: {
+    id?: number | string | null;
+    label?: string;
+    reference?: string;
+    numero?: string;
+  } | null;
+  source?: string;
+  source_label?: string;
+  tantiemes?: string | number | null;
+  present_ou_represente?: boolean;
+  representant_nom?: string;
+  mandant?: {
+    id?: number | string | null;
+    label?: string;
+  } | null;
+  procuration_id?: number | string | null;
+  existing_vote?: CoproprietaireVoteItem | null;
+};
+
 type CoproprietaireResolution = {
   id: number | string;
   ordre?: number | string | null;
@@ -47,6 +68,7 @@ type CoproprietaireResolution = {
   texte?: string;
   cloturee?: boolean;
   vote_summary?: VoteSummaryLike;
+  voting_rights?: CoproprietaireVotingRight[];
 };
 
 type PresenceItemLike = {
@@ -136,6 +158,7 @@ export default function CoproprietaireAssemblees() {
   } | null>(null);
   const [voteBusy, setVoteBusy] = useState<{
     resolutionId: number | string;
+    lotId?: number | string | null;
     choix: CoproprietaireVoteChoix;
   } | null>(null);
   const [localVotesByResolution, setLocalVotesByResolution] = useState<
@@ -533,6 +556,8 @@ export default function CoproprietaireAssemblees() {
       ag: CoproprietaireAGWithResolutions,
       resolution: CoproprietaireResolution,
       choix: CoproprietaireVoteChoix,
+      lotId?: number | string,
+      lotLabel?: string,
     ) => {
       if (!canVoteResolution(ag, resolution)) {
         showFlash(
@@ -542,24 +567,9 @@ export default function CoproprietaireAssemblees() {
         return;
       }
 
-      const existingVote = getExistingVoteForResolution(
-        resolution,
-        localVotesByResolution,
-      );
+      const finalLotId = lotId ?? getFirstPresenceLotId(ag);
 
-      if (existingVote) {
-        showFlash(
-          "info",
-          `Votre vote est déjà enregistré et verrouillé : ${
-            existingVote.choix_label || existingVote.choix
-          }.`,
-        );
-        return;
-      }
-
-      const lotId = getFirstPresenceLotId(ag);
-
-      if (!lotId) {
+      if (!finalLotId) {
         showFlash(
           "error",
           "Aucun lot présent ou représenté n’a été trouvé pour ce vote. Confirmez d’abord votre présence.",
@@ -567,23 +577,41 @@ export default function CoproprietaireAssemblees() {
         return;
       }
 
+      const existingVote = getExistingVoteForResolutionAndLot(
+        resolution,
+        finalLotId,
+        localVotesByResolution,
+      );
+
+      if (existingVote) {
+        showFlash(
+          "info",
+          `Votre vote est déjà enregistré et verrouillé pour ce lot : ${
+            existingVote.choix_label || existingVote.choix
+          }.`,
+        );
+        return;
+      }
+
+      const targetLabel = lotLabel ? ` pour ${lotLabel}` : "";
+
       const confirmed = window.confirm(
-        `Confirmer votre vote "${voteChoiceLabels[choix]}" pour cette résolution ? Une fois enregistré, le vote sera verrouillé.`,
+        `Confirmer votre vote "${voteChoiceLabels[choix]}"${targetLabel} ? Une fois enregistré, le vote sera verrouillé.`,
       );
 
       if (!confirmed) return;
 
       try {
-        setVoteBusy({ resolutionId: resolution.id, choix });
+        setVoteBusy({ resolutionId: resolution.id, lotId: finalLotId, choix });
 
         const response = await voterResolutionAgCoproprietaire(resolution.id, {
-          lot_id: lotId,
+          lot_id: finalLotId,
           choix,
         });
 
         setLocalVotesByResolution((current) => ({
           ...current,
-          [String(resolution.id)]: response.vote,
+          [getLocalVoteKey(resolution.id, finalLotId)]: response.vote,
         }));
 
         showFlash(
@@ -815,6 +843,7 @@ function AGCard({
   presenceBusy: CoproprietairePresenceMode | null;
   voteBusy: {
     resolutionId: number | string;
+    lotId?: number | string | null;
     choix: CoproprietaireVoteChoix;
   } | null;
   localVotesByResolution: Record<string, CoproprietaireVoteItem>;
@@ -832,6 +861,8 @@ function AGCard({
     ag: CoproprietaireAGWithResolutions,
     resolution: CoproprietaireResolution,
     choix: CoproprietaireVoteChoix,
+    lotId?: number | string,
+    lotLabel?: string,
   ) => void;
 }) {
   const pvUrl = ag.pv_signed_url || ag.pv_url;
@@ -969,16 +1000,10 @@ function AGCard({
             ) : (
               <div style={styles.resolutionsList}>
                 {resolutions.map((resolution) => {
-                  const existingVote = getExistingVoteForResolution(
+                  const votingRights = getVotingRightsForResolution(
                     resolution,
-                    localVotesByResolution,
+                    ag,
                   );
-                  const voteAvailable =
-                    canVoteResolution(ag, resolution) && !existingVote;
-                  const resolutionBusy =
-                    voteBusy?.resolutionId === resolution.id
-                      ? voteBusy.choix
-                      : null;
 
                   return (
                     <div key={String(resolution.id)} style={styles.resolutionCard}>
@@ -1004,48 +1029,154 @@ function AGCard({
                         </Badge>
                       </div>
 
-                      {existingVote ? (
-                        <div style={styles.voteResult}>
-                          <span style={styles.voteResultIcon}>✅</span>
-                          <span>
-                            Vote enregistré et verrouillé :{" "}
-                            <strong>
-                              {existingVote.choix_label || existingVote.choix}
-                            </strong>
-                          </span>
+                      {votingRights.length === 0 ? (
+                        <p style={styles.voteUnavailableText}>
+                          Aucun droit de vote présent ou représenté n’est
+                          disponible pour cette résolution.
+                        </p>
+                      ) : (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          {votingRights.map((right) => {
+                            const rightLotId = getVotingRightLotId(right);
+                            const rightLabel = getVotingRightLabel(right);
+                            const existingVote =
+                              getExistingVoteForResolutionAndLot(
+                                resolution,
+                                rightLotId,
+                                localVotesByResolution,
+                              );
+                            const voteAvailable =
+                              canVoteResolution(ag, resolution) &&
+                              Boolean(rightLotId) &&
+                              !existingVote;
+                            const rightBusy =
+                              voteBusy?.resolutionId === resolution.id &&
+                              String(voteBusy?.lotId ?? "") ===
+                                String(rightLotId ?? "")
+                                ? voteBusy.choix
+                                : null;
+
+                            return (
+                              <div
+                                key={`${String(resolution.id)}-${String(
+                                  rightLotId,
+                                )}`}
+                                style={{
+                                  border: "1px solid rgba(148, 163, 184, 0.28)",
+                                  borderRadius: 16,
+                                  padding: 14,
+                                  background: "rgba(248, 250, 252, 0.72)",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 12,
+                                    alignItems: "flex-start",
+                                    flexWrap: "wrap",
+                                    marginBottom: 10,
+                                  }}
+                                >
+                                  <div>
+                                    <strong>{rightLabel}</strong>
+                                    <p style={{ ...styles.voteBoxText, marginTop: 4 }}>
+                                      {getVotingRightSourceLabel(right)} —{" "}
+                                      {getVotingRightTantiemes(right)} tantièmes
+                                    </p>
+                                  </div>
+
+                                  <Badge
+                                    style={
+                                      String(right.source || "").toUpperCase() ===
+                                      "MANDAT"
+                                        ? styles.voteOpenBadge
+                                        : styles.resolutionOpenBadge
+                                    }
+                                  >
+                                    {String(right.source || "").toUpperCase() ===
+                                    "MANDAT"
+                                      ? "Mandat"
+                                      : "Propriétaire"}
+                                  </Badge>
+                                </div>
+
+                                {existingVote ? (
+                                  <div style={styles.voteResult}>
+                                    <span style={styles.voteResultIcon}>✅</span>
+                                    <span>
+                                      Vote enregistré et verrouillé :{" "}
+                                      <strong>
+                                        {existingVote.choix_label ||
+                                          existingVote.choix}
+                                      </strong>
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div style={styles.voteActionsGrid}>
+                                    <VoteButton
+                                      label="Pour"
+                                      choix="POUR"
+                                      tone="green"
+                                      busyChoice={rightBusy}
+                                      disabled={
+                                        !voteAvailable || rightBusy !== null
+                                      }
+                                      onClick={() =>
+                                        onVoteResolution(
+                                          ag,
+                                          resolution,
+                                          "POUR",
+                                          rightLotId ?? undefined,
+                                          rightLabel,
+                                        )
+                                      }
+                                    />
+                                    <VoteButton
+                                      label="Contre"
+                                      choix="CONTRE"
+                                      tone="rose"
+                                      busyChoice={rightBusy}
+                                      disabled={
+                                        !voteAvailable || rightBusy !== null
+                                      }
+                                      onClick={() =>
+                                        onVoteResolution(
+                                          ag,
+                                          resolution,
+                                          "CONTRE",
+                                          rightLotId ?? undefined,
+                                          rightLabel,
+                                        )
+                                      }
+                                    />
+                                    <VoteButton
+                                      label="Abstention"
+                                      choix="ABSTENTION"
+                                      tone="slate"
+                                      busyChoice={rightBusy}
+                                      disabled={
+                                        !voteAvailable || rightBusy !== null
+                                      }
+                                      onClick={() =>
+                                        onVoteResolution(
+                                          ag,
+                                          resolution,
+                                          "ABSTENTION",
+                                          rightLotId ?? undefined,
+                                          rightLabel,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ) : null}
+                      )}
 
-                      <div style={styles.voteActionsGrid}>
-                        <VoteButton
-                          label="Pour"
-                          choix="POUR"
-                          tone="green"
-                          busyChoice={resolutionBusy}
-                          disabled={!voteAvailable || resolutionBusy !== null}
-                          onClick={() => onVoteResolution(ag, resolution, "POUR")}
-                        />
-                        <VoteButton
-                          label="Contre"
-                          choix="CONTRE"
-                          tone="rose"
-                          busyChoice={resolutionBusy}
-                          disabled={!voteAvailable || resolutionBusy !== null}
-                          onClick={() => onVoteResolution(ag, resolution, "CONTRE")}
-                        />
-                        <VoteButton
-                          label="Abstention"
-                          choix="ABSTENTION"
-                          tone="slate"
-                          busyChoice={resolutionBusy}
-                          disabled={!voteAvailable || resolutionBusy !== null}
-                          onClick={() =>
-                            onVoteResolution(ag, resolution, "ABSTENTION")
-                          }
-                        />
-                      </div>
-
-                      {!voteAvailable && !existingVote ? (
+                      {!canVoteResolution(ag, resolution) ? (
                         <p style={styles.voteUnavailableText}>
                           Vote indisponible : le vote s’ouvre uniquement lorsque
                           l’AG est officiellement ouverte, avec une résolution
@@ -2004,6 +2135,113 @@ function hasPresentOrRepresentedLot(
   });
 }
 
+
+function getVotingRightsForResolution(
+  resolution: CoproprietaireResolution,
+  ag: CoproprietaireAGWithResolutions,
+): CoproprietaireVotingRight[] {
+  if (Array.isArray(resolution.voting_rights) && resolution.voting_rights.length) {
+    return resolution.voting_rights;
+  }
+
+  const presenceItems = ag.presence_coproprietaire?.items ?? [];
+
+  return presenceItems
+    .filter((item) => item.present_ou_represente && item.lot?.id)
+    .map((item) => ({
+      lot_id: item.lot?.id ?? null,
+      lot: item.lot ?? null,
+      source: "PROPRIETAIRE",
+      source_label: "Propriétaire",
+      tantiemes: null,
+      existing_vote: null,
+    }));
+}
+
+function getVotingRightLotId(
+  right: CoproprietaireVotingRight,
+): number | string | undefined {
+  return (
+    right.lot?.id ??
+    right.lot_id ??
+    undefined
+  ) as number | string | undefined;
+}
+
+function getVotingRightLabel(right: CoproprietaireVotingRight): string {
+  return (
+    right.lot?.label ||
+    right.lot?.reference ||
+    right.lot?.numero ||
+    (right.lot_id ? `Lot #${right.lot_id}` : "Lot")
+  );
+}
+
+function getVotingRightSourceLabel(right: CoproprietaireVotingRight): string {
+  if (right.source_label) return right.source_label;
+
+  if (String(right.source || "").toUpperCase() === "MANDAT") {
+    return right.mandant?.label ? `Mandat ${right.mandant.label}` : "Mandat";
+  }
+
+  return "Propriétaire";
+}
+
+function getVotingRightTantiemes(right: CoproprietaireVotingRight): string {
+  if (right.tantiemes !== null && right.tantiemes !== undefined) {
+    return String(right.tantiemes);
+  }
+
+  return "—";
+}
+
+function getLocalVoteKey(
+  resolutionId: number | string,
+  lotId: number | string,
+): string {
+  return `${String(resolutionId)}:${String(lotId)}`;
+}
+
+function getVoteLotId(
+  vote: CoproprietaireVoteItem | null | undefined,
+): number | string | undefined {
+  const voteRecord = vote as unknown as {
+    lot?: { id?: number | string | null } | null;
+    lot_id?: number | string | null;
+  };
+
+  return (
+    voteRecord?.lot?.id ??
+    voteRecord?.lot_id ??
+    undefined
+  ) as number | string | undefined;
+}
+
+function getExistingVoteForResolutionAndLot(
+  resolution: CoproprietaireResolution,
+  lotId: number | string | null | undefined,
+  localVotesByResolution: Record<string, CoproprietaireVoteItem | undefined>,
+): CoproprietaireVoteItem | null {
+  if (!lotId) return null;
+
+  const localVote = localVotesByResolution[getLocalVoteKey(resolution.id, lotId)];
+
+  if (localVote) return localVote;
+
+  const directRightVote = (resolution.voting_rights ?? [])
+    .map((right) => right.existing_vote)
+    .find((vote) => vote && String(getVoteLotId(vote)) === String(lotId));
+
+  if (directRightVote) return directRightVote;
+
+  const summaryVote = (resolution.vote_summary?.votes ?? []).find(
+    (vote) => String(getVoteLotId(vote)) === String(lotId),
+  );
+
+  return summaryVote ?? null;
+}
+
+
 function getFirstPresenceLotId(
   ag: CoproprietaireAGWithResolutions,
 ): number | string | null {
@@ -2016,24 +2254,6 @@ function getFirstPresenceLotId(
   return item?.lot?.id ?? null;
 }
 
-function getExistingVoteForResolution(
-  resolution: CoproprietaireResolution,
-  localVotesByResolution: Record<string, CoproprietaireVoteItem>,
-): CoproprietaireVoteItem | null {
-  const localVote = localVotesByResolution[String(resolution.id)];
-
-  if (localVote) {
-    return localVote;
-  }
-
-  const votes = resolution.vote_summary?.votes ?? [];
-
-  if (votes.length > 0) {
-    return votes[0] ?? null;
-  }
-
-  return null;
-}
 
 function formatResolutionTitle(resolution: CoproprietaireResolution): string {
   const ordre = resolution.ordre ? `R${resolution.ordre} · ` : "";

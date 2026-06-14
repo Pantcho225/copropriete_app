@@ -564,3 +564,108 @@ Validation :
 
 Point restant :
 - Tester ultérieurement la transition BROUILLON -> CONVOQUEE sur une nouvelle AG complète.
+
+---
+
+## Blocage produit — Vote copropriétaire multi-lots et mandat incomplet
+
+Test effectué :
+- Connexion côté copropriétaire avec Jean Pilote.
+- AG #40 ouverte.
+- Vote disponible côté copropriétaire.
+- Action réalisée : R1 -> POUR uniquement.
+
+Résultat observé côté admin /ag/assemblees/40/votes :
+- Votes enregistrés : 1.
+- Vote favorable : 1.
+- Poids exprimé : 250.
+- Vote créé :
+  - Résolution : R1 — Approbation du budget prévisionnel.
+  - Lot : A101.
+  - Choix : POUR.
+  - Tantièmes : 250.
+
+Résultat attendu :
+- Jean Pilote possède deux lots :
+  - A101 : 250 tantièmes.
+  - PARK-01 : 100 tantièmes.
+- Jean Pilote représente aussi Awa Demo par mandat validé :
+  - A102 : 200 tantièmes.
+- Pour R1, les droits votants attendus sont donc de 550 tantièmes.
+
+Écart :
+- Le vote copropriétaire n’a enregistré que A101 / 250 tantièmes.
+- Le lot PARK-01 n’a pas été voté.
+- Le lot A102 représenté par mandat n’a pas été voté.
+
+Classement :
+- BLOQUANT RECETTE E2E / PILOTE.
+
+Correction attendue :
+- Le vote copropriétaire doit afficher clairement les lots votants disponibles.
+- Il doit distinguer :
+  - lots détenus en propre ;
+  - lots représentés par mandat validé.
+- Le copropriétaire/mandataire doit pouvoir voter résolution par résolution pour chaque lot concerné.
+- Alternative acceptable : proposer une action explicite “appliquer ce vote à tous mes lots et mandats”, mais jamais de vote groupé silencieux.
+
+---
+
+## Décision produit — Mandant présent en AG hybride
+
+Question métier :
+- Dans une AG hybride, un copropriétaire qui a donné mandat peut-il finalement participer en présentiel ou en ligne ?
+
+Décision :
+- Oui, le mandant peut participer physiquement ou en ligne.
+- Le mandat ne doit pas empêcher définitivement le mandant de reprendre ses droits.
+- En revanche, le système doit empêcher tout double vote.
+
+Règle recommandée :
+- Si le mandant confirme sa présence avant que le mandataire ait voté pour son lot, le mandat est révoqué ou marqué “remplacé par présence directe”.
+- Le mandant redevient votant pour son propre lot.
+- Si le mandataire a déjà voté au moins une résolution pour ce lot, le vote reste verrouillé.
+- Toute correction après vote doit passer par une action syndic tracée.
+
+Impact produit :
+- Ajouter côté copropriétaire un bouton “Je participe finalement à l’AG” lorsqu’un mandat validé existe.
+- Ajouter côté admin un suivi des mandats :
+  - en attente ;
+  - validé ;
+  - utilisé ;
+  - révoqué ;
+  - remplacé par présence directe.
+- Adapter le calcul des droits de vote pour privilégier la présence directe du mandant sur le mandat non encore utilisé.
+
+Classement :
+- Amélioration importante pour AG hybride.
+- À intégrer dans le sprint procurations/votes avant pilote client complet.
+---
+
+## Correction — Vote copropriétaire par lot et mandat
+
+Objectif :
+- Corriger l’espace copropriétaire pour afficher les droits de vote lot par lot.
+- Permettre au copropriétaire connecté de voter pour ses lots propres et pour les lots représentés par mandat validé.
+- Éviter le vote silencieux sur le premier lot uniquement.
+
+Backend :
+- Ajout d’un calcul de droits de vote par AG :
+  - lots propres présents ou représentés ;
+  - lots représentés par mandat validé.
+- L’endpoint de vote copropriétaire accepte désormais un lot disponible dans ces droits.
+- Le vote reste verrouillé par couple résolution + lot.
+
+Frontend :
+- Le bloc “Mes votes sur les résolutions” affiche les droits de vote sous chaque résolution.
+- Chaque droit affiche :
+  - le lot ;
+  - le type de droit : propriétaire ou mandat ;
+  - les tantièmes ;
+  - les boutons Pour / Contre / Abstention.
+- Le frontend envoie explicitement lot_id au backend.
+
+Validation attendue sur AG #40 :
+- R1 / A101 : déjà voté POUR, 250 tantièmes.
+- R1 / PARK-01 : doit être votable, 100 tantièmes.
+- R1 / A102 : doit être votable par mandat Awa Demo, 200 tantièmes.
