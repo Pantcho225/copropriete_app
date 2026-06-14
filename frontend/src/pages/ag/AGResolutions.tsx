@@ -32,6 +32,7 @@ type ResolutionItem = {
   cloturee?: boolean;
   travaux_dossier_titre?: string | null;
   statut: ResolutionStatus;
+  resultat_provisoire?: ResolutionResult | null;
 };
 
 type ResolutionResult = {
@@ -286,6 +287,7 @@ function normalizeResolutionItem(raw: unknown, index: number): ResolutionItem {
     cloturee,
     travaux_dossier_titre: pickNullableString(row.travaux_dossier_titre),
     statut: normalizeResolutionStatusFromRaw(row, cloturee),
+    resultat_provisoire: normalizeResolutionResult(row.resultat_provisoire),
   };
 }
 
@@ -1315,7 +1317,7 @@ export default function AGResolutions() {
 
               <tbody>
                 {filtered.map((item) => {
-                  const result = resultByResolution[item.id];
+                  const result = resultByResolution[item.id] ?? item.resultat_provisoire ?? null;
                   const statusMeta = getResolutionStatusMeta(item);
 
                   return (
@@ -1343,7 +1345,7 @@ export default function AGResolutions() {
                         {result ? (
                           <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                             <Badge
-                              text={`Décision : ${result.decision}`}
+                              text={`${item.cloturee ? "Décision" : "Résultat provisoire"} : ${result.decision}`}
                               kind={result.decision === "ADOPTEE" ? "success" : "danger"}
                             />
                             <Badge text={`Exprimés : ${result.tantiemes?.exprimes ?? 0}`} kind="info" />
@@ -1396,7 +1398,7 @@ export default function AGResolutions() {
                                     busyResultId === item.id || busyCloseId === item.id ? "not-allowed" : "pointer",
                                 }}
                               >
-                                {busyResultId === item.id ? "Calcul..." : "Calculer"}
+                                {busyResultId === item.id ? "Calcul..." : "Recalculer"}
                               </button>
 
                               <button

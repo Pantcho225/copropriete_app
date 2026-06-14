@@ -354,6 +354,20 @@ def test_ag_pv_archive_ok(mock_gen, admin_user, copro_exo_cat_lots):
 
     ag = _create_open_ag(copro, exo)
 
+    # Le PV ne peut désormais être généré que si l’AG possède au moins
+    # une résolution déjà clôturée.
+    from django.apps import apps
+
+    Resolution = apps.get_model("ag", "Resolution")
+    Resolution.objects.create(
+        ag=ag,
+        ordre=1,
+        titre="Résolution test PV",
+        texte="Résolution clôturée pour autoriser la génération du PV.",
+        type_majorite="SIMPLE",
+        cloturee=True,
+    )
+
     r = client.post(
         f"/api/ag/ags/{ag.id}/pv/archive/",
         data={},

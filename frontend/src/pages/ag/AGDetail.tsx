@@ -1250,7 +1250,12 @@ function AGDetail() {
 
   const isLockedPV = pvStatus === "VERROUILLE" || detail?.pv_locked === true;
 
-  const archiveDisabled = isArchivedPV || isReadOnly;
+  const hasResolutionsForPV = resolutions.length > 0;
+  const allResolutionsClosedForPV =
+    hasResolutionsForPV &&
+    resolutions.every((item) => normalizeResolutionStatus(item.statut) !== "EN_ATTENTE");
+
+  const archiveDisabled = isArchivedPV || isReadOnly || !allResolutionsClosedForPV;
   const signDisabled = !isArchivedPV || isSignedPV || isReadOnly;
   const lockDisabled = !isSignedPV || isLockedPV || isReadOnly;
 
@@ -2393,7 +2398,7 @@ function AGDetail() {
 
           <SectionCard
             title="Cycle procès-verbal"
-            subtitle="Archivage, signature, verrouillage et clôture de l’assemblée."
+            subtitle="Génération, signature, verrouillage du PV et clôture de l’assemblée."
             right={
               pvPrimaryUrl ? (
                 <a
@@ -2420,6 +2425,12 @@ function AGDetail() {
 
             <p className="agdetail-paragraph">{getPVNarrative(pvStatus)}</p>
 
+            {!isArchivedPV && !isReadOnly && !allResolutionsClosedForPV ? (
+              <AlertBox kind="info" title="Résolutions à finaliser">
+                Le PV pourra être généré lorsque toutes les résolutions auront été calculées puis clôturées.
+              </AlertBox>
+            ) : null}
+
             <div className="agdetail-details-list">
               <DetailRow label="PV généré le" value={formatDateTime(detail.pv_generated_at)} />
               <DetailRow label="PV signé le" value={formatDateTime(detail.pv_signed_at)} />
@@ -2442,7 +2453,7 @@ function AGDetail() {
                   onClick={handleArchivePV}
                   disabled={archiveDisabled || busyAction === "archive-pv"}
                 >
-                  {busyAction === "archive-pv" ? "Archivage..." : "Archiver le PV"}
+                  {busyAction === "archive-pv" ? "Génération..." : "Générer le PV"}
                 </SmallButton>
 
                 <SmallButton

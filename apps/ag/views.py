@@ -1411,7 +1411,25 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "AG clôturée : archivage interdit."})
 
         if ag.pv_locked:
-            raise ValidationError({"detail": "PV verrouillé : archivage interdit."})
+            raise ValidationError({"detail": "PV verrouillé : génération du PV interdite."})
+
+        total_resolutions = Resolution.objects.filter(ag=ag).count()
+        pending_resolutions = Resolution.objects.filter(ag=ag, cloturee=False).count()
+
+        if total_resolutions <= 0:
+            raise ValidationError(
+                {"detail": "Impossible de générer le PV : aucune résolution n’est rattachée à cette AG."}
+            )
+
+        if pending_resolutions > 0:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible de générer le PV : "
+                        f"{pending_resolutions} résolution(s) doivent d’abord être clôturée(s)."
+                    )
+                }
+            )
 
         with transaction.atomic():
             ag = AssembleeGenerale.objects.select_for_update().get(
@@ -1520,7 +1538,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "PV déjà signé. Re-signature refusée."})
 
         if not ag.pv_pdf:
-            raise ValidationError({"detail": "PV non archivé. Faites d'abord pv/archive."})
+            raise ValidationError({"detail": "PV non généré. Générez d’abord le PV."})
 
         pfx_file = request.FILES.get("pfx")
         pfx_password = request.data.get("password") or ""
@@ -1704,7 +1722,7 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
 
         if not ag.pv_pdf:
             raise ValidationError(
-                {"detail": "Impossible de verrouiller: PV non archivé (pv_pdf manquant)."}
+                {"detail": "Impossible de verrouiller : PV non généré."}
             )
 
         if not getattr(ag, "pv_signed_pdf", None):

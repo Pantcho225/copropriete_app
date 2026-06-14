@@ -1018,6 +1018,8 @@ class ResolutionSerializer(serializers.ModelSerializer):
     decision = serializers.SerializerMethodField(read_only=True)
     statut_resolution = serializers.SerializerMethodField(read_only=True)
     resultat_detail = serializers.SerializerMethodField(read_only=True)
+    resultat_provisoire = serializers.SerializerMethodField(read_only=True)
+    resultat_provisoire = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Resolution
@@ -1038,12 +1040,14 @@ class ResolutionSerializer(serializers.ModelSerializer):
             "decision",
             "statut_resolution",
             "resultat_detail",
+            "resultat_provisoire",
         ]
         read_only_fields = [
             "id",
             "decision",
             "statut_resolution",
             "resultat_detail",
+            "resultat_provisoire",
         ]
 
     def get_fields(self):
@@ -1069,6 +1073,50 @@ class ResolutionSerializer(serializers.ModelSerializer):
             return compute_resolution_result(obj)
         except Exception:
             return None
+
+    def get_resultat_provisoire(self, obj):
+        result = self._build_resolution_result(obj)
+
+        if not isinstance(result, dict):
+            return {
+                "decision": "EN_ATTENTE",
+                "type_majorite": getattr(obj, "type_majorite", None),
+                "tantiemes": {
+                    "pour": 0.0,
+                    "contre": 0.0,
+                    "abstention": 0.0,
+                    "exprimes": 0.0,
+                    "ratio_pour_exprimes": 0.0,
+                },
+            }
+
+        tantiemes = result.get("tantiemes") if isinstance(result.get("tantiemes"), dict) else {}
+
+        pour = float(tantiemes.get("pour", 0.0) or 0.0)
+        contre = float(tantiemes.get("contre", 0.0) or 0.0)
+        abstention = float(tantiemes.get("abstention", 0.0) or 0.0)
+        exprimes = float(tantiemes.get("exprimes", 0.0) or 0.0)
+        ratio = float(tantiemes.get("ratio_pour_exprimes", 0.0) or 0.0)
+
+        decision = str(result.get("decision", "EN_ATTENTE")).strip().upper() or "EN_ATTENTE"
+
+        if decision not in {"ADOPTEE", "REJETEE"}:
+            decision = "EN_ATTENTE"
+
+        if not getattr(obj, "cloturee", False) and pour <= 0 and contre <= 0 and abstention <= 0:
+            decision = "EN_ATTENTE"
+
+        return {
+            "decision": decision,
+            "type_majorite": result.get("type_majorite") or getattr(obj, "type_majorite", None),
+            "tantiemes": {
+                "pour": pour,
+                "contre": contre,
+                "abstention": abstention,
+                "exprimes": exprimes,
+                "ratio_pour_exprimes": ratio,
+            },
+        }
 
     def get_decision(self, obj):
         if not getattr(obj, "cloturee", False):
