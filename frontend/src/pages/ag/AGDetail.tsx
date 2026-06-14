@@ -1567,6 +1567,100 @@ function AGDetail() {
     );
   };
 
+
+  const handleConvoquerAG = useCallback(async () => {
+    if (!detail) return;
+
+    if (busyAction) return;
+
+    const statut = String(detail.statut || "").toUpperCase();
+
+    if (statut !== "BROUILLON") {
+      showFlash(
+        "info",
+        "Seules les assemblées en brouillon peuvent être convoquées officiellement.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Convoquer officiellement cette assemblée générale ? Elle deviendra visible dans l’espace copropriétaire.",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("convoquer-ag");
+
+      const response = await api.post(`/api/ag/ags/${agId}/convoquer/`, {});
+
+      showFlash(
+        "success",
+        response.data?.detail || "L’assemblée a été officiellement convoquée.",
+      );
+
+      await fetchDetail();
+    } catch (error) {
+      console.error(error);
+      showFlash(
+        "error",
+        getBackendErrorMessage(
+          error,
+          "Impossible de convoquer officiellement l’assemblée.",
+        ),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [agId, busyAction, detail, fetchDetail, showFlash]);
+
+  const handleOuvrirAG = useCallback(async () => {
+    if (!detail) return;
+
+    if (busyAction) return;
+
+    const statut = String(detail.statut || "").toUpperCase();
+
+    if (statut !== "CONVOQUEE") {
+      showFlash(
+        "info",
+        "Seules les assemblées convoquées peuvent être ouvertes.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Ouvrir officiellement cette assemblée générale ? Les votes pourront alors être enregistrés.",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("ouvrir-ag");
+
+      const response = await api.post(`/api/ag/ags/${agId}/ouvrir/`, {});
+
+      showFlash(
+        "success",
+        response.data?.detail || "L’assemblée a été officiellement ouverte.",
+      );
+
+      await fetchDetail();
+    } catch (error) {
+      console.error(error);
+      showFlash(
+        "error",
+        getBackendErrorMessage(
+          error,
+          "Impossible d’ouvrir officiellement l’assemblée.",
+        ),
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }, [agId, busyAction, detail, fetchDetail, showFlash]);
+
+
   const handleGenerateMandatAG = useCallback(async () => {
     if (!detail) return;
 
@@ -2228,6 +2322,72 @@ function AGDetail() {
               <DetailRow label="Heure" value={formatTime(detail.heure_ag, detail.date_ag)} />
               <DetailRow label="Lieu" value={detail.lieu || "Non renseigné"} />
               <DetailRow label="Seuil de quorum" value={formatPercent(computedQuorum.threshold)} />
+            </div>
+          </SectionCard>
+
+
+          <SectionCard
+            title="Pilotage de l’assemblée"
+            subtitle="Transitions métier visibles pour le syndic : convocation officielle puis ouverture de séance."
+            right={<Badge text={String(detail.statut || "—")} kind={badgeToneForAG((detail.statut || "BROUILLON") as AGStatus)} />}
+          >
+            <p className="agdetail-paragraph">
+              Utilisez ces actions pour piloter l’assemblée sans intervention technique.
+              Une AG en brouillon doit être officiellement convoquée avant d’être visible
+              côté copropriétaire. Une AG convoquée doit ensuite être ouverte pour autoriser les votes.
+            </p>
+
+            <div className="agdetail-action-stack">
+              <SmallButton
+                onClick={handleConvoquerAG}
+                disabled={
+                  String(detail.statut || "").toUpperCase() !== "BROUILLON" ||
+                  busyAction === "convoquer-ag" ||
+                  isReadOnly
+                }
+              >
+                {busyAction === "convoquer-ag"
+                  ? "Convocation officielle..."
+                  : "Convoquer officiellement l’AG"}
+              </SmallButton>
+
+              <SmallButton
+                onClick={handleOuvrirAG}
+                disabled={
+                  String(detail.statut || "").toUpperCase() !== "CONVOQUEE" ||
+                  busyAction === "ouvrir-ag" ||
+                  isReadOnly
+                }
+              >
+                {busyAction === "ouvrir-ag"
+                  ? "Ouverture..."
+                  : "Ouvrir l’AG"}
+              </SmallButton>
+            </div>
+
+            <div className="agdetail-details-list">
+              <DetailRow
+                label="Transition attendue"
+                value={
+                  String(detail.statut || "").toUpperCase() === "BROUILLON"
+                    ? "BROUILLON → CONVOQUEE"
+                    : String(detail.statut || "").toUpperCase() === "CONVOQUEE"
+                      ? "CONVOQUEE → OUVERTE"
+                      : String(detail.statut || "").toUpperCase() === "OUVERTE"
+                        ? "AG ouverte : les votes peuvent être traités"
+                        : "Aucune transition immédiate"
+                }
+              />
+              <DetailRow
+                label="Quorum"
+                value={
+                  computedQuorum.reached === null
+                    ? "À confirmer"
+                    : computedQuorum.reached
+                      ? "Atteint"
+                      : "Non atteint"
+                }
+              />
             </div>
           </SectionCard>
 

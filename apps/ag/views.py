@@ -805,6 +805,228 @@ class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+
+    @action(detail=True, methods=["post"], url_path="convoquer")
+    def convoquer(self, request, pk=None):
+        """
+        Convoque officiellement une AG.
+
+        Transition métier :
+        - BROUILLON -> CONVOQUEE
+
+        Garde-fous :
+        - l'AG doit appartenir à la copropriété active ;
+        - l'AG doit être en brouillon ;
+        - l'ordre du jour doit contenir au moins une résolution ;
+        - au moins une convocation non annulée doit exister ;
+        - au moins une convocation doit être envoyée ou consultée.
+        """
+        ag = self.get_object()
+        _assert_same_copro(request, ag)
+
+        if ag.statut == "CONVOQUEE":
+            return Response(
+                {
+                    "ag_id": ag.id,
+                    "statut": ag.statut,
+                    "detail": "AG déjà officiellement convoquée.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if ag.statut == "OUVERTE":
+            return Response(
+                {
+                    "ag_id": ag.id,
+                    "statut": ag.statut,
+                    "detail": "AG déjà ouverte.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if ag.statut == "CLOTUREE":
+            raise ValidationError({"detail": "AG clôturée : convocation officielle interdite."})
+
+        if ag.statut == "ANNULEE":
+            raise ValidationError({"detail": "AG annulée : convocation officielle interdite."})
+
+        if ag.statut != "BROUILLON":
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seule une AG en brouillon peut être convoquée officiellement. "
+                        f"Statut actuel : {ag.statut}."
+                    )
+                }
+            )
+
+        resolutions_count = Resolution.objects.filter(ag=ag).count()
+        if resolutions_count <= 0:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible de convoquer l’AG : ajoutez au moins une résolution "
+                        "à l’ordre du jour."
+                    )
+                }
+            )
+
+        convocations_qs = AgConvocation.objects.filter(ag=ag).exclude(statut="ANNULEE")
+        convocations_count = convocations_qs.count()
+
+        if convocations_count <= 0:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible de convoquer l’AG : générez d’abord les convocations."
+                    )
+                }
+            )
+
+        sent_count = convocations_qs.filter(
+            statut__in=["ENVOYEE", "ENVOYÉE", "CONSULTEE", "CONSULTÉE"]
+        ).count()
+
+        if sent_count <= 0:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible de convoquer officiellement l’AG : marquez au moins "
+                        "une convocation comme envoyée ou notifiée."
+                    )
+                }
+            )
+
+        ag.statut = "CONVOQUEE"
+        ag.save(update_fields=["statut", "updated_at"])
+
+        _log_ag_event(
+            request,
+            ag,
+            event="AG_CONVOQUEE",
+            meta={
+                "statut": ag.statut,
+                "resolutions_count": resolutions_count,
+                "convocations_count": convocations_count,
+                "sent_count": sent_count,
+            },
+        )
+
+        output = self.get_serializer(ag)
+
+        return Response(
+            {
+                "ag_id": ag.id,
+                "statut": ag.statut,
+                "detail": "AG officiellement convoquée.",
+                "resolutions_count": resolutions_count,
+                "convocations_count": convocations_count,
+                "sent_count": sent_count,
+                "assemblee": output.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="ouvrir")
+    def ouvrir(self, request, pk=None):
+        """
+        Ouvre officiellement une AG pour permettre les votes.
+
+        Transition métier :
+        - CONVOQUEE -> OUVERTE
+
+        Garde-fous :
+        - l'AG doit être convoquée ;
+        - le quorum doit être atteint.
+        """
+        ag = self.get_object()
+        _assert_same_copro(request, ag)
+
+        if ag.statut == "OUVERTE":
+            return Response(
+                {
+                    "ag_id": ag.id,
+                    "statut": ag.statut,
+                    "detail": "AG déjà ouverte.",
+                    "quorum_atteint": bool(ag.quorum_atteint()),
+                    "total_tantiemes_copro": float(ag.total_tantiemes_copro()),
+                    "tantiemes_presents": float(ag.total_tantiemes_presents()),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if ag.statut == "BROUILLON":
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible d’ouvrir l’AG : elle doit d’abord être officiellement convoquée."
+                    )
+                }
+            )
+
+        if ag.statut == "CLOTUREE":
+            raise ValidationError({"detail": "AG clôturée : ouverture interdite."})
+
+        if ag.statut == "ANNULEE":
+            raise ValidationError({"detail": "AG annulée : ouverture interdite."})
+
+        if ag.statut != "CONVOQUEE":
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Seule une AG convoquée peut être ouverte. "
+                        f"Statut actuel : {ag.statut}."
+                    )
+                }
+            )
+
+        total = ag.total_tantiemes_copro()
+        presents = ag.total_tantiemes_presents()
+        quorum_ok = ag.quorum_atteint()
+
+        if not quorum_ok:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Impossible d’ouvrir l’AG : quorum non atteint."
+                    ),
+                    "total_tantiemes_copro": float(total),
+                    "tantiemes_presents": float(presents),
+                    "quorum_atteint": False,
+                }
+            )
+
+        ag.statut = "OUVERTE"
+        ag.save(update_fields=["statut", "updated_at"])
+
+        _log_ag_event(
+            request,
+            ag,
+            event="AG_OUVERTE",
+            meta={
+                "statut": ag.statut,
+                "total_tantiemes_copro": str(total),
+                "tantiemes_presents": str(presents),
+                "quorum_atteint": bool(quorum_ok),
+            },
+        )
+
+        output = self.get_serializer(ag)
+
+        return Response(
+            {
+                "ag_id": ag.id,
+                "statut": ag.statut,
+                "detail": "AG officiellement ouverte.",
+                "quorum_atteint": bool(quorum_ok),
+                "total_tantiemes_copro": float(total),
+                "tantiemes_presents": float(presents),
+                "assemblee": output.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
     @action(detail=True, methods=["post"], url_path="generer-convocations")
     def generer_convocations(self, request, pk=None):
         ag = self.get_object()
