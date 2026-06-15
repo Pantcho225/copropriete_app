@@ -687,24 +687,133 @@ def _assert_can_replace_convocation_pdf(convocation: AgConvocation):
         )
 
 
+def _generated_document_pdf_field_name(document) -> str:
+    """
+    Retourne le nom du champ fichier PDF du modèle GeneratedDocument.
+
+    Le projet a évolué sur plusieurs sprints ; cette fonction reste volontairement
+    tolérante pour fonctionner avec file, fichier_pdf, pdf_file, etc.
+    """
+    for field_name in (
+        "file",
+        "fichier",
+        "fichier_pdf",
+        "pdf",
+        "pdf_file",
+        "document",
+        "document_file",
+    ):
+        if hasattr(document, field_name):
+            return field_name
+
+    for field in getattr(document, "_meta", []).fields:
+        field_class = field.__class__.__name__.lower()
+
+        if "file" in field_class:
+            return field.name
+
+    return ""
+
+
+def _replace_generated_document_pdf(
+    *,
+    document: GeneratedDocument,
+    pdf_bytes: bytes,
+    title: str,
+    metadata: dict,
+):
+    """
+    Remplace le fichier PDF d'un GeneratedDocument existant.
+
+    Important :
+    - on ne crée pas un nouveau document ;
+    - on conserve la même référence documentaire ;
+    - on met à jour le fichier et les métadonnées ;
+    - cela évite l'erreur d'unicité sur GeneratedDocument.reference.
+    """
+    field_name = _generated_document_pdf_field_name(document)
+
+    if not field_name:
+        raise ValidationError(
+            {
+                "detail": (
+                    "Impossible de remplacer le PDF : aucun champ fichier trouvé "
+                    "sur GeneratedDocument."
+                )
+            }
+        )
+
+    current_file = getattr(document, field_name, None)
+    current_name = ""
+
+    if current_file:
+        current_name = getattr(current_file, "name", "") or ""
+
+    filename = os.path.basename(current_name) or f"{document.reference}.pdf"
+
+    getattr(document, field_name).save(
+        filename,
+        ContentFile(pdf_bytes),
+        save=False,
+    )
+
+    update_fields = [field_name]
+
+    if hasattr(document, "title"):
+        document.title = title
+        update_fields.append("title")
+
+    if hasattr(document, "metadata"):
+        previous_metadata = getattr(document, "metadata", None) or {}
+
+        if not isinstance(previous_metadata, dict):
+            previous_metadata = {}
+
+        previous_metadata.update(metadata)
+        previous_metadata["pdf_refreshed_at"] = timezone.now().isoformat()
+        previous_metadata["pdf_refreshed_reason"] = "convocation_trace_sync"
+
+        document.metadata = previous_metadata
+        update_fields.append("metadata")
+
+    if hasattr(document, "updated_at"):
+        update_fields.append("updated_at")
+
+    _safe_save(document, update_fields=update_fields)
+
+    return document
+
+
+
+
 def _generate_convocation_pdf_document(
     *,
     convocation: AgConvocation,
     request,
     force: bool = False,
 ):
+    """
+    Génère ou régénère le PDF d'une convocation AG.
+
+    Règles métier :
+    - Si aucun PDF n'existe encore, le PDF est généré.
+    - Si un PDF existe déjà et que l'ordre du jour n'a pas changé :
+        - force=False : on conserve le PDF existant ;
+        - force=True : on remplace le fichier PDF du document existant pour
+          synchroniser les données de traçabilité, notamment sent_at et consulted_at.
+    - Si l'ordre du jour a changé :
+        - une convocation non tracée peut être régénérée ;
+        - une convocation déjà envoyée ou consultée ne peut pas être remplacée :
+          il faut créer une rectificative.
+    """
     current_hash, ordre_du_jour_payload = _ordre_du_jour_hash(convocation.ag)
     existing_hash = _convocation_document_ordre_du_jour_hash(convocation)
 
     if getattr(convocation, "document_id", None):
-        if existing_hash == current_hash:
-            if not force or _convocation_is_traced(convocation):
-                return convocation.document, False
-
         if existing_hash != current_hash:
             _assert_can_replace_convocation_pdf(convocation)
 
-        if not force and existing_hash == current_hash:
+        if existing_hash == current_hash and not force:
             return convocation.document, False
 
     pdf_bytes = generate_convocation_ag_pdf_bytes(
@@ -715,10 +824,47 @@ def _generate_convocation_pdf_document(
     if not pdf_bytes:
         raise ValidationError({"detail": "Impossible de générer le PDF (bytes vides)."})
 
+    sent_at = getattr(convocation, "sent_at", None)
+    consulted_at = getattr(convocation, "consulted_at", None)
+
+    metadata = {
+        "source": "ag_convocation",
+        "convocation_id": convocation.id,
+        "ag_id": convocation.ag_id,
+        "copropriete_id": convocation.copropriete_id,
+        "lot_id": convocation.lot_id,
+        "coproprietaire_id": convocation.coproprietaire_id,
+        "canal": convocation.canal,
+        "statut": convocation.statut,
+        "sent_at": sent_at.isoformat() if sent_at else None,
+        "consulted_at": consulted_at.isoformat() if consulted_at else None,
+        "ordre_du_jour_hash": current_hash,
+        "ordre_du_jour_count": len(ordre_du_jour_payload),
+        "resolution_ids": [item["id"] for item in ordre_du_jour_payload],
+        "ordre_du_jour_payload": ordre_du_jour_payload,
+    }
+
+    title = f"Convocation AG — {convocation.reference}"
+
+    existing_document = getattr(convocation, "document", None)
+
+    if getattr(convocation, "document_id", None) and existing_document:
+        document = _replace_generated_document_pdf(
+            document=existing_document,
+            pdf_bytes=pdf_bytes,
+            title=title,
+            metadata=metadata,
+        )
+
+        convocation.document = document
+        convocation.save(update_fields=["document", "updated_at"])
+
+        return document, True
+
     document = save_generated_pdf_document(
         copropriete=convocation.copropriete,
         document_type=GeneratedDocument.Type.CONVOCATION_AG,
-        title=f"Convocation AG — {convocation.reference}",
+        title=title,
         reference=convocation.reference,
         pdf_bytes=pdf_bytes,
         created_by=request.user,
@@ -726,26 +872,33 @@ def _generate_convocation_pdf_document(
         related_lot=convocation.lot,
         related_ag=convocation.ag,
         is_visible_to_owner=True,
-        metadata={
-            "source": "ag_convocation",
-            "convocation_id": convocation.id,
-            "ag_id": convocation.ag_id,
-            "copropriete_id": convocation.copropriete_id,
-            "lot_id": convocation.lot_id,
-            "coproprietaire_id": convocation.coproprietaire_id,
-            "canal": convocation.canal,
-            "statut": convocation.statut,
-            "ordre_du_jour_hash": current_hash,
-            "ordre_du_jour_count": len(ordre_du_jour_payload),
-            "resolution_ids": [item["id"] for item in ordre_du_jour_payload],
-            "ordre_du_jour_payload": ordre_du_jour_payload,
-        },
+        metadata=metadata,
     )
 
     convocation.document = document
     convocation.save(update_fields=["document", "updated_at"])
 
     return document, True
+
+
+def _refresh_convocation_pdf_after_trace(*, convocation: AgConvocation, request) -> bool:
+    """
+    Régénère le PDF d'une convocation après mise à jour de la traçabilité.
+
+    Cette fonction est volontairement limitée aux cas où l'ordre du jour n'a pas
+    changé. Si l'ordre du jour a changé après envoi ou consultation, la fonction
+    de génération lèvera une ValidationError et imposera une rectificative.
+    """
+    _assert_ag_has_ordre_du_jour(convocation.ag)
+
+    _, refreshed = _generate_convocation_pdf_document(
+        convocation=convocation,
+        request=request,
+        force=True,
+    )
+
+    convocation.refresh_from_db()
+    return bool(refreshed)
 
 
 class AssembleeGeneraleViewSet(viewsets.ModelViewSet):
@@ -2468,8 +2621,22 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as exc:
             _raise_drf_validation(exc)
 
+        convocation.refresh_from_db()
+
+        pdf_refreshed = _refresh_convocation_pdf_after_trace(
+            convocation=convocation,
+            request=request,
+        )
+
         serializer = self.get_serializer(convocation)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "detail": "Convocation marquée comme envoyée.",
+                "pdf_refreshed": pdf_refreshed,
+                "convocation": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
     @action(detail=True, methods=["post"], url_path="notifier")
@@ -2511,6 +2678,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             )
 
         document_generated = False
+        document_refreshed = False
 
         if not getattr(convocation, "document_id", None):
             _assert_ag_has_ordre_du_jour(convocation.ag)
@@ -2533,6 +2701,11 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 _raise_drf_validation(exc)
 
             convocation.refresh_from_db()
+
+        document_refreshed = _refresh_convocation_pdf_after_trace(
+            convocation=convocation,
+            request=request,
+        )
 
         now = timezone.now()
 
@@ -2628,6 +2801,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
             {
                 "detail": detail,
                 "document_generated": document_generated,
+                "document_refreshed": document_refreshed,
                 "already_sent": already_sent,
                 "proof_reference": notification_proof.reference,
                 "convocation": serializer.data,
@@ -2665,6 +2839,11 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                 _raise_drf_validation(exc)
 
             convocation.refresh_from_db()
+
+        pdf_refreshed = _refresh_convocation_pdf_after_trace(
+            convocation=convocation,
+            request=request,
+        )
 
         consultation_proof = (
             AgConvocationPreuve.objects.filter(
@@ -2705,6 +2884,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                     "statut_initial": statut_initial,
                     "statut_final": convocation.statut,
                     "already_consulted": already_consulted,
+                    "pdf_refreshed": pdf_refreshed,
                 },
             )
 
@@ -2718,6 +2898,7 @@ class AgConvocationViewSet(viewsets.ModelViewSet):
                     else "Consultation de la convocation enregistrée avec succès."
                 ),
                 "already_consulted": already_consulted,
+                "pdf_refreshed": pdf_refreshed,
                 "proof_reference": consultation_proof.reference,
                 "convocation": serializer.data,
             },
