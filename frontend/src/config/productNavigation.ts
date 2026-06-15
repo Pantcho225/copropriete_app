@@ -25,7 +25,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/coproprietaires",
       },
       {
-        label: "Lots & tantièmes",
+        label: "Lots",
         to: "/platform-admin/referentiel-copropriete/lots",
       },
       {
@@ -240,7 +240,7 @@ export function getPageTitle(pathname: string): string {
     return "Copropriétaires";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/lots") {
-    return "Lots & tantièmes";
+    return "Lots";
   }
   if (pathname === "/platform-admin/referentiel-copropriete/occupants") {
     return "Résidents des lots";
