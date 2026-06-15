@@ -57,9 +57,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: "Gestion financière",
     items: [
       { label: "Facturation & paiements", to: "/billing" },
-      { label: "Entrées / sorties", to: "/compta/mouvements" },
       { label: "Comptabilité", to: "/compta" },
-      { label: "Imports bancaires", to: "/compta/imports" },
       { label: "Relances & impayés", to: "/relances" },
     ],
   },
