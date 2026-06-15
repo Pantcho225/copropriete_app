@@ -12,24 +12,6 @@ export type NavSection = {
 
 export const SIDEBAR_SECTIONS: NavSection[] = [
   {
-    title: "Parcours démo officiel",
-    items: [
-      { label: "Guide de démonstration", to: "/demo-officiel" },
-      { label: "1. Dashboard global", to: "/" },
-      {
-        label: "2. Référentiel copropriété",
-        to: "/platform-admin/referentiel-copropriete",
-      },
-      { label: "3. Espace copropriétaire", to: "/coproprietaire" },
-      { label: "4. AG clôturée #38", to: "/ag/assemblees/38" },
-      { label: "5. AG convocations #39", to: "/ag/assemblees/39" },
-      { label: "6. Convocations AG #39", to: "/ag/convocations?ag=39" },
-      { label: "7. Travaux officiel #10", to: "/travaux/dossiers/10" },
-      { label: "8. Comptabilité", to: "/compta" },
-      { label: "9. Relances", to: "/relances" },
-    ],
-  },
-  {
     title: "Gestion administrative",
     items: [
       { label: "Vue administrative", to: "/gestion-administrative" },
@@ -105,13 +87,6 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
 
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Tableau de bord";
-  if (pathname === "/demo-officiel") return "Parcours démo officiel";
-
-if (pathname === "/demo-officiel") {
-  return "Suivez l’ordre officiel de présentation : dashboard, référentiel, portail copropriétaire, AG, convocations, travaux, comptabilité et relances.";
-}
-
-
   // Gestion administrative
   if (pathname === "/gestion-administrative") {
     return "Vue d’ensemble Gestion administrative";
