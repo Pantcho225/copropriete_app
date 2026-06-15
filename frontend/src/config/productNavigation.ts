@@ -25,7 +25,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/coproprietaires",
       },
       {
-        label: "Lots, occupants & tantièmes",
+        label: "Lots & tantièmes",
         to: "/platform-admin/referentiel-copropriete/lots",
       },
       {
@@ -57,7 +57,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: "Gestion financière",
     items: [
       { label: "Cotisations mensuelles", to: "/billing/factures" },
-      { label: "Paiements & facturation", to: "/billing" },
+      { label: "Facturation & paiements", to: "/billing" },
       { label: "Entrées / sorties", to: "/compta/mouvements" },
       { label: "Comptabilité", to: "/compta" },
       { label: "Imports bancaires", to: "/compta/imports" },
