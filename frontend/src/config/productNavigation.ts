@@ -33,6 +33,10 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/occupants",
       },
       {
+        label: "Réunions & rencontres",
+        to: "/gestion-administrative/reunions-rencontres",
+      },
+      {
         label: "Textes réglementaires",
         to: "/gestion-administrative/reglement-textes",
       },
