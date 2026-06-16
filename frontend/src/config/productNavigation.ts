@@ -62,7 +62,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Travaux & exploitation",
+    title: "Travaux & services",
     items: [
       { label: "Dossiers de travaux", to: "/travaux/dossiers" },
       { label: "Prestataires", to: "/travaux/fournisseurs" },
