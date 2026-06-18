@@ -69,16 +69,24 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const hasAdminAccess = useMemo(() => {
     if (!state.me) return false;
 
-    const roles = state.me.roles ?? [];
+    const adminRoles = new Set([
+      "ADMIN",
+      "SYNDIC",
+      "GESTIONNAIRE",
+      "COMPTABLE",
+      "CONSEIL",
+    ]);
 
-    const isOnlyCoproprietaire =
-      roles.length > 0 && roles.every((role) => role === "COPROPRIETAIRE");
+    const hasActiveAdminMembership = state.me.memberships.some(
+      (membership) =>
+        membership.is_active === true && adminRoles.has(membership.role),
+    );
 
     return (
       state.me.is_admin === true ||
       state.me.is_superuser === true ||
       state.me.user.is_staff === true ||
-      !isOnlyCoproprietaire
+      hasActiveAdminMembership
     );
   }, [state.me]);
 

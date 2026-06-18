@@ -17,10 +17,20 @@ export type AuthMembershipCopropriete = {
   nom: string;
 };
 
+export type AuthMembershipPermissions = {
+  can_manage_copropriete: boolean;
+  can_manage_referentiel: boolean;
+  can_manage_users: boolean;
+  can_write_compta: boolean;
+  can_read_reports: boolean;
+};
+
 export type AuthMembership = {
   id: number;
   role: string;
+  role_label?: string;
   is_active: boolean;
+  permissions?: AuthMembershipPermissions;
   copropriete: AuthMembershipCopropriete;
 };
 

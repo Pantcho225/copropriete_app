@@ -158,7 +158,15 @@ class AuthMeAPIView(APIView):
                 {
                     "id": membership.id,
                     "role": role,
+                    "role_label": membership.get_role_display(),
                     "is_active": membership.is_active,
+                    "permissions": {
+                        "can_manage_copropriete": membership.can_manage_copropriete,
+                        "can_manage_referentiel": membership.can_manage_referentiel,
+                        "can_manage_users": membership.can_manage_users,
+                        "can_write_compta": membership.can_write_compta,
+                        "can_read_reports": membership.can_read_reports,
+                    },
                     "copropriete": {
                         "id": copropriete.id,
                         "nom": getattr(copropriete, "nom", str(copropriete)),

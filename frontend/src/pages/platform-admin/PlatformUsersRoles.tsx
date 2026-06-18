@@ -6,11 +6,20 @@ import { Link } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 
+type MembrePermissions = {
+  can_manage_copropriete?: boolean;
+  can_manage_referentiel?: boolean;
+  can_manage_users?: boolean;
+  can_write_compta?: boolean;
+  can_read_reports?: boolean;
+};
+
 type Membre = {
   id: number;
   role: string;
   role_label?: string | null;
   is_active: boolean;
+  permissions?: MembrePermissions | null;
   user_display?: string | null;
   user_detail?: {
     id?: number;
@@ -528,6 +537,50 @@ function getRoleLabel(membre: Membre): string {
   return membre.role_label || membre.role || "Rôle non défini";
 }
 
+function getPermissionSummary(membre: Membre): string[] {
+  const permissions = membre.permissions;
+
+  if (!permissions) {
+    return [];
+  }
+
+  const summary: string[] = [];
+
+  if (permissions.can_manage_users) summary.push("Utilisateurs");
+  if (permissions.can_manage_referentiel) summary.push("Référentiel");
+  if (permissions.can_write_compta) summary.push("Comptabilité");
+  if (permissions.can_read_reports) summary.push("Rapports");
+
+  return summary;
+}
+
+const ROLE_MATRIX = [
+  {
+    role: "Administrateur",
+    description: "Gestion complète de la copropriété, du référentiel et des utilisateurs.",
+  },
+  {
+    role: "Syndic",
+    description: "Pilotage opérationnel complet : référentiel, AG, finances, documents et utilisateurs.",
+  },
+  {
+    role: "Gestionnaire",
+    description: "Gestion courante et référentiel, sans administration complète des accès.",
+  },
+  {
+    role: "Comptable",
+    description: "Écriture comptable, paiements, rapprochements et lecture des rapports.",
+  },
+  {
+    role: "Conseil syndical",
+    description: "Lecture et suivi des rapports, sans modification opérationnelle.",
+  },
+  {
+    role: "Copropriétaire",
+    description: "Accès limité à l’espace personnel copropriétaire.",
+  },
+];
+
 function getCoproprieteName(membre: Membre): string {
   return membre.copropriete_detail?.nom || "Copropriété non renseignée";
 }
@@ -734,6 +787,7 @@ export default function PlatformUsersRoles() {
                       <th style={styles.th}>Email</th>
                       <th style={styles.th}>Copropriété</th>
                       <th style={styles.th}>Rôle</th>
+                      <th style={styles.th}>Droits</th>
                       <th style={styles.th}>Statut</th>
                       <th style={styles.thRight}>Action</th>
                     </tr>
@@ -742,13 +796,13 @@ export default function PlatformUsersRoles() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td style={styles.empty} colSpan={6}>
+                        <td style={styles.empty} colSpan={7}>
                           Chargement des utilisateurs et rôles...
                         </td>
                       </tr>
                     ) : filteredRows.length === 0 ? (
                       <tr>
-                        <td style={styles.empty} colSpan={6}>
+                        <td style={styles.empty} colSpan={7}>
                           Aucun rattachement utilisateur trouvé.
                         </td>
                       </tr>
@@ -779,6 +833,20 @@ export default function PlatformUsersRoles() {
                               <span style={badgeStyle("info")}>
                                 {getRoleLabel(membre)}
                               </span>
+                            </td>
+
+                            <td style={styles.td}>
+                              {getPermissionSummary(membre).length === 0 ? (
+                                <span style={styles.muted}>—</span>
+                              ) : (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                  {getPermissionSummary(membre).map((permission) => (
+                                    <span key={permission} style={badgeStyle("neutral")}>
+                                      {permission}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
 
                             <td style={styles.td}>
@@ -886,6 +954,33 @@ export default function PlatformUsersRoles() {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+
+            <div style={styles.sideCard}>
+              <p style={styles.sideEyebrow}>Matrice des rôles</p>
+              <div style={styles.checklist}>
+                {ROLE_MATRIX.map((item, index) => (
+                  <div
+                    key={item.role}
+                    style={{
+                      ...styles.checklistItem,
+                      alignItems: "flex-start",
+                      borderBottom:
+                        index === ROLE_MATRIX.length - 1
+                          ? "none"
+                          : styles.checklistItem.borderBottom,
+                    }}
+                  >
+                    <span style={styles.checklistLabel}>
+                      {item.role}
+                      <br />
+                      <small style={{ color: "#64748b", fontWeight: 650 }}>
+                        {item.description}
+                      </small>
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 

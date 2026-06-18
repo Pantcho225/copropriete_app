@@ -65,10 +65,9 @@ export default function CoproprietaireRoute() {
   const isCoproprietaire = useMemo(() => {
     if (!state.me) return false;
 
-    return (
-      state.me.is_coproprietaire === true ||
-      state.me.roles.includes("COPROPRIETAIRE") ||
-      state.me.memberships.some((membership) => membership.role === "COPROPRIETAIRE")
+    return state.me.memberships.some(
+      (membership) =>
+        membership.is_active === true && membership.role === "COPROPRIETAIRE",
     );
   }, [state.me]);
 
