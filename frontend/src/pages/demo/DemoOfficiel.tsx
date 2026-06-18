@@ -16,7 +16,7 @@ const DEMO_STEPS: DemoStep[] = [
     order: "01",
     title: "Dashboard global admin",
     description:
-      "Ouvrir la vue d’ensemble pour présenter les indicateurs principaux et le contexte de copropriété actif.",
+      "Ouvrir la vue d’ensemble pour présenter les indicateurs principaux, le contexte de copropriété actif et les raccourcis de pilotage.",
     path: "/",
     actionLabel: "Ouvrir le dashboard",
     badge: "Point de départ",
@@ -25,7 +25,7 @@ const DEMO_STEPS: DemoStep[] = [
     order: "02",
     title: "Référentiel copropriété #11",
     description:
-      "Présenter Résidence Les Jardins d’Azur : copropriétaires, lots, tantièmes et occupants déclarés.",
+      "Présenter Résidence Les Jardins d’Azur : cockpit référentiel, copropriétaires, lots, tantièmes et occupants déclarés.",
     path: "/platform-admin/referentiel-copropriete",
     actionLabel: "Ouvrir le référentiel",
     badge: "Données socle",
@@ -34,16 +34,16 @@ const DEMO_STEPS: DemoStep[] = [
     order: "03",
     title: "Espace copropriétaire",
     description:
-      "Basculer sur le portail personnel pour montrer lots, appels, paiements, documents, textes utiles et AG côté copropriétaire.",
+      "Basculer sur le portail personnel pour montrer l’expérience côté copropriétaire : lots, appels, paiements, documents, textes utiles et AG.",
     path: "/coproprietaire",
     actionLabel: "Ouvrir le portail copropriétaire",
-    badge: "Connexion dédiée",
+    badge: "Vision client",
   },
   {
     order: "04",
-    title: "AG #38 — scénario clôturé",
+    title: "AG #38 — cycle clôturé",
     description:
-      "Démontrer le cycle terminé : présences, résolutions, votes, quorum et procès-verbal signé/verrouillé.",
+      "Démontrer un cycle terminé : présences, résolutions, votes, quorum et procès-verbal signé/verrouillé.",
     path: "/ag/assemblees/38",
     actionLabel: "Ouvrir l’AG #38",
     badge: "PV signé",
@@ -61,7 +61,7 @@ const DEMO_STEPS: DemoStep[] = [
     order: "06",
     title: "Convocations AG #39",
     description:
-      "Accéder directement à la liste filtrée des convocations de l’AG #39 pour montrer PDF, statut et traçabilité.",
+      "Accéder directement à la liste filtrée des convocations de l’AG #39 pour montrer PDF, statut, version officielle et traçabilité.",
     path: "/ag/convocations?ag=39",
     actionLabel: "Voir les convocations",
     badge: "Traçabilité",
@@ -79,18 +79,27 @@ const DEMO_STEPS: DemoStep[] = [
     order: "08",
     title: "Comptabilité",
     description:
-      "Présenter les mouvements récents, les entrées/sorties et la cohérence avec la situation financière affichée au copropriétaire.",
+      "Présenter la vue comptable : entrées d’argent, mouvements, import bancaire, statistiques et cohérence avec la situation financière.",
     path: "/compta",
     actionLabel: "Ouvrir la comptabilité",
     badge: "Finances",
   },
   {
     order: "09",
-    title: "Relances et facturation",
+    title: "Relances & impayés",
     description:
-      "Terminer par les relances, l’état des impayés et la facturation/cotisations mensuelles selon l’état de la démo.",
+      "Montrer comment le syndic suit les dossiers impayés, les relances et les avis de régularisation.",
     path: "/relances",
     actionLabel: "Ouvrir les relances",
+    badge: "Recouvrement",
+  },
+  {
+    order: "10",
+    title: "Facturation & cotisations",
+    description:
+      "Terminer sur la facturation et les cotisations mensuelles, en indiquant clairement les écrans prêts et ceux encore en préparation.",
+    path: "/billing",
+    actionLabel: "Ouvrir la facturation",
     badge: "Fin de parcours",
   },
 ];
@@ -103,9 +112,30 @@ export default function DemoOfficiel() {
         <h1 style={styles.title}>Démo Résidence Les Jardins d’Azur</h1>
         <p style={styles.subtitle}>
           Suivez cet ordre pendant la présentation : il raconte l’application
-          comme un produit complet, depuis le référentiel jusqu’aux AG,
-          travaux, finances et relances.
+          comme un produit complet, depuis le référentiel jusqu’à l’espace
+          copropriétaire, aux assemblées générales, aux travaux, à la
+          comptabilité, aux relances et à la facturation.
         </p>
+
+        <div style={styles.contextGrid}>
+          <div style={styles.contextCard}>
+            <span style={styles.contextLabel}>Démo principale</span>
+            <strong style={styles.contextValue}>Copropriété #11</strong>
+            <span style={styles.contextHint}>Scénario riche : AG, PV, convocations, travaux, documents.</span>
+          </div>
+
+          <div style={styles.contextCard}>
+            <span style={styles.contextLabel}>Recette comptabilité</span>
+            <strong style={styles.contextValue}>Copropriété #24</strong>
+            <span style={styles.contextHint}>Utile pour vérifier l’import bancaire et les lignes importées.</span>
+          </div>
+
+          <div style={styles.contextCard}>
+            <span style={styles.contextLabel}>Règle du sprint</span>
+            <strong style={styles.contextValue}>Navigation uniquement</strong>
+            <span style={styles.contextHint}>Aucun nouveau module lourd, aucune migration obligatoire.</span>
+          </div>
+        </div>
       </section>
 
       <section style={styles.demoGrid}>
@@ -132,7 +162,7 @@ export default function DemoOfficiel() {
           “Je vais vous montrer le parcours complet d’une copropriété : d’abord
           le référentiel officiel, ensuite l’expérience du copropriétaire, puis
           le cycle AG avec présences, votes, convocations et preuves, avant de
-          finir par les travaux et la situation financière.”
+          finir par les travaux, la comptabilité, les relances et la facturation.”
         </p>
       </section>
     </div>
@@ -168,11 +198,42 @@ const styles: Record<string, CSSProperties> = {
     color: "#0f172a",
   },
   subtitle: {
-    maxWidth: 920,
+    maxWidth: 980,
     margin: "14px 0 0",
     fontSize: 15,
     lineHeight: 1.7,
     color: "#475569",
+  },
+  contextGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 12,
+    marginTop: 22,
+  },
+  contextCard: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    padding: 16,
+    borderRadius: 18,
+    background: "rgba(255,255,255,0.78)",
+    border: "1px solid rgba(226,232,240,0.95)",
+  },
+  contextLabel: {
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#64748b",
+  },
+  contextValue: {
+    fontSize: 16,
+    color: "#0f172a",
+  },
+  contextHint: {
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: "#64748b",
   },
   demoGrid: {
     display: "grid",
@@ -258,6 +319,6 @@ const styles: Record<string, CSSProperties> = {
     margin: "10px 0 0",
     fontSize: 15,
     lineHeight: 1.8,
-    color: "#dbeafe",
+    color: "#e5e7eb",
   },
 };

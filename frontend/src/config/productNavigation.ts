@@ -33,6 +33,10 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
         to: "/platform-admin/referentiel-copropriete/occupants",
       },
       {
+        label: "Tantièmes",
+        to: "/platform-admin/referentiel-copropriete/tantiemes",
+      },
+      {
         label: "Réunions & rencontres",
         to: "/gestion-administrative/reunions-rencontres",
       },
@@ -60,8 +64,12 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: "Gestion financière",
     items: [
-      { label: "Facturation & paiements", to: "/billing" },
+      { label: "Facturation & cotisations", to: "/billing" },
+      { label: "Cotisations mensuelles", to: "/billing/factures" },
       { label: "Comptabilité", to: "/compta" },
+      { label: "Imports bancaires", to: "/compta/imports" },
+      { label: "Mouvements", to: "/compta/mouvements" },
+      { label: "Statistiques", to: "/compta/stats" },
       { label: "Relances & impayés", to: "/relances" },
     ],
   },
@@ -88,6 +96,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
 
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Tableau de bord";
+  if (pathname === "/demo-officiel") return "Parcours démo officiel";
   // Gestion administrative
   if (pathname === "/gestion-administrative") {
     return "Vue d’ensemble Gestion administrative";
@@ -256,6 +265,9 @@ export function getPageTitle(pathname: string): string {
 export function getPageSubtitle(pathname: string): string {
   if (pathname === "/") {
     return "Pilotez l’activité de votre copropriété depuis une vue d’ensemble claire, centralisée et professionnelle.";
+  }
+  if (pathname === "/demo-officiel") {
+    return "Parcours guidé pour présenter la plateforme à un syndic, du référentiel jusqu’aux AG, travaux, finances et documents.";
   }
 
   // Gestion administrative
