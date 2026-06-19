@@ -30,6 +30,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "last_name": user.last_name,
             "is_superuser": user.is_superuser,
             "is_staff": user.is_staff,
+            "is_platform_admin": bool(user.is_staff or user.is_superuser),
         }
 
         data["must_change_password"] = bool(
