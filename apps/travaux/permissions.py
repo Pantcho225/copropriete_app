@@ -3,78 +3,98 @@ from __future__ import annotations
 
 from typing import Optional
 
-from rest_framework.permissions import BasePermission, SAFE_METHODS
 from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import BasePermission
+
+from apps.core.models import CoproMembre
+from apps.core.permissions.copro import BaseCoproPermission, CoproWriteReadOnly
+
+
+def _role_values(*names: str) -> list[str]:
+    """
+    Retourne uniquement les rôles réellement disponibles sur CoproMembre.Role.
+    """
+    values: list[str] = []
+    for name in names:
+        if hasattr(CoproMembre.Role, name):
+            values.append(getattr(CoproMembre.Role, name))
+    return values
+
+
+TRAVAUX_WRITE_ROLES = tuple(_role_values("ADMIN", "SYNDIC", "GESTIONNAIRE"))
+TRAVAUX_UNLOCK_ROLES = tuple(_role_values("ADMIN"))
 
 
 def _get_copro_id_from_request(request) -> Optional[int]:
+    copro_id = getattr(request, "copropriete_id", None)
+    if copro_id:
+        return int(copro_id)
+
     copro_id = request.headers.get("X-Copropriete-Id")
     if not copro_id:
         return None
+
     try:
         return int(str(copro_id))
     except ValueError:
-        raise ValidationError({"detail": "X-Copropriete-Id invalide (entier requis)."})  # 400 propre
+        raise ValidationError({"detail": "X-Copropriete-Id invalide (entier requis)."})
 
 
-def _is_syndic_or_admin(user) -> bool:
+def user_can_unlock_dossier(request) -> bool:
+    """
+    Déverrouillage travaux :
+    - superuser technique autorisé ;
+    - sinon ADMIN actif de la copropriété courante.
+    """
+    user = getattr(request, "user", None)
     if not user or not getattr(user, "is_authenticated", False):
         return False
 
-    # admin Django
-    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+    if getattr(user, "is_superuser", False):
         return True
 
-    # rôle custom (plusieurs variantes possibles)
-    role = getattr(user, "role", None) or getattr(user, "type", None) or getattr(user, "profil", None)
-    if isinstance(role, str) and role.upper() in {"SYNDIC", "ADMIN"}:
-        return True
+    copro_id = _get_copro_id_from_request(request)
+    if not copro_id:
+        return False
 
-    # bool custom
-    if getattr(user, "is_syndic", False) is True:
-        return True
+    return CoproMembre.objects.filter(
+        user_id=user.id,
+        copropriete_id=copro_id,
+        is_active=True,
+        role__in=TRAVAUX_UNLOCK_ROLES,
+    ).exists()
 
-    return False
 
-
-class IsSyndicOrAdmin(BasePermission):
+class IsSyndicOrAdmin(BaseCoproPermission):
     """
-    Permission "forte" pour actions sensibles.
+    Permission forte travaux basée sur CoproMembre.
     """
-    message = "Accès réservé au syndic ou administrateur."
+    message = "Accès réservé au syndic ou administrateur de la copropriété courante."
 
-    def has_permission(self, request, view) -> bool:
-        return _is_syndic_or_admin(getattr(request, "user", None))
+    allowed_roles = TRAVAUX_WRITE_ROLES
+
+    allow_superuser = True
+    allow_staff = False
 
 
-class TravauxWritePermission(BasePermission):
+class TravauxWritePermission(CoproWriteReadOnly):
     """
-    - Lecture: tout utilisateur authentifié
-    - Écriture CRUD: syndic/admin uniquement
-    - Actions sensibles (link/relink/unlink/validate/start/finish/archive): syndic/admin uniquement
+    Lecture : membre actif de la copropriété courante.
+    Écriture : ADMIN / SYNDIC / GESTIONNAIRE actif.
     """
+    message = "Vous n'avez pas la permission d'effectuer cette action sur les travaux."
 
-    def has_permission(self, request, view) -> bool:
-        user = getattr(request, "user", None)
-        if not user or not getattr(user, "is_authenticated", False):
-            return False
+    read_roles = None
+    write_roles = TRAVAUX_WRITE_ROLES
 
-        # GET/HEAD/OPTIONS => OK
-        if request.method in SAFE_METHODS:
-            return True
-
-        # Certaines actions peuvent être tolérées aux users (ex: create brouillon) => ici: NON (prod strict)
-        return _is_syndic_or_admin(user)
+    allow_superuser = True
+    allow_staff = False
 
 
 class TravauxObjectCoproPermission(BasePermission):
     """
-    Vérifie que l'objet (Fournisseur/Dossier) appartient à la copro du header.
+    Vérifie que l'objet appartient à la copropriété courante.
     Utile en complément de get_queryset().
-
-    Comportement:
-    - Si pas de header copro -> refus (400 clair)
-    - Si mismatch -> refus (403/400). Ici: 403 logique permission.
     """
     message = "Ressource hors périmètre de la copropriété courante."
 
@@ -85,7 +105,6 @@ class TravauxObjectCoproPermission(BasePermission):
 
         obj_copro_id = getattr(obj, "copropriete_id", None)
         if obj_copro_id is None:
-            # si obj n'a pas copropriete_id, on laisse passer (rare)
             return True
 
         return int(obj_copro_id) == int(copro_id)

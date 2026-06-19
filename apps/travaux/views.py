@@ -369,8 +369,10 @@ class DossierTravauxViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="unlock")
     def unlock(self, request, pk=None):
-        if not request.user.is_superuser:
-            raise PermissionDenied("Action réservée à l'ADMIN.")
+        from .permissions import user_can_unlock_dossier
+
+        if not user_can_unlock_dossier(request):
+            raise PermissionDenied("Action réservée à l'ADMIN de la copropriété courante.")
 
         copro_id = _require_copro_id(request)
         dossier = self.get_object()

@@ -1,31 +1,32 @@
+# apps/relances/permissions.py
 from __future__ import annotations
 
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+from apps.core.models import CoproMembre
+from apps.core.permissions.copro import CoproWriteReadOnly
 
 
-class IsAdminOrSyndicWriteReadOnly(BasePermission):
+def _role_values(*names: str) -> list[str]:
     """
-    Lecture pour les utilisateurs authentifiés.
-    Écriture réservée aux profils élevés.
-    Adapte les noms de rôles selon ton modèle utilisateur si besoin.
+    Retourne uniquement les rôles réellement disponibles sur CoproMembre.Role.
     """
+    values: list[str] = []
+    for name in names:
+        if hasattr(CoproMembre.Role, name):
+            values.append(getattr(CoproMembre.Role, name))
+    return values
 
-    allowed_write_roles = {"SUPER_ADMIN", "ADMIN", "SYNDIC", "GESTIONNAIRE"}
 
-    def has_permission(self, request, view):
-        user = request.user
+class IsAdminOrSyndicWriteReadOnly(CoproWriteReadOnly):
+    """
+    Relances basées sur CoproMembre.
 
-        if not user or not user.is_authenticated:
-            return False
+    Lecture : membre actif de la copropriété courante.
+    Écriture : ADMIN / SYNDIC / GESTIONNAIRE / COMPTABLE actif.
+    """
+    message = "Vous n'avez pas la permission de gérer les relances de cette copropriété."
 
-        if request.method in SAFE_METHODS:
-            return True
+    read_roles = None
+    write_roles = tuple(_role_values("ADMIN", "SYNDIC", "GESTIONNAIRE", "COMPTABLE"))
 
-        if user.is_superuser:
-            return True
-
-        role = getattr(user, "role", None)
-        if role in self.allowed_write_roles:
-            return True
-
-        return False
+    allow_superuser = True
+    allow_staff = False
