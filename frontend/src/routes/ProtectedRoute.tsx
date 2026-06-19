@@ -82,12 +82,12 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         membership.is_active === true && adminRoles.has(membership.role),
     );
 
-    return (
-      state.me.is_admin === true ||
+    const isPlatformAdmin =
+      state.me.is_platform_admin === true ||
       state.me.is_superuser === true ||
-      state.me.user.is_staff === true ||
-      hasActiveAdminMembership
-    );
+      state.me.user.is_superuser === true;
+
+    return isPlatformAdmin || hasActiveAdminMembership;
   }, [state.me]);
 
   if (!access) {

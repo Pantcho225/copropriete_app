@@ -10,6 +10,7 @@ export type AuthUser = {
   last_name: string;
   is_superuser: boolean;
   is_staff: boolean;
+  is_platform_admin?: boolean;
 };
 
 export type AuthMembershipCopropriete = {
@@ -40,6 +41,7 @@ export type AuthMeResponse = {
   roles: string[];
   memberships: AuthMembership[];
   is_admin: boolean;
+  is_platform_admin: boolean;
   is_superuser: boolean;
   is_coproprietaire: boolean;
 };

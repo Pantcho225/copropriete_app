@@ -175,6 +175,7 @@ class AuthMeAPIView(APIView):
             )
 
         roles_list = sorted(list(roles))
+        is_platform_admin = bool(user.is_staff or user.is_superuser)
 
         return Response(
             {
@@ -190,7 +191,8 @@ class AuthMeAPIView(APIView):
                 "must_change_password": bool(security_profile.must_change_password),
                 "roles": roles_list,
                 "memberships": membership_rows,
-                "is_admin": bool(user.is_staff or user.is_superuser),
+                "is_admin": is_platform_admin,
+                "is_platform_admin": is_platform_admin,
                 "is_superuser": bool(user.is_superuser),
                 "is_coproprietaire": "COPROPRIETAIRE" in roles_list,
             },
