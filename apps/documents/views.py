@@ -45,14 +45,34 @@ def _assert_same_copro(obj, copro_id: str):
         )
 
 
+def _role_values(*names: str) -> list[str]:
+    """
+    Retourne uniquement les rôles réellement disponibles sur CoproMembre.Role.
+    """
+    values: list[str] = []
+    for name in names:
+        if hasattr(CoproMembre.Role, name):
+            values.append(getattr(CoproMembre.Role, name))
+    return values
+
+
+DOCUMENTS_MANAGE_ROLES = tuple(
+    _role_values("ADMIN", "SYNDIC", "GESTIONNAIRE", "COMPTABLE")
+)
+
+
 def _assert_can_manage_copro(request, copro_id: str) -> None:
     """
-    Sécurité admin/syndic.
+    Sécurité documentaire admin/syndic basée sur CoproMembre.
 
-    - Superuser/staff : accès autorisé.
-    - Membre actif de la copropriété avec rôle différent de COPROPRIETAIRE :
-      accès autorisé.
-    - Simple copropriétaire : refus.
+    Autorise :
+    - superuser technique ;
+    - membre actif de la copropriété avec rôle ADMIN / SYNDIC / GESTIONNAIRE / COMPTABLE.
+
+    Refuse :
+    - simple staff sans rôle métier sur la copropriété ;
+    - copropriétaire simple ;
+    - membre inactif ou membre d'une autre copropriété.
     """
 
     user = request.user
@@ -60,22 +80,19 @@ def _assert_can_manage_copro(request, copro_id: str) -> None:
     if not user or not user.is_authenticated:
         raise PermissionDenied("Authentification requise.")
 
-    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+    if getattr(user, "is_superuser", False):
         return
 
-    has_admin_membership = (
-        CoproMembre.objects.filter(
-            user=user,
-            copropriete_id=copro_id,
-            is_active=True,
-        )
-        .exclude(role=CoproMembre.Role.COPROPRIETAIRE)
-        .exists()
-    )
+    has_admin_membership = CoproMembre.objects.filter(
+        user=user,
+        copropriete_id=copro_id,
+        is_active=True,
+        role__in=DOCUMENTS_MANAGE_ROLES,
+    ).exists()
 
     if not has_admin_membership:
         raise PermissionDenied(
-            "Vous n’avez pas le droit de gérer les textes de cette copropriété."
+            "Vous n’avez pas le droit de gérer les documents de cette copropriété."
         )
 
 
