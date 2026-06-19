@@ -9,6 +9,10 @@ import { useAuthStore } from "../store/authStore";
 type LoginResponse = {
   access: string;
   refresh: string;
+  active_copropriete?: {
+    id: number;
+    nom: string;
+  };
 };
 
 type ApiError = {
@@ -96,8 +100,6 @@ export default function Login() {
     setLoading(true);
 
     try {
-      setCopropriete(cid);
-
       const res = await api.post<LoginResponse>(
         ENDPOINTS.login,
         { username: user, password: pass },
@@ -108,6 +110,8 @@ export default function Login() {
         },
       );
 
+      setCopropriete(res.data.active_copropriete?.id ?? cid);
+
       setAuth({
         access: res.data.access,
         refresh: res.data.refresh,
@@ -116,6 +120,7 @@ export default function Login() {
       setInfo("Connexion réussie. Redirection en cours...");
       navigate("/", { replace: true });
     } catch (err: unknown) {
+      setCopropriete(null);
       setInfo("");
       setError(errorMessage(err));
     } finally {
