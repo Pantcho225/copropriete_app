@@ -8,19 +8,92 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import PasswordResetToken
+from .models import CoproMembre, Copropriete, PasswordResetToken
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Login JWT enrichi avec l'information must_change_password.
+    Login JWT enrichi avec l'information must_change_password
+    et verrouillé sur la copropriété demandée.
+
+    Règle :
+    - X-Copropriete-Id est obligatoire ;
+    - superuser/staff peut sélectionner une copropriété existante et active ;
+    - un utilisateur métier doit avoir un CoproMembre actif sur cette copropriété.
     """
+
+    def _get_requested_copropriete_id(self) -> int:
+        request = self.context.get("request")
+
+        if not request:
+            raise serializers.ValidationError(
+                {"detail": "Impossible de vérifier la copropriété demandée."}
+            )
+
+        raw_value = request.headers.get("X-Copropriete-Id") or request.data.get(
+            "copropriete_id"
+        )
+
+        if raw_value in (None, ""):
+            raise serializers.ValidationError(
+                {"detail": "L’identifiant de copropriété est obligatoire."}
+            )
+
+        try:
+            return int(str(raw_value).strip())
+        except (TypeError, ValueError):
+            raise serializers.ValidationError(
+                {"detail": "L’identifiant de copropriété doit être un entier."}
+            )
+
+    def _validate_requested_copropriete_access(self, user) -> Copropriete:
+        copropriete_id = self._get_requested_copropriete_id()
+
+        copropriete = (
+            Copropriete.objects.filter(pk=copropriete_id, is_active=True)
+            .only("id", "nom", "is_active", "statut")
+            .first()
+        )
+
+        if not copropriete:
+            raise serializers.ValidationError(
+                {"detail": "Cette copropriété est introuvable ou inactive."}
+            )
+
+        is_platform_admin = bool(user.is_staff or user.is_superuser)
+
+        if is_platform_admin:
+            return copropriete
+
+        has_membership = CoproMembre.objects.filter(
+            user=user,
+            copropriete=copropriete,
+            is_active=True,
+        ).exists()
+
+        if not has_membership:
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Vous n’avez pas accès à cette copropriété. "
+                        "Vérifiez l’identifiant saisi."
+                    )
+                }
+            )
+
+        return copropriete
 
     def validate(self, attrs):
         data = super().validate(attrs)
 
         user = self.user
+        active_copropriete = self._validate_requested_copropriete_access(user)
         security_profile = getattr(user, "security_profile", None)
+
+        data["active_copropriete"] = {
+            "id": active_copropriete.id,
+            "nom": active_copropriete.nom,
+        }
 
         data["user"] = {
             "id": user.id,

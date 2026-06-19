@@ -95,6 +95,28 @@ function getCoproIdHeaderValue(): string | null {
   return null;
 }
 
+function getHeaderValue(
+  config: InternalAxiosRequestConfig,
+  name: string,
+): unknown {
+  const headers = config.headers as Record<string, unknown> & {
+    get?: (headerName: string) => unknown;
+  };
+
+  return (
+    headers[name] ??
+    headers[name.toLowerCase()] ??
+    headers.get?.(name) ??
+    headers.get?.(name.toLowerCase())
+  );
+}
+
+function hasExplicitCoproprieteHeader(config: InternalAxiosRequestConfig): boolean {
+  const value = getHeaderValue(config, "X-Copropriete-Id");
+
+  return String(value ?? "").trim().length > 0;
+}
+
 function persistTokens(access: string, refresh?: string | null) {
   try {
     localStorage.setItem("access", access);
@@ -181,7 +203,12 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     config.headers.Authorization = `Bearer ${access}`;
   }
 
-  if (coproprieteId) {
+  const shouldAttachStoredCoproprieteId =
+    !hasExplicitCoproprieteHeader(config) &&
+    !isAuthEndpoint(config.url) &&
+    Boolean(coproprieteId);
+
+  if (shouldAttachStoredCoproprieteId) {
     config.headers["X-Copropriete-Id"] = coproprieteId;
   }
 
