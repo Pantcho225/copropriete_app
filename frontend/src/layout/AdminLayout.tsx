@@ -30,9 +30,11 @@ const appShell: CSSProperties = {
   minHeight: "100vh",
   width: "100%",
   background:
-    "linear-gradient(180deg, #f8fafc 0%, #f4f6fb 46%, #f1f5f9 100%)",
-  color: "#111827",
+    "radial-gradient(circle at 88% 0%, rgba(182, 141, 64, 0.12) 0%, rgba(182, 141, 64, 0) 30%), linear-gradient(180deg, #F6F2E9 0%, #F8F5EE 48%, #EFE9DC 100%)",
+  color: "#0B1320",
   overflow: "hidden",
+  fontFamily:
+    "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 };
 
 const mainArea: CSSProperties = {
@@ -65,10 +67,10 @@ const contentFrame: CSSProperties = {
   minHeight: "calc(100vh - 118px)",
   borderRadius: 28,
   padding: 6,
-  background: "rgba(255, 255, 255, 0.58)",
-  border: "1px solid rgba(226, 232, 240, 0.9)",
-  boxShadow: "0 14px 34px rgba(15, 23, 42, 0.06)",
-  backdropFilter: "blur(10px)",
+  background: "rgba(255, 255, 255, 0.68)",
+  border: "1px solid rgba(210, 198, 174, 0.86)",
+  boxShadow: "0 18px 44px rgba(75, 55, 20, 0.08)",
+  backdropFilter: "blur(12px)",
   boxSizing: "border-box",
   minWidth: 0,
 };
@@ -79,9 +81,10 @@ const contentSurface: CSSProperties = {
   borderRadius: 24,
   padding: 24,
   boxSizing: "border-box",
-  background: "#ffffff",
-  border: "1px solid rgba(226, 232, 240, 0.95)",
-  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.8)",
+  background:
+    "linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(250, 248, 242, 0.96) 100%)",
+  border: "1px solid rgba(228, 223, 210, 0.96)",
+  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.88)",
   overflowX: "hidden",
   minWidth: 0,
 };

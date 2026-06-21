@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { SIDEBAR_SECTIONS } from "../config/productNavigation";
 import { useAuthStore } from "../store/authStore";
 
-const SIDEBAR_WIDTH = 276;
+const SIDEBAR_WIDTH = 286;
 
 type SidebarLinkProps = {
   to: string;
@@ -11,45 +11,30 @@ type SidebarLinkProps = {
   end?: boolean;
 };
 
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <div style={sectionTitleStyle}>{children}</div>;
+function shouldUseExactMatch(path: string): boolean {
+  return path !== "/";
 }
 
-function ProductLabel({ children }: { children: ReactNode }) {
-  return <div style={productLabelStyle}>{children}</div>;
-}
-
-function Dot({ active = false }: { active?: boolean }) {
-  return (
-    <span
-      style={{
-        width: 8,
-        height: 8,
-        borderRadius: 999,
-        background: active ? "#4f46e5" : "#cbd5e1",
-        flexShrink: 0,
-        transition: "background 0.2s ease, transform 0.2s ease",
-        transform: active ? "scale(1.12)" : "scale(1)",
-      }}
-    />
-  );
+function Dot({ active }: { active: boolean }) {
+  return <span style={active ? dotActiveStyle : dotStyle} aria-hidden="true" />;
 }
 
 function buildLinkStyle(isActive: boolean): CSSProperties {
   return {
-    ...linkBase,
-    background: isActive
-      ? "linear-gradient(180deg, #eef2ff 0%, #e9edff 100%)"
-      : "transparent",
-    color: isActive ? "#111827" : "#374151",
-    fontWeight: isActive ? 900 : 750,
-    boxShadow: isActive ? "inset 0 0 0 1px rgba(99, 102, 241, 0.16)" : "none",
+    ...linkStyle,
+    color: isActive ? "#F3E9D6" : "#C7CBDA",
+    background: isActive ? "rgba(182, 141, 64, 0.13)" : "transparent",
+    borderLeftColor: isActive ? "#B68D40" : "transparent",
   };
 }
 
 function SidebarLink({ to, children, end = true }: SidebarLinkProps) {
   return (
-    <NavLink to={to} end={end} style={({ isActive }) => buildLinkStyle(isActive)}>
+    <NavLink
+      to={to}
+      end={end}
+      style={({ isActive }) => buildLinkStyle(isActive)}
+    >
       {({ isActive }) => (
         <>
           <Dot active={isActive} />
@@ -60,15 +45,8 @@ function SidebarLink({ to, children, end = true }: SidebarLinkProps) {
   );
 }
 
-function shouldUseExactMatch(path: string): boolean {
-  /**
-   * On garde une activation exacte pour éviter que :
-   * - /compta active aussi /compta/imports
-   * - /ag/assemblees active aussi /ag/assemblees/:id
-   *
-   * Cela rend la sidebar plus propre et évite les doubles états actifs.
-   */
-  return path !== "/";
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <div style={sectionTitleStyle}>{children}</div>;
 }
 
 export default function Sidebar() {
@@ -78,7 +56,7 @@ export default function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Aucune copropriété active";
+  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Non sélectionnée";
 
   const doLogout = () => {
     logout();
@@ -87,31 +65,48 @@ export default function Sidebar() {
 
   return (
     <aside style={sidebarStyle} translate="no" className="notranslate">
-      <div style={brandSection}>
-        <div style={brandRow}>
-          <div style={brandIcon}>C</div>
-
-          <div style={brandTextWrapStyle}>
-            <div style={brandTitle}>Copropriété App</div>
-            <div style={brandSubtitle}>Plateforme de gestion de copropriété</div>
-          </div>
+      <div style={brandStyle}>
+        <div style={sealStyle} aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            width="17"
+            height="17"
+            fill="none"
+            stroke="#B68D40"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 11l9-7 9 7" />
+            <path d="M5 10v9h14v-9" />
+            <path d="M10 19v-5h4v5" />
+          </svg>
         </div>
 
-        <div style={activeContextCard}>
-          <ProductLabel>Copropriété active</ProductLabel>
+        <div style={{ minWidth: 0 }}>
+          <div style={brandNameStyle}>Copropriété App</div>
+          <div style={brandSubStyle}>Gestion de copropriété</div>
+        </div>
+      </div>
 
-          <div style={activeContextValue}>{activeCoproLabel}</div>
-
-          <div style={activeContextHint}>
-            Contexte de travail actuellement chargé dans l’interface.
-          </div>
+      <div style={coproCardStyle}>
+        <div style={coproEyebrowStyle}>Copropriété active</div>
+        <div style={coproIdStyle}>{activeCoproLabel}</div>
+        <div style={coproNoteStyle}>
+          Contexte de travail actuellement chargé dans l’interface.
         </div>
       </div>
 
       <nav aria-label="Navigation principale" style={navStyle}>
-        <SidebarLink to="/" end>
-          Tableau de bord
-        </SidebarLink>
+        <div style={sectionBlockStyle}>
+          <SidebarLink to="/" end>
+            Tableau de bord
+          </SidebarLink>
+
+          <SidebarLink to="/demo-officiel" end>
+            Parcours démo officiel
+          </SidebarLink>
+        </div>
 
         {SIDEBAR_SECTIONS.map((section) => (
           <div key={section.title} style={sectionBlockStyle}>
@@ -133,16 +128,14 @@ export default function Sidebar() {
       </nav>
 
       <div style={footerStyle}>
-        <div style={footerCard}>
-          <div style={footerTitle}>Session utilisateur</div>
+        <div style={footerLabelStyle}>Session utilisateur</div>
 
-          <div style={footerText}>
-            Vous êtes connecté à l’espace d’administration de la plateforme.
-          </div>
+        <div style={footerValueStyle}>
+          Connecté à l’espace d’administration de la plateforme.
         </div>
 
         {isAuthenticated ? (
-          <button type="button" onClick={doLogout} style={logoutButton}>
+          <button type="button" onClick={doLogout} style={logoutButtonStyle}>
             Déconnexion
           </button>
         ) : null}
@@ -151,192 +144,182 @@ export default function Sidebar() {
   );
 }
 
-const linkBase: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  width: "100%",
-  padding: "11px 13px",
-  borderRadius: 14,
-  textDecoration: "none",
-  color: "#374151",
-  transition:
-    "background 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease",
-  boxSizing: "border-box",
-};
-
-const linkTextStyle: CSSProperties = {
-  lineHeight: 1.25,
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "normal",
-};
-
 const sidebarStyle: CSSProperties = {
   width: SIDEBAR_WIDTH,
   minWidth: SIDEBAR_WIDTH,
   height: "100vh",
   position: "sticky",
   top: 0,
-  padding: 16,
+  padding: "28px 20px 24px",
   boxSizing: "border-box",
   display: "flex",
   flexDirection: "column",
-  borderRight: "1px solid #e5e7eb",
-  background: "rgba(255, 255, 255, 0.94)",
-  backdropFilter: "blur(10px)",
+  background: "#0B1320",
+  color: "#EDEAE0",
+  borderRight: "1px solid #2A3650",
+  boxShadow: "12px 0 30px rgba(11, 19, 32, 0.16)",
   overflow: "hidden",
 };
 
-const brandSection: CSSProperties = {
-  padding: "4px 4px 16px 4px",
-  borderBottom: "1px solid #eef2f7",
-  marginBottom: 14,
-};
-
-const brandRow: CSSProperties = {
+const brandStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
+  marginBottom: 26,
   minWidth: 0,
 };
 
-const brandIcon: CSSProperties = {
-  width: 42,
-  height: 42,
-  borderRadius: 14,
-  display: "grid",
-  placeItems: "center",
-  background: "linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%)",
-  border: "1px solid #c7d2fe",
-  color: "#3730a3",
-  fontWeight: 900,
-  fontSize: 15,
+const sealStyle: CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  border: "1.4px solid #B68D40",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   flexShrink: 0,
-  boxShadow: "0 6px 18px rgba(79, 70, 229, 0.08)",
 };
 
-const brandTextWrapStyle: CSSProperties = {
-  minWidth: 0,
+const brandNameStyle: CSSProperties = {
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  fontSize: 16,
+  fontWeight: 600,
+  color: "#F6F2E9",
+  lineHeight: 1.15,
+  letterSpacing: 0.2,
 };
 
-const brandTitle: CSSProperties = {
-  fontSize: 18,
-  fontWeight: 900,
-  color: "#111827",
-  lineHeight: 1.2,
-  letterSpacing: -0.3,
-};
-
-const brandSubtitle: CSSProperties = {
-  marginTop: 2,
-  fontSize: 12,
-  color: "#6b7280",
+const brandSubStyle: CSSProperties = {
+  marginTop: 3,
+  fontSize: 10.5,
+  color: "#8C93A8",
+  letterSpacing: 0.45,
+  textTransform: "uppercase",
   fontWeight: 700,
-  lineHeight: 1.35,
 };
 
-const activeContextCard: CSSProperties = {
-  marginTop: 14,
-  padding: "12px 13px",
-  borderRadius: 14,
-  background: "#f8fafc",
-  border: "1px solid #eef2f7",
+const coproCardStyle: CSSProperties = {
+  background: "#16213A",
+  border: "1px solid #2A3650",
+  borderRadius: 8,
+  padding: "13px 14px",
+  marginBottom: 22,
 };
 
-const activeContextValue: CSSProperties = {
-  fontSize: 15,
-  fontWeight: 900,
-  color: "#111827",
-  lineHeight: 1.2,
+const coproEyebrowStyle: CSSProperties = {
+  fontSize: 9.5,
+  letterSpacing: 1.2,
+  textTransform: "uppercase",
+  color: "#B68D40",
+  fontWeight: 800,
 };
 
-const activeContextHint: CSSProperties = {
-  marginTop: 6,
-  fontSize: 12,
-  color: "#64748b",
-  lineHeight: 1.45,
+const coproIdStyle: CSSProperties = {
+  marginTop: 3,
+  marginBottom: 6,
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  fontSize: 19,
+  fontWeight: 600,
+  color: "#F6F2E9",
+};
+
+const coproNoteStyle: CSSProperties = {
+  fontSize: 11,
+  color: "#9099AE",
+  lineHeight: 1.5,
 };
 
 const navStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
-  alignContent: "start",
   flex: 1,
   minHeight: 0,
   overflowY: "auto",
+  overflowX: "hidden",
   paddingRight: 2,
 };
 
 const sectionBlockStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
+  marginBottom: 18,
+};
+
+const sectionTitleStyle: CSSProperties = {
+  margin: "0 6px 8px",
+  fontSize: 9.5,
+  letterSpacing: 1.2,
+  textTransform: "uppercase",
+  color: "#6E7690",
+  fontWeight: 800,
 };
 
 const sectionItemsStyle: CSSProperties = {
   display: "grid",
-  gap: 4,
+  gap: 3,
+};
+
+const linkStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  padding: "8px 10px",
+  borderRadius: 6,
+  borderLeft: "2px solid transparent",
+  fontSize: 13,
+  fontWeight: 700,
+  textDecoration: "none",
+  boxSizing: "border-box",
+  transition:
+    "background 0.16s ease, color 0.16s ease, border-color 0.16s ease",
+};
+
+const linkTextStyle: CSSProperties = {
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "normal",
+  lineHeight: 1.25,
+};
+
+const dotStyle: CSSProperties = {
+  width: 4,
+  height: 4,
+  borderRadius: "50%",
+  background: "#5A6480",
+  flexShrink: 0,
+};
+
+const dotActiveStyle: CSSProperties = {
+  ...dotStyle,
+  background: "#B68D40",
 };
 
 const footerStyle: CSSProperties = {
-  marginTop: 16,
+  borderTop: "1px solid #2A3650",
   paddingTop: 14,
-  borderTop: "1px solid #eef2f7",
-  display: "grid",
-  gap: 10,
+  marginTop: 8,
 };
 
-const footerCard: CSSProperties = {
-  padding: "12px 13px",
-  borderRadius: 14,
-  background: "#f8fafc",
-  border: "1px solid #eef2f7",
+const footerLabelStyle: CSSProperties = {
+  fontSize: 10,
+  color: "#6E7690",
+  marginBottom: 2,
+  fontWeight: 700,
 };
 
-const footerTitle: CSSProperties = {
+const footerValueStyle: CSSProperties = {
   fontSize: 12,
-  fontWeight: 900,
-  color: "#111827",
-  marginBottom: 4,
+  color: "#C7CBDA",
+  lineHeight: 1.5,
 };
 
-const footerText: CSSProperties = {
-  fontSize: 12,
-  color: "#64748b",
-  lineHeight: 1.45,
-};
-
-const logoutButton: CSSProperties = {
+const logoutButtonStyle: CSSProperties = {
+  marginTop: 12,
   width: "100%",
-  padding: "12px 14px",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  color: "#111827",
+  background: "transparent",
+  border: "1px solid #2A3650",
+  color: "#C7CBDA",
+  fontSize: 12.5,
+  padding: 9,
+  borderRadius: 6,
+  fontFamily: "inherit",
+  fontWeight: 700,
   cursor: "pointer",
-  fontWeight: 800,
-  fontSize: 14,
-  transition: "all 0.2s ease",
-};
-
-const sectionTitleStyle: CSSProperties = {
-  marginTop: 18,
-  marginBottom: 8,
-  padding: "0 6px",
-  fontSize: 11,
-  fontWeight: 900,
-  opacity: 0.62,
-  letterSpacing: 1,
-  textTransform: "uppercase",
-  color: "#475569",
-};
-
-const productLabelStyle: CSSProperties = {
-  marginBottom: 6,
-  fontSize: 11,
-  fontWeight: 900,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: 0.5,
 };
