@@ -9,6 +9,8 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
@@ -435,6 +437,14 @@ function getTone(kind: BadgeKind) {
   };
 }
 
+function toModuleStatTone(kind?: BadgeKind) {
+  if (kind === "success") return "green";
+  if (kind === "info") return "blue";
+  if (kind === "warning") return "amber";
+  if (kind === "danger") return "red";
+  return "neutral";
+}
+
 function PageShellWrapper({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
@@ -446,21 +456,13 @@ function HeroHeader(props: {
   aside?: ReactNode;
 }) {
   return (
-    <section style={heroCard}>
-      <div style={heroGlow} />
-
-      <div style={heroGrid}>
-        <div style={heroMainBlock}>
-          <div style={pageEyebrow}>Travaux · Dossiers</div>
-          <div style={pageTitle}>{props.title}</div>
-          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
-
-          {props.right ? <div style={{ ...heroActions, marginTop: 18 }}>{props.right}</div> : null}
-        </div>
-
-        {props.aside ? <div style={heroAsidePanel}>{props.aside}</div> : null}
-      </div>
-    </section>
+    <ModuleHero
+      eyebrow="Travaux · Dossiers"
+      title={props.title}
+      subtitle={props.subtitle}
+      actions={props.right}
+      aside={props.aside}
+    />
   );
 }
 
@@ -487,41 +489,13 @@ function StatCard(props: {
   sub?: string;
   kind?: BadgeKind;
 }) {
-  const tone = getTone(props.kind ?? "neutral");
-
   return (
-    <div
-      style={{
-        border: `1px solid ${tone.border}`,
-        borderRadius: 20,
-        padding: 16,
-        background: tone.softBg,
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-        minHeight: 104,
-        minWidth: 0,
-      }}
-    >
-      <div style={statTitle}>{props.title}</div>
-
-      <div
-        style={{
-          fontSize: 26,
-          fontWeight: 900,
-          color: tone.strongText,
-          letterSpacing: -0.35,
-          lineHeight: 1.1,
-          overflowWrap: "anywhere",
-        }}
-      >
-        {props.value}
-      </div>
-
-      {props.sub ? (
-        <div style={{ marginTop: 6, fontSize: 12, color: tone.text, lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
-      ) : null}
-    </div>
+    <ModuleStatCard
+      label={props.title}
+      value={props.value}
+      hint={props.sub}
+      tone={toModuleStatTone(props.kind)}
+    />
   );
 }
 
@@ -857,7 +831,7 @@ export default function TravauxDossiers() {
 
       <InfoStrip />
 
-      <div className="travaux-stats-grid" style={statsGrid}>
+      <div className="moduleStatsGrid">
         <StatCard
           title="Dossiers affichés"
           value={uiStats.totalVisible}
@@ -1118,63 +1092,6 @@ const pageShell: CSSProperties = {
   minWidth: 0,
 };
 
-const heroCard: CSSProperties = {
-  background:
-    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.88) 100%)",
-  borderRadius: 28,
-  padding: "28px 30px",
-  color: "#ffffff",
-  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
-  position: "relative",
-  overflow: "hidden",
-  minWidth: 0,
-};
-
-const heroGlow: CSSProperties = {
-  position: "absolute",
-  inset: "auto -120px -140px auto",
-  width: 280,
-  height: 280,
-  borderRadius: "50%",
-  background:
-    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
-  pointerEvents: "none",
-};
-
-const heroGrid: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)",
-  gap: 18,
-  alignItems: "stretch",
-  minWidth: 0,
-};
-
-const heroMainBlock: CSSProperties = {
-  minWidth: 0,
-  position: "relative",
-  zIndex: 1,
-};
-
-const heroActions: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-};
-
-const heroAsidePanel: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.08)",
-  padding: 16,
-  display: "grid",
-  gap: 10,
-  alignContent: "start",
-  minWidth: 0,
-};
-
 const heroAsideTitle: CSSProperties = {
   fontSize: 13,
   fontWeight: 900,
@@ -1187,47 +1104,6 @@ const heroAsideText: CSSProperties = {
   fontSize: 12.5,
   lineHeight: 1.6,
   color: "rgba(255,255,255,0.84)",
-};
-
-const pageEyebrow: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 900,
-  letterSpacing: 0.9,
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.72)",
-  marginBottom: 6,
-};
-
-const pageTitle: CSSProperties = {
-  fontSize: 30,
-  fontWeight: 900,
-  letterSpacing: -0.5,
-  color: "#ffffff",
-  lineHeight: 1.08,
-};
-
-const pageSubtitle: CSSProperties = {
-  marginTop: 6,
-  color: "rgba(255,255,255,0.84)",
-  fontSize: 13.5,
-  lineHeight: 1.6,
-  maxWidth: 860,
-};
-
-const statTitle: CSSProperties = {
-  fontSize: 12,
-  color: "#475569",
-  fontWeight: 800,
-  marginBottom: 8,
-  textTransform: "uppercase",
-  letterSpacing: 0.35,
-};
-
-const statsGrid: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-  gap: 12,
-  minWidth: 0,
 };
 
 const infoStrip: CSSProperties = {

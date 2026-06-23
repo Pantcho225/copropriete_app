@@ -9,6 +9,8 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 type BadgeKind = "neutral" | "success" | "warning" | "danger" | "info";
@@ -245,27 +247,26 @@ function getTone(kind: BadgeKind) {
   };
 }
 
+function toModuleStatTone(kind?: BadgeKind) {
+  if (kind === "success") return "green";
+  if (kind === "info") return "blue";
+  if (kind === "warning") return "amber";
+  if (kind === "danger") return "red";
+  return "neutral";
+}
+
 function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShell}>{children}</div>;
 }
 
 function HeroHeader(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <section style={heroCard}>
-      <div style={heroGlow} />
-
-      <div style={heroHeader}>
-        <div style={heroTextBlock}>
-          <div style={pageEyebrow}>Travaux · Prestataires</div>
-
-          <div style={pageTitle}>{props.title}</div>
-
-          {props.subtitle ? <div style={pageSubtitle}>{props.subtitle}</div> : null}
-        </div>
-
-        {props.right ? <div style={heroActions}>{props.right}</div> : null}
-      </div>
-    </section>
+    <ModuleHero
+      eyebrow="Travaux · Prestataires"
+      title={props.title}
+      subtitle={props.subtitle}
+      actions={props.right}
+    />
   );
 }
 
@@ -292,52 +293,13 @@ function StatCard(props: {
   sub?: string;
   kind?: BadgeKind;
 }) {
-  const tone = getTone(props.kind ?? "neutral");
-
   return (
-    <div
-      style={{
-        border: `1px solid ${tone.border}`,
-        borderRadius: 20,
-        padding: 16,
-        background: tone.softBg,
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-        minHeight: 104,
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          color: tone.text,
-          fontWeight: 800,
-          marginBottom: 8,
-          textTransform: "uppercase",
-          letterSpacing: 0.32,
-        }}
-      >
-        {props.title}
-      </div>
-
-      <div
-        style={{
-          fontSize: 26,
-          fontWeight: 900,
-          color: tone.strongText,
-          letterSpacing: -0.35,
-          lineHeight: 1.1,
-          overflowWrap: "anywhere",
-        }}
-      >
-        {props.value}
-      </div>
-
-      {props.sub ? (
-        <div style={{ marginTop: 6, fontSize: 12, color: tone.text, lineHeight: 1.45 }}>
-          {props.sub}
-        </div>
-      ) : null}
-    </div>
+    <ModuleStatCard
+      label={props.title}
+      value={props.value}
+      hint={props.sub}
+      tone={toModuleStatTone(props.kind)}
+    />
   );
 }
 
@@ -649,7 +611,7 @@ export default function TravauxFournisseurs() {
 
       <InfoStrip />
 
-      <div className="travaux-fournisseurs-stats-grid" style={statsGrid}>
+      <div className="moduleStatsGrid">
         <StatCard
           title="Affichés"
           value={displayStats.total}
@@ -855,85 +817,6 @@ const pageShell: CSSProperties = {
   display: "grid",
   gap: 18,
   width: "100%",
-  minWidth: 0,
-};
-
-const heroCard: CSSProperties = {
-  background:
-    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 55%, rgba(59,130,246,0.88) 100%)",
-  borderRadius: 28,
-  padding: "28px 30px",
-  color: "#ffffff",
-  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
-  position: "relative",
-  overflow: "hidden",
-  minWidth: 0,
-};
-
-const heroGlow: CSSProperties = {
-  position: "absolute",
-  inset: "auto -120px -140px auto",
-  width: 280,
-  height: 280,
-  borderRadius: "50%",
-  background:
-    "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
-  pointerEvents: "none",
-};
-
-const heroHeader: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 16,
-  flexWrap: "wrap",
-  alignItems: "flex-end",
-  minWidth: 0,
-};
-
-const heroTextBlock: CSSProperties = {
-  minWidth: 280,
-  position: "relative",
-  zIndex: 1,
-};
-
-const heroActions: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-  position: "relative",
-  zIndex: 1,
-};
-
-const pageEyebrow: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 900,
-  letterSpacing: 0.9,
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.72)",
-  marginBottom: 6,
-};
-
-const pageTitle: CSSProperties = {
-  fontSize: 30,
-  fontWeight: 900,
-  letterSpacing: -0.5,
-  color: "#ffffff",
-  lineHeight: 1.08,
-};
-
-const pageSubtitle: CSSProperties = {
-  marginTop: 6,
-  color: "rgba(255,255,255,0.84)",
-  fontSize: 13.5,
-  lineHeight: 1.6,
-  maxWidth: 860,
-};
-
-const statsGrid: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 12,
   minWidth: 0,
 };
 
