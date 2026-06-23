@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type Coproprietaire = {
   id: number;
@@ -883,60 +885,50 @@ export default function PlatformCoproprietaires() {
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.hero}>
-          <div style={styles.heroTop}>
-            <div>
-              <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Copropriétaires</h1>
-              <p style={styles.heroText}>
-                Créez et maintenez les copropriétaires rattachés à la copropriété
-                active. Cette page gère le propriétaire juridique du lot. Les
-                résidents réellement présents dans les logements sont suivis dans
-                une page dédiée.
-              </p>
-            </div>
+        <ModuleHero
+          eyebrow="Super Admin · Référentiel copropriété"
+          title="Copropriétaires"
+          subtitle="Créez et maintenez les copropriétaires rattachés à la copropriété active. Cette page gère le propriétaire juridique du lot ; les résidents réellement présents dans les logements sont suivis dans une page dédiée."
+        >
+          <div className="moduleStatsGrid">
+            <ModuleStatCard
+              label="Copropriétaires"
+              value={formatNumber(stats.total)}
+              hint="Fiches référentielles enregistrées"
+              tone="blue"
+            />
+            <ModuleStatCard
+              label="Actifs"
+              value={formatNumber(stats.actifs)}
+              hint="Exploitables dans les modules métier"
+              tone="green"
+            />
+            <ModuleStatCard
+              label="Inactifs"
+              value={formatNumber(stats.inactifs)}
+              hint="Fiches désactivées"
+              tone="neutral"
+            />
+            <ModuleStatCard
+              label="Lots liés"
+              value={formatNumber(stats.lots)}
+              hint="Lots actifs rattachés"
+              tone="purple"
+            />
+            <ModuleStatCard
+              label="Résidents"
+              value={formatNumber(stats.residents)}
+              hint="Résidents actifs déclarés"
+              tone="amber"
+            />
+            <ModuleStatCard
+              label="Accès"
+              value={formatNumber(stats.acces)}
+              hint="Comptes copropriétaires créés"
+              tone="blue"
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Copropriétaires</p>
-              <p style={styles.statValue}>{formatNumber(stats.total)}</p>
-              <p style={styles.statHint}>Fiches référentielles enregistrées</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>Actifs</p>
-              <p style={styles.statValue}>{formatNumber(stats.actifs)}</p>
-              <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                Exploitables dans les modules métier
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#e2e8f0" }}>Inactifs</p>
-              <p style={styles.statValue}>{formatNumber(stats.inactifs)}</p>
-              <p style={styles.statHint}>Fiches désactivées</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Lots liés</p>
-              <p style={styles.statValue}>{formatNumber(stats.lots)}</p>
-              <p style={styles.statHint}>Lots actifs rattachés</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Résidents</p>
-              <p style={styles.statValue}>{formatNumber(stats.residents)}</p>
-              <p style={styles.statHint}>Résidents actifs déclarés</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Accès</p>
-              <p style={styles.statValue}>{formatNumber(stats.acces)}</p>
-              <p style={styles.statHint}>Comptes copropriétaires créés</p>
-            </div>
-          </div>
-        </div>
+        </ModuleHero>
 
         <div style={styles.content}>
           <main style={styles.main}>

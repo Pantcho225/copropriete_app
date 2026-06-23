@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import api from "../../api/axios";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type Copropriete = {
   id: number;
@@ -786,69 +788,54 @@ export default function ReferentielCopropriete() {
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.hero}>
-          <div style={styles.heroTop}>
-            <div>
-              <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Cockpit référentiel</h1>
-              <p style={styles.heroText}>
-                Pilotez la préparation complète des copropriétés depuis l’Admin
-                React : copropriétaires, lots, catégories de tantièmes, valeurs de
-                tantièmes et rôles locaux. Cette page remplace l’ancien écran de
-                démonstration statique.
-              </p>
-            </div>
-
-            <div style={styles.actions}>
-              <Link to="/platform-admin" style={styles.heroButtonSecondary}>
+        <ModuleHero
+          eyebrow="Super Admin · Référentiel copropriété"
+          title="Cockpit référentiel"
+          subtitle="Pilotez la préparation complète des copropriétés depuis l’Admin React : copropriétaires, lots, catégories de tantièmes, valeurs de tantièmes et rôles locaux."
+          actions={
+            <>
+              <Link to="/platform-admin" className="moduleButton moduleButton--heroDark">
                 Retour plateforme
               </Link>
               <Link
                 to="/platform-admin/coproprietes/nouveau"
-                style={styles.heroButtonPrimary}
+                className="moduleButton moduleButton--hero"
               >
                 Nouvelle copropriété
               </Link>
-            </div>
+            </>
+          }
+        >
+          <div className="moduleStatsGrid">
+            <ModuleStatCard
+              label="Copropriété active"
+              value={activeCopropriete ? `#${activeCopropriete.id}` : "Aucune"}
+              hint={
+                activeCopropriete?.nom ||
+                "Sélectionnez une copropriété dans le shell pour filtrer le référentiel"
+              }
+              tone="blue"
+            />
+            <ModuleStatCard
+              label="Complétude"
+              value={`${stats.completion} %`}
+              hint={`${stats.completed}/${stats.totalChecks} blocs référentiels prêts`}
+              tone={healthTone === "success" ? "green" : healthTone === "warning" ? "amber" : "red"}
+            />
+            <ModuleStatCard
+              label="Lots"
+              value={formatNumber(stats.lots)}
+              hint="Lots disponibles dans le référentiel"
+              tone="neutral"
+            />
+            <ModuleStatCard
+              label="Tantièmes"
+              value={formatNumber(stats.tantiemes)}
+              hint={`Total lots : ${formatNumber(stats.totalTantiemes)}`}
+              tone="purple"
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Copropriété active</p>
-              <p style={styles.statValue}>
-                {activeCopropriete ? `#${activeCopropriete.id}` : "Aucune"}
-              </p>
-              <p style={styles.statHint}>
-                {activeCopropriete?.nom ||
-                  "Sélectionnez une copropriété dans le shell pour filtrer le référentiel"}
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>
-                Complétude
-              </p>
-              <p style={styles.statValue}>{stats.completion} %</p>
-              <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                {stats.completed}/{stats.totalChecks} blocs référentiels prêts
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Lots</p>
-              <p style={styles.statValue}>{formatNumber(stats.lots)}</p>
-              <p style={styles.statHint}>Lots disponibles dans le référentiel</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Tantièmes</p>
-              <p style={styles.statValue}>{formatNumber(stats.tantiemes)}</p>
-              <p style={styles.statHint}>
-                Total lots : {formatNumber(stats.totalTantiemes)}
-              </p>
-            </div>
-          </div>
-        </div>
+        </ModuleHero>
 
         <div style={styles.content}>
           <main style={styles.main}>
