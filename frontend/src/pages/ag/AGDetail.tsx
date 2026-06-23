@@ -9,6 +9,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import BackButton from "../../components/ui/BackButton";
 import {
   genererConvocationsAg,
   genererPdfsConvocationsAg,
@@ -839,10 +840,22 @@ function PageShell({ children }: { children: ReactNode }) {
   return <div className="agdetail-page">{children}</div>;
 }
 
-function PageHeader(props: { title: string; subtitle?: string; right?: ReactNode }) {
+function PageHeader(props: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  backTo?: string;
+  backLabel?: string;
+}) {
   return (
     <div className="agdetail-page-header">
       <div>
+        {props.backTo || props.backLabel ? (
+          <div className="agdetail-back-row">
+            <BackButton to={props.backTo} label={props.backLabel ?? "Retour"} />
+          </div>
+        ) : null}
+
         <div className="agdetail-eyebrow">Pilotage du module AG</div>
         <h1>{props.title}</h1>
         {props.subtitle ? <p>{props.subtitle}</p> : null}
@@ -1860,6 +1873,8 @@ function AGDetail() {
           subtitle={`${detail.reference} · Exercice ${detail.exercice} · ${formatDate(
             detail.date_ag,
           )}${detail.lieu ? ` · ${detail.lieu}` : ""}`}
+          backTo="/ag/assemblees"
+          backLabel="Retour aux assemblées"
           right={
             <>
               <AppButton onClick={() => navigate("/ag/assemblees")} variant="secondary">

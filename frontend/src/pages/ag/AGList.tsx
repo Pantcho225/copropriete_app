@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import BackButton from "../../components/ui/BackButton";
 import api from "../../api/axios";
 
 type LoadState = "idle" | "loading" | "success" | "error";
@@ -310,11 +311,22 @@ function PageShell({ children }: { children: ReactNode }) {
   return <div style={pageShellStyle}>{children}</div>;
 }
 
-function PageHeader(props: { title: string; subtitle?: string }) {
+function PageHeader(props: {
+  title: string;
+  subtitle?: string;
+  backTo?: string;
+  backLabel?: string;
+}) {
   return (
     <section style={pageHeaderStyle}>
       <div style={pageHeaderInnerStyle}>
         <div style={pageHeaderCopyStyle}>
+          {props.backTo || props.backLabel ? (
+            <div className="pageBackRow">
+              <BackButton to={props.backTo} label={props.backLabel ?? "Retour"} />
+            </div>
+          ) : null}
+
           <div style={pageEyebrowStyle}>Pilotage du module AG</div>
           <h1 style={pageTitleStyle}>{props.title}</h1>
           {props.subtitle ? <p style={pageSubtitleStyle}>{props.subtitle}</p> : null}
@@ -725,6 +737,8 @@ export default function AGList() {
       <PageHeader
         title="Assemblées générales"
         subtitle="Consultez les assemblées, leur statut, le volume de résolutions, la situation du quorum et l’état du procès-verbal depuis une vue de supervision plus claire, plus cohérente et mieux alignée avec le reste du module AG."
+        backTo="/ag"
+        backLabel="Retour au module AG"
       />
 
       <HeroSection

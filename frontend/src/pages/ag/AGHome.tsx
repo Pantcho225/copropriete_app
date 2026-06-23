@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import BackButton from "../../components/ui/BackButton";
 import api from "../../api/axios";
 
 type LoadState = "idle" | "loading" | "success" | "error";
@@ -726,6 +727,10 @@ export default function AGHome() {
     <PageShell>
       <div style={headerRow}>
         <div style={{ display: "grid", gap: 8 }}>
+          <div className="pageBackRow">
+            <BackButton to="/dashboard" label="Retour au tableau de bord" />
+          </div>
+
           <span style={sectionEyebrow}>Pilotage du module AG</span>
           <h1 style={headerTitle}>Assemblées générales</h1>
           <p style={headerSubtitle}>

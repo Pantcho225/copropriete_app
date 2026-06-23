@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import BackButton from "../../components/ui/BackButton";
 import api from "../../api/axios";
 import {
   annulerAgConvocation,
@@ -459,6 +460,10 @@ export default function AGConvocations() {
     <main style={styles.page}>
       <section style={styles.header}>
         <div>
+          <div className="pageBackRow">
+            <BackButton to="/ag" label="Retour au module AG" />
+          </div>
+
           <p style={styles.eyebrow}>Assemblées générales</p>
           <h1 style={styles.title}>Convocations AG</h1>
           <p style={styles.subtitle}>
