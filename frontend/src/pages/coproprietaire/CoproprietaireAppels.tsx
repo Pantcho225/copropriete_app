@@ -7,6 +7,8 @@ import {
   type CoproprietaireAppelItem,
   type CoproprietaireAppelsResponse,
 } from "../../api/coproprietaire";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type PageState = {
   loading: boolean;
@@ -16,6 +18,18 @@ type PageState = {
 
 type StatusFilter = "ALL" | "A_PAYER" | "PAYE" | "RETARD";
 type StatTone = "blue" | "green" | "orange" | "red" | "slate";
+
+function toModuleStatTone(tone: StatTone) {
+  const toneKey = String(tone);
+
+  if (toneKey === "green") return "green";
+  if (toneKey === "blue") return "blue";
+  if (toneKey === "amber" || toneKey === "orange") return "amber";
+  if (toneKey === "red" || toneKey === "rose") return "red";
+  if (toneKey === "indigo") return "purple";
+
+  return "neutral";
+}
 
 export default function CoproprietaireAppels() {
   const [state, setState] = useState<PageState>({
@@ -135,38 +149,32 @@ export default function CoproprietaireAppels() {
   }
 
   return (
-    <div style={styles.stack}>
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Suivi financier personnel</div>
-
-          <h2 style={styles.heroTitle}>Vos appels de charges</h2>
-
-          <p style={styles.heroText}>
-            Consultez les appels de fonds associés à vos lots : montants dus,
-            règlements enregistrés, échéances et retards éventuels.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>Copropriété : {coproprieteName}</span>
-            <span style={styles.metaPill}>{formatNumber(nbAppels)} appel(s)</span>
-            <span style={styles.metaPill}>
-              Reste à payer : {formatMoneyFCFA(resteAPayer)}
-            </span>
+    <div className="coproOwnerPage" style={styles.stack}>
+      <ModuleHero
+        eyebrow="Suivi financier personnel"
+        title="Vos appels de charges"
+        subtitle="Consultez les appels de fonds associés à vos lots : montants dus, règlements enregistrés, échéances et retards éventuels."
+        aside={
+          <div className="coproOwnerSecureBox" style={styles.secureBox}>
+            <div style={styles.secureIcon}>🔐</div>
+            <p style={styles.secureTitle}>Données filtrées</p>
+            <p style={styles.secureText}>
+              Seuls les appels liés à vos lots rattachés sont affichés dans cet
+              espace.
+            </p>
           </div>
+        }
+      >
+        <div className="coproOwnerHeroMeta" style={styles.heroMeta}>
+          <span style={styles.metaPill}>Copropriété : {coproprieteName}</span>
+          <span style={styles.metaPill}>{formatNumber(nbAppels)} appel(s)</span>
+          <span style={styles.metaPill}>
+            Reste à payer : {formatMoneyFCFA(resteAPayer)}
+          </span>
         </div>
+      </ModuleHero>
 
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>🔐</div>
-          <p style={styles.secureTitle}>Données filtrées</p>
-          <p style={styles.secureText}>
-            Seuls les appels liés à vos lots rattachés sont affichés dans cet
-            espace.
-          </p>
-        </div>
-      </section>
-
-      <section style={styles.grid}>
+      <section className="moduleStatsGrid coproOwnerStatsGrid">
         <StatCard
           title="Total appelé"
           value={formatMoneyFCFA(totalDu)}
@@ -194,7 +202,7 @@ export default function CoproprietaireAppels() {
       </section>
 
       <section style={styles.progressCard}>
-        <div style={styles.progressHeader}>
+        <div className="coproOwnerSectionHeader" style={styles.progressHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Progression de paiement</p>
             <h3 style={styles.sectionTitle}>Synthèse de votre situation</h3>
@@ -212,14 +220,14 @@ export default function CoproprietaireAppels() {
           />
         </div>
 
-        <div style={styles.progressFooter}>
+        <div className="coproOwnerProgressFooter" style={styles.progressFooter}>
           <span>Payé : {formatMoneyFCFA(totalPaye)}</span>
           <span>Reste : {formatMoneyFCFA(resteAPayer)}</span>
         </div>
       </section>
 
       <section style={styles.card}>
-        <div style={styles.sectionHeader}>
+        <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Suivi des charges</p>
             <h3 style={styles.sectionTitle}>Liste de vos appels</h3>
@@ -228,7 +236,7 @@ export default function CoproprietaireAppels() {
             </p>
           </div>
 
-          <div style={styles.headerActions}>
+          <div className="coproOwnerHeaderActions" style={styles.headerActions}>
             <Link to="/coproprietaire/paiements" style={styles.secondaryButton}>
               Mes paiements
             </Link>
@@ -238,7 +246,7 @@ export default function CoproprietaireAppels() {
           </div>
         </div>
 
-        <div style={styles.filters}>
+        <div className="coproOwnerFilters" style={styles.filters}>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -270,7 +278,7 @@ export default function CoproprietaireAppels() {
             text="Aucun appel de charges ne correspond aux critères affichés pour votre compte copropriétaire."
           />
         ) : (
-          <div style={styles.tableWrapper}>
+          <div className="coproOwnerTableScroll" style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -370,20 +378,13 @@ function StatCard({
   description: string;
   tone: StatTone;
 }) {
-  const toneStyle = statTones[tone];
-
   return (
-    <div
-      style={{
-        ...styles.statCard,
-        borderColor: toneStyle.border,
-        background: toneStyle.background,
-      }}
-    >
-      <p style={styles.statTitle}>{title}</p>
-      <p style={{ ...styles.statValue, color: toneStyle.color }}>{value}</p>
-      <p style={styles.statDescription}>{description}</p>
-    </div>
+    <ModuleStatCard
+      label={title}
+      value={value}
+      hint={description}
+      tone={toModuleStatTone(tone)}
+    />
   );
 }
 
@@ -436,37 +437,6 @@ function formatDate(value: string | null | undefined) {
     year: "numeric",
   }).format(date);
 }
-
-const statTones: Record<
-  StatTone,
-  { background: string; border: string; color: string }
-> = {
-  blue: {
-    background: "#eff6ff",
-    border: "#bfdbfe",
-    color: "#2563eb",
-  },
-  green: {
-    background: "#ecfdf5",
-    border: "#bbf7d0",
-    color: "#059669",
-  },
-  orange: {
-    background: "#fff7ed",
-    border: "#fed7aa",
-    color: "#ea580c",
-  },
-  red: {
-    background: "#fef2f2",
-    border: "#fecaca",
-    color: "#dc2626",
-  },
-  slate: {
-    background: "#f8fafc",
-    border: "#e2e8f0",
-    color: "#475569",
-  },
-};
 
 const styles: Record<string, CSSProperties> = {
   stack: {

@@ -6,6 +6,8 @@ import {
   getMesLotsCoproprietaire,
   type CoproprietaireLot,
 } from "../../api/coproprietaire";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type MesLotsResponse = Awaited<ReturnType<typeof getMesLotsCoproprietaire>>;
 
@@ -16,6 +18,18 @@ type PageState = {
 };
 
 type StatTone = "blue" | "green" | "indigo" | "slate";
+
+function toModuleStatTone(tone: StatTone) {
+  const toneKey = String(tone);
+
+  if (toneKey === "green") return "green";
+  if (toneKey === "blue") return "blue";
+  if (toneKey === "amber" || toneKey === "orange") return "amber";
+  if (toneKey === "red" || toneKey === "rose") return "red";
+  if (toneKey === "indigo") return "purple";
+
+  return "neutral";
+}
 
 export default function CoproprietaireMesLots() {
   const [state, setState] = useState<PageState>({
@@ -126,40 +140,33 @@ export default function CoproprietaireMesLots() {
   }
 
   return (
-    <div style={styles.stack}>
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Patrimoine personnel</div>
-
-          <h2 style={styles.heroTitle}>Vos lots rattachés</h2>
-
-          <p style={styles.heroText}>
-            Consultez les lots associés à votre compte copropriétaire. Les
-            informations affichées sont filtrées côté serveur selon votre profil
-            et vos droits d’accès.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>Copropriété : {coproprieteName}</span>
-            <span style={styles.metaPill}>
-              Copropriétaire : {coproprietaireName}
-            </span>
-            <span style={styles.metaPill}>
-              {formatNumber(lots.length)} lot(s) visible(s)
-            </span>
+    <div className="coproOwnerPage" style={styles.stack}>
+      <ModuleHero
+        eyebrow="Patrimoine personnel"
+        title="Vos lots rattachés"
+        subtitle="Consultez les lots associés à votre compte copropriétaire. Les informations affichées sont filtrées côté serveur selon votre profil et vos droits d’accès."
+        aside={
+          <div className="coproOwnerSecureBox" style={styles.secureBox}>
+            <div style={styles.secureIcon}>🔐</div>
+            <p style={styles.secureTitle}>Accès personnel</p>
+            <p style={styles.secureText}>
+              Vous ne voyez que les lots liés à votre compte copropriétaire.
+            </p>
           </div>
+        }
+      >
+        <div className="coproOwnerHeroMeta" style={styles.heroMeta}>
+          <span style={styles.metaPill}>Copropriété : {coproprieteName}</span>
+          <span style={styles.metaPill}>
+            Copropriétaire : {coproprietaireName}
+          </span>
+          <span style={styles.metaPill}>
+            {formatNumber(lots.length)} lot(s) visible(s)
+          </span>
         </div>
+      </ModuleHero>
 
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>🔐</div>
-          <p style={styles.secureTitle}>Accès personnel</p>
-          <p style={styles.secureText}>
-            Vous ne voyez que les lots liés à votre compte copropriétaire.
-          </p>
-        </div>
-      </section>
-
-      <section style={styles.statsGrid}>
+      <section className="moduleStatsGrid coproOwnerStatsGrid">
         <StatCard
           title="Lots visibles"
           value={formatNumber(lots.length)}
@@ -187,7 +194,7 @@ export default function CoproprietaireMesLots() {
       </section>
 
       <section style={styles.card}>
-        <div style={styles.sectionHeader}>
+        <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Patrimoine</p>
             <h3 style={styles.sectionTitle}>Liste de vos lots</h3>
@@ -197,7 +204,7 @@ export default function CoproprietaireMesLots() {
             </p>
           </div>
 
-          <div style={styles.headerActions}>
+          <div className="coproOwnerHeaderActions" style={styles.headerActions}>
             <Link to="/coproprietaire/appels" style={styles.secondaryButton}>
               Voir mes charges
             </Link>
@@ -207,7 +214,7 @@ export default function CoproprietaireMesLots() {
           </div>
         </div>
 
-        <div style={styles.toolbar}>
+        <div className="coproOwnerToolbar" style={styles.toolbar}>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -231,7 +238,7 @@ export default function CoproprietaireMesLots() {
             text="Aucun lot ne correspond à votre recherche actuelle."
           />
         ) : (
-          <div style={styles.lotsGrid}>
+          <div className="coproOwnerLotsGrid" style={styles.lotsGrid}>
             {filteredLots.map((lot) => (
               <LotCard key={getLotKey(lot)} lot={lot} />
             ))}
@@ -250,7 +257,7 @@ function LotCard({ lot }: { lot: CoproprietaireLot }) {
 
   return (
     <article style={styles.lotCard}>
-      <div style={styles.lotHeader}>
+      <div className="coproOwnerSectionHeader" style={styles.lotHeader}>
         <div style={styles.lotTitleBlock}>
           <p style={styles.lotEyebrow}>Lot copropriétaire</p>
           <h4 style={styles.lotTitle}>{label}</h4>
@@ -263,7 +270,7 @@ function LotCard({ lot }: { lot: CoproprietaireLot }) {
         {lot.description || "Aucune description renseignée pour ce lot."}
       </p>
 
-      <div style={styles.highlightRow}>
+      <div className="coproOwnerTwoColumnGrid" style={styles.highlightRow}>
         <div style={styles.highlightItem}>
           <span style={styles.highlightLabel}>Quote-part</span>
           <strong style={styles.highlightValue}>{formatNumber(quotePart)}</strong>
@@ -307,20 +314,13 @@ function StatCard({
   description: string;
   tone: StatTone;
 }) {
-  const toneStyle = statTones[tone];
-
   return (
-    <div
-      style={{
-        ...styles.statCard,
-        borderColor: toneStyle.border,
-        background: toneStyle.background,
-      }}
-    >
-      <p style={styles.statTitle}>{title}</p>
-      <p style={{ ...styles.statValue, color: toneStyle.color }}>{value}</p>
-      <p style={styles.statDescription}>{description}</p>
-    </div>
+    <ModuleStatCard
+      label={title}
+      value={value}
+      hint={description}
+      tone={toModuleStatTone(tone)}
+    />
   );
 }
 
@@ -392,32 +392,6 @@ function formatNumber(value: number | string | null | undefined) {
     maximumFractionDigits: 2,
   }).format(numberValue);
 }
-
-const statTones: Record<
-  StatTone,
-  { background: string; border: string; color: string }
-> = {
-  blue: {
-    background: "#eff6ff",
-    border: "#bfdbfe",
-    color: "#2563eb",
-  },
-  green: {
-    background: "#ecfdf5",
-    border: "#bbf7d0",
-    color: "#059669",
-  },
-  indigo: {
-    background: "#eef2ff",
-    border: "#c7d2fe",
-    color: "#4f46e5",
-  },
-  slate: {
-    background: "#f8fafc",
-    border: "#e2e8f0",
-    color: "#0f172a",
-  },
-};
 
 const styles: Record<string, CSSProperties> = {
   stack: {

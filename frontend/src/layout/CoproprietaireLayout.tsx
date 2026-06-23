@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties, type MouseEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuthStore } from "../store/authStore";
@@ -133,6 +133,7 @@ export default function CoproprietaireLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const logout = useAuthStore((state) => state.logout);
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const pageMeta = getPageMeta(location.pathname);
 
@@ -141,9 +142,39 @@ export default function CoproprietaireLayout() {
     navigate("/login", { replace: true });
   }
 
+  function closeMobileMenuOnNavigation(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest("a")) {
+      setMobileMenuOpen(false);
+    }
+  }
+
   return (
-    <div style={styles.shell}>
-      <aside style={styles.sidebar}>
+    <div
+      className={`coproOwnerShell${isMobileMenuOpen ? " coproOwnerShell--menuOpen" : ""}`}
+      style={styles.shell}
+    >
+      <div className="coproOwnerMobileBar" aria-label="Navigation copropriétaire mobile">
+        <button
+          type="button"
+          className="coproOwnerMenuButton"
+          onClick={() => setMobileMenuOpen((value) => !value)}
+          aria-controls="coproprietaireSidebar"
+          aria-expanded={isMobileMenuOpen}
+        >
+          ☰ Menu
+        </button>
+
+        <span className="coproOwnerMobileBrand">Espace copropriétaire</span>
+      </div>
+
+      <div
+        id="coproprietaireSidebar"
+        className="coproOwnerSidebarSlot"
+        onClickCapture={closeMobileMenuOnNavigation}
+      >
+        <aside className="coproOwnerSidebar" style={styles.sidebar}>
         <div style={styles.brandBlock}>
           <div style={styles.logoWrap}>
             <div style={styles.logo}>C</div>
@@ -214,17 +245,18 @@ export default function CoproprietaireLayout() {
             </p>
           </div>
         </div>
-      </aside>
+        </aside>
+      </div>
 
-      <main style={styles.main}>
-        <header style={styles.topbar}>
-          <div style={styles.topbarLeft}>
+      <main className="coproOwnerMain" style={styles.main}>
+        <header className="coproOwnerTopbar" style={styles.topbar}>
+          <div className="coproOwnerTopbarLeft" style={styles.topbarLeft}>
             <p style={styles.eyebrow}>Portail copropriétaire</p>
             <h1 style={styles.pageTitle}>{pageMeta.title}</h1>
             <p style={styles.pageSubtitle}>{pageMeta.subtitle}</p>
           </div>
 
-          <div style={styles.topbarRight}>
+          <div className="coproOwnerTopbarRight" style={styles.topbarRight}>
             <div style={styles.securityPill}>
               <span style={styles.securityDot} />
               <span>Session sécurisée</span>
@@ -240,7 +272,7 @@ export default function CoproprietaireLayout() {
           </div>
         </header>
 
-        <section style={styles.content}>
+        <section className="coproOwnerContent" style={styles.content}>
           <Outlet />
         </section>
       </main>

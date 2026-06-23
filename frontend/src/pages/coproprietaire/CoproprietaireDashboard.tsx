@@ -17,6 +17,8 @@ import {
   type CoproprietaireRelancesResponse,
   type CoproprietaireSituationFinanciereResponse,
 } from "../../api/coproprietaire";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type DashboardState = {
   loading: boolean;
@@ -186,6 +188,18 @@ const formatDate = (value: string | null | undefined) => {
 const fulfilledValue = <T,>(result: PromiseSettledResult<T>): T | null => {
   return result.status === "fulfilled" ? result.value : null;
 };
+
+function toModuleStatTone(tone: Tone) {
+  const toneKey = String(tone);
+
+  if (toneKey === "green") return "green";
+  if (toneKey === "blue") return "blue";
+  if (toneKey === "amber" || toneKey === "orange") return "amber";
+  if (toneKey === "red" || toneKey === "rose") return "red";
+  if (toneKey === "indigo") return "purple";
+
+  return "neutral";
+}
 
 export default function CoproprietaireDashboard() {
   const [state, setState] = useState<DashboardState>(initialState);
@@ -418,7 +432,7 @@ export default function CoproprietaireDashboard() {
   const soldeTone: Tone = summary.soldeBancaireEstime < 0 ? "rose" : "green";
 
   return (
-    <div style={styles.stack}>
+    <div className="coproOwnerPage" style={styles.stack}>
       {state.businessWarning && (
         <div style={styles.alertWarning}>
           <strong>Chargement partiel</strong>
@@ -426,40 +440,33 @@ export default function CoproprietaireDashboard() {
         </div>
       )}
 
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Espace copropriétaire</div>
-
-          <h2 style={styles.heroTitle}>Bonjour {fullName}</h2>
-
-          <p style={styles.heroText}>
-            Retrouvez vos informations essentielles : lots, appels de charges,
-            paiements, situation financière, relances, documents, assemblées
-            générales, présence, votes et règles utiles de la copropriété.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>Copropriété : {coproName}</span>
-            <span style={styles.metaPill}>Profil : Copropriétaire</span>
-            <span style={styles.metaPill}>Compte : {membershipStatus}</span>
-            <span style={styles.metaPill}>Situation : {situationLabel}</span>
-            {summary.exerciceAnnee ? (
-              <span style={styles.metaPill}>Exercice : {summary.exerciceAnnee}</span>
-            ) : null}
+      <ModuleHero
+        eyebrow="Espace copropriétaire"
+        title={`Bonjour ${fullName}`}
+        subtitle="Retrouvez vos informations essentielles : lots, appels de charges, paiements, situation financière, relances, documents, assemblées générales, présence, votes et règles utiles de la copropriété."
+        aside={
+          <div className="coproOwnerSecureBox" style={styles.secureBox}>
+            <div style={styles.secureIcon}>🔐</div>
+            <p style={styles.secureTitle}>Accès sécurisé</p>
+            <p style={styles.secureText}>
+              Vos données sont filtrées automatiquement selon votre compte, vos lots
+              et vos droits copropriétaires.
+            </p>
           </div>
+        }
+      >
+        <div className="coproOwnerHeroMeta" style={styles.heroMeta}>
+          <span style={styles.metaPill}>Copropriété : {coproName}</span>
+          <span style={styles.metaPill}>Profil : Copropriétaire</span>
+          <span style={styles.metaPill}>Compte : {membershipStatus}</span>
+          <span style={styles.metaPill}>Situation : {situationLabel}</span>
+          {summary.exerciceAnnee ? (
+            <span style={styles.metaPill}>Exercice : {summary.exerciceAnnee}</span>
+          ) : null}
         </div>
+      </ModuleHero>
 
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>🔐</div>
-          <p style={styles.secureTitle}>Accès sécurisé</p>
-          <p style={styles.secureText}>
-            Vos données sont filtrées automatiquement selon votre compte, vos lots
-            et vos droits copropriétaires.
-          </p>
-        </div>
-      </section>
-
-      <section style={styles.statsGrid}>
+      <section className="moduleStatsGrid coproOwnerStatsGrid">
         <InfoCard
           label="Lots"
           value={String(summary.lotsCount)}
@@ -486,7 +493,7 @@ export default function CoproprietaireDashboard() {
         />
       </section>
 
-      <section style={styles.financialStrip}>
+      <section className="coproOwnerFinancialStrip" style={styles.financialStrip}>
         <div style={styles.financialStripLeft}>
           <div style={styles.financialIcon}>📊</div>
 
@@ -502,7 +509,7 @@ export default function CoproprietaireDashboard() {
           </div>
         </div>
 
-        <div style={styles.financialMetrics}>
+        <div className="coproOwnerFinancialMetrics" style={styles.financialMetrics}>
           <MiniMetric label="Taux" value={formatPercent(summary.tauxEncaissement)} />
           <MiniMetric label="Crédits" value={formatMoney(summary.creditsBancaires)} />
           <MiniMetric label="Débits" value={formatMoney(summary.debitsBancaires)} />
@@ -513,9 +520,9 @@ export default function CoproprietaireDashboard() {
         </Link>
       </section>
 
-      <section style={styles.mainGrid}>
+      <section className="coproOwnerMainGrid" style={styles.mainGrid}>
         <div style={styles.card}>
-          <div style={styles.sectionHeader}>
+          <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
             <div>
               <p style={styles.sectionEyebrow}>Accès rapide</p>
               <h3 style={styles.sectionTitle}>Vos démarches courantes</h3>
@@ -526,7 +533,7 @@ export default function CoproprietaireDashboard() {
             </span>
           </div>
 
-          <div style={styles.summaryGrid}>
+          <div className="coproOwnerSummaryGrid" style={styles.summaryGrid}>
             <SummaryCard
               label="Appels"
               value={String(summary.appelsCount)}
@@ -551,7 +558,7 @@ export default function CoproprietaireDashboard() {
             />
           </div>
 
-          <div style={styles.actionsGrid}>
+          <div className="coproOwnerActionGrid" style={styles.actionsGrid}>
             {QUICK_ACTIONS.map((action) => (
               <ActionCard key={action.path} action={action} />
             ))}
@@ -721,20 +728,13 @@ function InfoCard({
   description: string;
   tone: Tone;
 }) {
-  const toneStyle = tones[tone];
-
   return (
-    <div
-      style={{
-        ...styles.infoCard,
-        borderColor: toneStyle.border,
-        background: toneStyle.softBackground,
-      }}
-    >
-      <p style={styles.infoLabel}>{label}</p>
-      <p style={{ ...styles.infoValue, color: toneStyle.color }}>{value}</p>
-      <p style={styles.infoDescription}>{description}</p>
-    </div>
+    <ModuleStatCard
+      label={label}
+      value={value}
+      hint={description}
+      tone={toModuleStatTone(tone)}
+    />
   );
 }
 

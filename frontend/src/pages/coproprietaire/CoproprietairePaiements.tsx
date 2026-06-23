@@ -7,6 +7,8 @@ import {
   type CoproprietairePaiementItem,
   type CoproprietairePaiementsResponse,
 } from "../../api/coproprietaire";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type PageState = {
   loading: boolean;
@@ -16,6 +18,18 @@ type PageState = {
 
 type StatusFilter = "ALL" | "VALIDES" | "ANNULES";
 type StatTone = "blue" | "green" | "red" | "slate" | "indigo";
+
+function toModuleStatTone(tone: StatTone) {
+  const toneKey = String(tone);
+
+  if (toneKey === "green") return "green";
+  if (toneKey === "blue") return "blue";
+  if (toneKey === "amber" || toneKey === "orange") return "amber";
+  if (toneKey === "red" || toneKey === "rose") return "red";
+  if (toneKey === "indigo") return "purple";
+
+  return "neutral";
+}
 
 export default function CoproprietairePaiements() {
   const [state, setState] = useState<PageState>({
@@ -137,42 +151,36 @@ export default function CoproprietairePaiements() {
   }
 
   return (
-    <div style={styles.stack}>
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Historique financier</div>
-
-          <h2 style={styles.heroTitle}>Vos paiements</h2>
-
-          <p style={styles.heroText}>
-            Consultez les règlements enregistrés sur vos appels de charges :
-            montant, date, mode de paiement, référence et statut de validation.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>
-              {formatNumber(nbPaiements)} paiement(s)
-            </span>
-            <span style={styles.metaPill}>
-              Total payé : {formatMoneyFCFA(totalPaye)}
-            </span>
-            <span style={styles.metaPill}>
-              Annulés : {formatNumber(nbAnnules)}
-            </span>
+    <div className="coproOwnerPage" style={styles.stack}>
+      <ModuleHero
+        eyebrow="Historique financier"
+        title="Vos paiements"
+        subtitle="Consultez les règlements enregistrés sur vos appels de charges : montant, date, mode de paiement, référence et statut de validation."
+        aside={
+          <div className="coproOwnerSecureBox" style={styles.secureBox}>
+            <div style={styles.secureIcon}>🔐</div>
+            <p style={styles.secureTitle}>Suivi sécurisé</p>
+            <p style={styles.secureText}>
+              Un copropriétaire ne peut consulter que les paiements rattachés à
+              ses propres lots.
+            </p>
           </div>
+        }
+      >
+        <div className="coproOwnerHeroMeta" style={styles.heroMeta}>
+          <span style={styles.metaPill}>
+            {formatNumber(nbPaiements)} paiement(s)
+          </span>
+          <span style={styles.metaPill}>
+            Total payé : {formatMoneyFCFA(totalPaye)}
+          </span>
+          <span style={styles.metaPill}>
+            Annulés : {formatNumber(nbAnnules)}
+          </span>
         </div>
+      </ModuleHero>
 
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>🔐</div>
-          <p style={styles.secureTitle}>Suivi sécurisé</p>
-          <p style={styles.secureText}>
-            Un copropriétaire ne peut consulter que les paiements rattachés à
-            ses propres lots.
-          </p>
-        </div>
-      </section>
-
-      <section style={styles.grid}>
+      <section className="moduleStatsGrid coproOwnerStatsGrid">
         <StatCard
           title="Total payé"
           value={formatMoneyFCFA(totalPaye)}
@@ -200,7 +208,7 @@ export default function CoproprietairePaiements() {
       </section>
 
       <section style={styles.card}>
-        <div style={styles.sectionHeader}>
+        <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Historique</p>
             <h3 style={styles.sectionTitle}>Liste de vos paiements</h3>
@@ -209,7 +217,7 @@ export default function CoproprietairePaiements() {
             </p>
           </div>
 
-          <div style={styles.headerActions}>
+          <div className="coproOwnerHeaderActions" style={styles.headerActions}>
             <Link to="/coproprietaire/appels" style={styles.secondaryButton}>
               Voir mes appels
             </Link>
@@ -219,7 +227,7 @@ export default function CoproprietairePaiements() {
           </div>
         </div>
 
-        <div style={styles.filters}>
+        <div className="coproOwnerFilters" style={styles.filters}>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -250,7 +258,7 @@ export default function CoproprietairePaiements() {
             text="Aucun paiement ne correspond aux critères affichés pour votre compte copropriétaire."
           />
         ) : (
-          <div style={styles.tableWrapper}>
+          <div className="coproOwnerTableScroll" style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -355,20 +363,13 @@ function StatCard({
   description: string;
   tone: StatTone;
 }) {
-  const toneStyle = statTones[tone];
-
   return (
-    <div
-      style={{
-        ...styles.statCard,
-        borderColor: toneStyle.border,
-        background: toneStyle.background,
-      }}
-    >
-      <p style={styles.statTitle}>{title}</p>
-      <p style={{ ...styles.statValue, color: toneStyle.color }}>{value}</p>
-      <p style={styles.statDescription}>{description}</p>
-    </div>
+    <ModuleStatCard
+      label={title}
+      value={value}
+      hint={description}
+      tone={toModuleStatTone(tone)}
+    />
   );
 }
 
@@ -443,37 +444,6 @@ function formatModePaiement(value: string | null | undefined) {
 
   return labels[normalized] || value;
 }
-
-const statTones: Record<
-  StatTone,
-  { background: string; border: string; color: string }
-> = {
-  blue: {
-    background: "#eff6ff",
-    border: "#bfdbfe",
-    color: "#2563eb",
-  },
-  green: {
-    background: "#ecfdf5",
-    border: "#bbf7d0",
-    color: "#059669",
-  },
-  red: {
-    background: "#fef2f2",
-    border: "#fecaca",
-    color: "#dc2626",
-  },
-  slate: {
-    background: "#f8fafc",
-    border: "#e2e8f0",
-    color: "#475569",
-  },
-  indigo: {
-    background: "#eef2ff",
-    border: "#c7d2fe",
-    color: "#4f46e5",
-  },
-};
 
 const styles: Record<string, CSSProperties> = {
   stack: {
