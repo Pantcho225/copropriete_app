@@ -857,8 +857,7 @@ const styles: Record<string, CSSProperties> = {
     gap: 24,
     padding: 28,
     borderRadius: 28,
-    background:
-      "linear-gradient(135deg, rgba(30,64,175,0.98), rgba(79,70,229,0.92))",
+    background: "var(--module-hero-gradient)",
     color: "white",
     boxShadow: "0 24px 60px rgba(30, 64, 175, 0.25)",
   },

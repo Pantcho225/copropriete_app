@@ -1,3 +1,20 @@
+:root {
+  --module-hero-start: #0f172a;
+  --module-hero-mid: #172554;
+  --module-hero-end: #2563eb;
+  --module-hero-gradient: linear-gradient(
+    135deg,
+    var(--module-hero-start) 0%,
+    var(--module-hero-mid) 46%,
+    var(--module-hero-end) 100%
+  );
+  --module-hero-glow: rgba(255, 255, 255, 0.16);
+  --module-hero-blue-glow: rgba(59, 130, 246, 0.18);
+  --module-hero-title: #ffffff;
+  --module-hero-subtitle: #dbeafe;
+  --module-hero-eyebrow: #bfdbfe;
+}
+
 html {
   font-size: 16px;
 }

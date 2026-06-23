@@ -2866,7 +2866,7 @@ function AGDetailStyles() {
       .agdetail-hero {
         border-radius: 20px;
         padding: 14px 16px;
-        background: linear-gradient(135deg, #0f172a 0%, #172554 44%, #2563eb 100%);
+        background: var(--module-hero-gradient);
         box-shadow: 0 12px 28px rgba(37, 99, 235, 0.10);
         display: grid;
         grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);

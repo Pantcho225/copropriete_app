@@ -1114,8 +1114,7 @@ const headerSubtitle: CSSProperties = {
 };
 
 const heroCard: CSSProperties = {
-  background:
-    "linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.96) 52%, rgba(37,99,235,0.88) 100%)",
+  background: "var(--module-hero-gradient)",
   borderRadius: 28,
   padding: "28px 30px",
   color: "#ffffff",
@@ -1130,7 +1129,7 @@ const heroGlow: CSSProperties = {
   width: 280,
   height: 280,
   borderRadius: "50%",
-  background: "radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 72%)",
+  background: "radial-gradient(circle, var(--module-hero-glow) 0%, rgba(255,255,255,0) 72%)",
   pointerEvents: "none",
 };
 
@@ -1140,7 +1139,7 @@ const heroGlowSecondary: CSSProperties = {
   width: 220,
   height: 220,
   borderRadius: "50%",
-  background: "radial-gradient(circle, rgba(59,130,246,0.16) 0%, rgba(59,130,246,0) 72%)",
+  background: "radial-gradient(circle, var(--module-hero-blue-glow) 0%, rgba(59,130,246,0) 72%)",
   pointerEvents: "none",
 };
 
