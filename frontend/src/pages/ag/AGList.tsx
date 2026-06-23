@@ -1191,9 +1191,9 @@ const sectionCardBodyStyle: CSSProperties = {
 };
 
 const heroCardStyle: CSSProperties = {
-  borderRadius: 24,
-  padding: "18px 20px",
-  background: "linear-gradient(135deg, #0f172a 0%, #172554 44%, #2563eb 100%)",
+  borderRadius: "clamp(18px, 4vw, 24px)",
+  padding: "clamp(16px, 4vw, 20px)",
+  background: "var(--module-hero-gradient)",
   boxShadow: "0 16px 32px rgba(37, 99, 235, 0.12)",
   width: "100%",
   minWidth: 0,
@@ -1203,7 +1203,7 @@ const heroCardStyle: CSSProperties = {
 
 const heroGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
   gap: 16,
   alignItems: "stretch",
   width: "100%",

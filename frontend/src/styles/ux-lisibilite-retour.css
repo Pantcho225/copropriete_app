@@ -118,3 +118,235 @@ body {
 .pageBackRow {
   margin-bottom: 14px;
 }
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+:where(table) {
+  max-width: 100%;
+}
+
+:where(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  html {
+    font-size: 15px;
+  }
+
+  :where([class*="contentViewport"]) {
+    padding: 12px;
+  }
+
+  :where([class*="contentFrame"]) {
+    gap: 14px;
+  }
+
+  :where([class*="contentSurface"]) {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .pageHeader {
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .pageHeader__top {
+    align-items: stretch;
+  }
+
+  .pageHeader__actions {
+    width: 100%;
+  }
+
+  .pageHeader__actions > * {
+    min-width: min(100%, 220px);
+  }
+
+  .backButton {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .pageBackRow {
+    margin-bottom: 10px;
+  }
+
+  .agdetail-back-row {
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .pageHeader__top,
+  .pageHeader__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pageHeader__actions > *,
+  .backButton {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .adminShell {
+    flex-direction: column !important;
+    min-height: 100vh;
+    overflow: visible !important;
+  }
+
+  .adminSidebar {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: 42vh !important;
+    position: relative !important;
+    top: auto !important;
+    padding: 16px 14px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid #2A3650 !important;
+    box-shadow: 0 12px 26px rgba(11, 19, 32, 0.16) !important;
+  }
+
+  .adminSidebar nav {
+    max-height: 24vh;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .adminMain {
+    width: 100% !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  .adminContentViewport {
+    padding: 12px !important;
+  }
+
+  .adminContentContainer {
+    max-width: 100% !important;
+  }
+
+  .adminContentFrame {
+    min-height: auto !important;
+    border-radius: 18px !important;
+    padding: 4px !important;
+  }
+
+  .adminContentSurface {
+    min-height: auto !important;
+    border-radius: 16px !important;
+    padding: 14px !important;
+    overflow-x: hidden !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .adminSidebar {
+    max-height: 50vh !important;
+    padding: 14px 12px !important;
+  }
+
+  .adminSidebar nav {
+    max-height: 30vh;
+  }
+
+  .adminContentViewport {
+    padding: 10px !important;
+  }
+
+  .adminContentSurface {
+    padding: 12px !important;
+  }
+}
+
+.adminMobileBar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .adminMobileBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    background: #0B1320;
+    border-bottom: 1px solid #2A3650;
+    color: #F6F2E9;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .adminMenuButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid rgba(182, 141, 64, 0.45);
+    background: rgba(182, 141, 64, 0.12);
+    color: #F6F2E9;
+    border-radius: 999px;
+    padding: 9px 14px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .adminMobileBrand {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .adminShell:not(.adminShell--menuOpen) .adminSidebar {
+    display: none !important;
+  }
+
+  .adminShell--menuOpen .adminSidebar {
+    display: flex !important;
+    max-height: 72vh !important;
+  }
+
+  .adminShell--menuOpen .adminSidebar nav {
+    max-height: 44vh !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .adminMobileBar {
+    padding: 10px;
+  }
+
+  .adminMenuButton {
+    width: auto;
+    min-width: 118px;
+  }
+
+  .adminShell--menuOpen .adminSidebar {
+    max-height: 76vh !important;
+  }
+
+  .adminShell--menuOpen .adminSidebar nav {
+    max-height: 48vh !important;
+  }
+}

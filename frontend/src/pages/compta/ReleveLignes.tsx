@@ -1423,6 +1423,7 @@ const emptyStateText: CSSProperties = {
 
 const tableWrap: CSSProperties = {
   overflowX: "auto",
+  overscrollBehaviorX: "contain",
   marginTop: 4,
   width: "100%",
   minWidth: 0,

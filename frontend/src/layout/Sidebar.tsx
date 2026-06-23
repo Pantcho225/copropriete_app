@@ -64,7 +64,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside style={sidebarStyle} translate="no" className="notranslate">
+    <aside id="adminSidebar" style={sidebarStyle} translate="no" className="adminSidebar notranslate">
       <div style={brandStyle}>
         <div style={sealStyle} aria-hidden="true">
           <svg

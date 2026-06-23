@@ -1,20 +1,49 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties, type MouseEvent } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
 export default function AdminLayout() {
-  return (
-    <div style={appShell}>
-      <Sidebar />
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-      <main style={mainArea}>
+  const closeMobileMenuOnNavigation = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest("a")) {
+      setMobileMenuOpen(false);
+    }
+  };
+
+  return (
+    <div
+      className={`adminShell${isMobileMenuOpen ? " adminShell--menuOpen" : ""}`}
+      style={appShell}
+    >
+      <div className="adminMobileBar" aria-label="Navigation mobile">
+        <button
+          type="button"
+          className="adminMenuButton"
+          onClick={() => setMobileMenuOpen((value) => !value)}
+          aria-controls="adminSidebar"
+          aria-expanded={isMobileMenuOpen}
+        >
+          ☰ Menu
+        </button>
+
+        <span className="adminMobileBrand">Copropriété App</span>
+      </div>
+
+      <div className="adminSidebarSlot" onClickCapture={closeMobileMenuOnNavigation}>
+        <Sidebar />
+      </div>
+
+      <main className="adminMain" style={mainArea}>
         <Topbar />
 
-        <div style={contentViewport}>
-          <div style={contentContainer}>
-            <section aria-label="Contenu principal" style={contentFrame}>
-              <div style={contentSurface}>
+        <div className="adminContentViewport" style={contentViewport}>
+          <div className="adminContentContainer" style={contentContainer}>
+            <section className="adminContentFrame" aria-label="Contenu principal" style={contentFrame}>
+              <div className="adminContentSurface" style={contentSurface}>
                 <Outlet />
               </div>
             </section>

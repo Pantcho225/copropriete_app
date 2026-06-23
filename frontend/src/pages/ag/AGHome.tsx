@@ -799,7 +799,7 @@ export default function AGHome() {
         className="ag-kpi-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
           gap: 14,
         }}
       >
@@ -844,7 +844,7 @@ export default function AGHome() {
           className="ag-actions-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
             gap: 12,
           }}
         >
@@ -887,7 +887,7 @@ export default function AGHome() {
         className="ag-main-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
           gap: 16,
         }}
       >
@@ -906,7 +906,7 @@ export default function AGHome() {
             className="ag-summary-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))",
               gap: 12,
               marginBottom: 16,
             }}
@@ -988,7 +988,7 @@ export default function AGHome() {
         className="ag-bottom-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
           gap: 16,
         }}
       >
@@ -1007,7 +1007,7 @@ export default function AGHome() {
             className="ag-steps-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
               gap: 12,
             }}
           >
@@ -1115,8 +1115,8 @@ const headerSubtitle: CSSProperties = {
 
 const heroCard: CSSProperties = {
   background: "var(--module-hero-gradient)",
-  borderRadius: 28,
-  padding: "28px 30px",
+  borderRadius: "clamp(20px, 4vw, 28px)",
+  padding: "clamp(20px, 4vw, 30px)",
   color: "#ffffff",
   boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
   position: "relative",
@@ -1126,8 +1126,8 @@ const heroCard: CSSProperties = {
 const heroGlow: CSSProperties = {
   position: "absolute",
   inset: "auto -120px -140px auto",
-  width: 280,
-  height: 280,
+  width: "min(280px, 70vw)",
+  height: "min(280px, 70vw)",
   borderRadius: "50%",
   background: "radial-gradient(circle, var(--module-hero-glow) 0%, rgba(255,255,255,0) 72%)",
   pointerEvents: "none",
@@ -1136,8 +1136,8 @@ const heroGlow: CSSProperties = {
 const heroGlowSecondary: CSSProperties = {
   position: "absolute",
   inset: "-60px auto auto -60px",
-  width: 220,
-  height: 220,
+  width: "min(220px, 62vw)",
+  height: "min(220px, 62vw)",
   borderRadius: "50%",
   background: "radial-gradient(circle, var(--module-hero-blue-glow) 0%, rgba(59,130,246,0) 72%)",
   pointerEvents: "none",
@@ -1145,7 +1145,7 @@ const heroGlowSecondary: CSSProperties = {
 
 const heroLayout: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(360px, 1.3fr) minmax(280px, 0.9fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
   gap: 22,
   alignItems: "end",
   position: "relative",
@@ -1162,7 +1162,7 @@ const heroSide: CSSProperties = {
 
 const heroSideGrid: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
   gap: 12,
 };
 

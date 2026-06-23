@@ -918,11 +918,11 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
-    minWidth: 170,
+    minWidth: "min(100%, 170px)",
   },
   searchGroup: {
     flex: 1,
-    minWidth: 260,
+    minWidth: "min(100%, 260px)",
   },
   label: {
     color: "#475569",
@@ -957,7 +957,7 @@ const styles: Record<string, CSSProperties> = {
   },
   statsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
     gap: 16,
   },
   statCard: {
@@ -1008,7 +1008,9 @@ const styles: Record<string, CSSProperties> = {
   },
   tableWrapper: {
     width: "100%",
+    minWidth: 0,
     overflowX: "auto",
+    overscrollBehaviorX: "contain",
   },
   table: {
     width: "100%",
