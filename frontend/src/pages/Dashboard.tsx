@@ -8,6 +8,8 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import ModuleHero from "../components/ui/ModuleHero";
+import ModuleStatCard from "../components/ui/ModuleStatCard";
 
 type LoadState = "loading" | "success" | "error";
 type ToneKind = "neutral" | "success" | "info" | "warning" | "danger";
@@ -116,6 +118,14 @@ type QuickAction = {
   to: string;
   tone?: ToneKind;
 };
+
+function toModuleStatTone(kind?: ToneKind) {
+  if (kind === "success") return "green";
+  if (kind === "info") return "blue";
+  if (kind === "warning") return "amber";
+  if (kind === "danger") return "red";
+  return "neutral";
+}
 
 function getTone(kind: ToneKind) {
   if (kind === "success") {
@@ -653,71 +663,42 @@ export default function Dashboard() {
 
   return (
     <div style={pageWrap}>
-      <section style={heroCard}>
-        <div style={rowBetween}>
-          <div style={{ maxWidth: 760 }}>
-            <div
-              style={{
-                ...badgeBase,
-                background: "rgba(255,255,255,0.14)",
-                color: "#ffffff",
-                marginBottom: 14,
-              }}
+      <ModuleHero
+        eyebrow="Vue d’ensemble produit"
+        title="Pilotez votre copropriété depuis un cockpit clair, centralisé et commercialisable."
+        subtitle="Retrouvez les indicateurs comptables, travaux, assemblées, facturation et les accès rapides vers les modules consolidés : RH, Lots, Facturation et Super Admin."
+        actions={
+          <>
+            <button
+              type="button"
+              className="moduleButton moduleButton--heroDark"
+              onClick={() => void fetchDashboard()}
             >
-              Vue d’ensemble produit
-            </div>
-
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 32,
-                lineHeight: 1.15,
-                fontWeight: 900,
-              }}
-            >
-              Pilotez votre copropriété depuis un cockpit clair, centralisé et
-              commercialisable.
-            </h1>
-
-            <p
-              style={{
-                margin: "12px 0 0",
-                color: "rgba(255,255,255,0.85)",
-                fontSize: 15,
-                lineHeight: 1.6,
-              }}
-            >
-              Retrouvez les indicateurs comptables, travaux, assemblées,
-              facturation et les accès rapides vers les modules consolidés :
-              RH, Lots, Facturation et Super Admin.
-            </p>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" style={softButton} onClick={() => void fetchDashboard()}>
               Actualiser
             </button>
 
-            <button type="button" style={primaryButton} onClick={() => navigate("/compta")}>
+            <button
+              type="button"
+              className="moduleButton moduleButton--hero"
+              onClick={() => navigate("/compta")}
+            >
               Voir Comptabilité
             </button>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div style={gridCards}>
+          </>
+        }
+      >
+        <div className="moduleStatsGrid">
           {dashboardCards.map((item) => (
-            <StatCard
+            <ModuleStatCard
               key={item.title}
-              title={item.title}
-              value={item.value}
-              subtitle={item.subtitle}
-              tone={item.tone as ToneKind}
+              label={item.title}
+              value={String(item.value ?? "—")}
+              hint={item.subtitle}
+              tone={toModuleStatTone(item.tone as ToneKind)}
             />
           ))}
         </div>
-      </section>
+      </ModuleHero>
 
       <section>
         <div style={cardStyle}>
@@ -1022,14 +1003,6 @@ const pageWrap: CSSProperties = {
   width: "100%",
   minWidth: 0,
   overflowX: "hidden",
-};
-
-const heroCard: CSSProperties = {
-  background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-  color: "#ffffff",
-  borderRadius: 24,
-  padding: 24,
-  boxShadow: "0 20px 40px rgba(15, 23, 42, 0.18)",
 };
 
 const gridCards: CSSProperties = {
