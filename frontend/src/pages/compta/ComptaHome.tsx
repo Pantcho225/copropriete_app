@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CSSProperties, ReactNode } from "react";
 import { APP_TEXT } from "../../constants/appText";
+import BackButton from "../../components/ui/BackButton";
 
 type ToneKind = "neutral" | "success" | "warning" | "info";
 
@@ -57,6 +58,8 @@ function HeroHeader(props: {
   title: string;
   subtitle?: string;
   right?: ReactNode;
+  backTo?: string;
+  backLabel?: string;
 }) {
   return (
     <section style={heroCard}>
@@ -64,6 +67,12 @@ function HeroHeader(props: {
 
       <div style={heroHeader}>
         <div style={heroTextBlock}>
+          {props.backTo || props.backLabel ? (
+            <div className="pageBackRow">
+              <BackButton to={props.backTo} label={props.backLabel ?? "Retour"} />
+            </div>
+          ) : null}
+
           <div style={pageEyebrow}>Comptabilité · Pilotage</div>
 
           <div style={pageTitle}>{props.title}</div>
@@ -338,6 +347,8 @@ export default function ComptaHome() {
       <HeroHeader
         title={APP_TEXT.pages.compta.homeTitle}
         subtitle={APP_TEXT.pages.compta.homeSubtitle}
+        backTo="/dashboard"
+        backLabel="Retour au tableau de bord"
         right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <SmallButton primary onClick={goToImport}>
