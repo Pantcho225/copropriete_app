@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type Lot = {
   id: number;
@@ -830,48 +832,38 @@ export default function PlatformLots() {
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.hero}>
-          <div style={styles.heroTop}>
-            <div>
-              <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Lots & occupation</h1>
-              <p style={styles.heroText}>
-                Créez et maintenez les lots de référence. Les lots sont le socle
-                des tantièmes, des appels de charges, des relances, des votes en
-                assemblée générale, de l’espace copropriétaire et du suivi des
-                occupants réels.
-              </p>
-            </div>
+        <ModuleHero
+          eyebrow="Super Admin · Référentiel copropriété"
+          title="Lots & occupation"
+          subtitle="Créez et maintenez les lots de référence. Les lots sont le socle des tantièmes, des appels de charges, des relances, des votes en assemblée générale, de l’espace copropriétaire et du suivi des occupants réels."
+        >
+          <div className="moduleStatsGrid">
+            <ModuleStatCard
+              label="Lots"
+              value={formatNumber(stats.total)}
+              hint="Unités référentielles enregistrées"
+              tone="blue"
+            />
+            <ModuleStatCard
+              label="Actifs"
+              value={formatNumber(stats.actifs)}
+              hint="Exploitables dans les modules métier"
+              tone="green"
+            />
+            <ModuleStatCard
+              label="Inactifs"
+              value={formatNumber(stats.inactifs)}
+              hint="Lots hors exploitation courante"
+              tone="neutral"
+            />
+            <ModuleStatCard
+              label="Occupants"
+              value={formatNumber(stats.lotsAvecOccupant)}
+              hint="Lots avec occupant principal déclaré"
+              tone="purple"
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Lots</p>
-              <p style={styles.statValue}>{formatNumber(stats.total)}</p>
-              <p style={styles.statHint}>Unités référentielles enregistrées</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>Actifs</p>
-              <p style={styles.statValue}>{formatNumber(stats.actifs)}</p>
-              <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                Exploitables dans les modules métier
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#e2e8f0" }}>Inactifs</p>
-              <p style={styles.statValue}>{formatNumber(stats.inactifs)}</p>
-              <p style={styles.statHint}>Lots hors exploitation courante</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Occupants</p>
-              <p style={styles.statValue}>{formatNumber(stats.lotsAvecOccupant)}</p>
-              <p style={styles.statHint}>Lots avec occupant principal déclaré</p>
-            </div>
-          </div>
-        </div>
+        </ModuleHero>
 
         <div style={styles.content}>
           <main style={styles.main}>

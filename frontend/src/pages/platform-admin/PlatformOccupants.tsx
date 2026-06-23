@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type Lot = {
   id: number;
@@ -873,56 +875,44 @@ export default function PlatformOccupants() {
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.hero}>
-          <div style={styles.heroTop}>
-            <div>
-              <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Occupants & habitants</h1>
-              <p style={styles.heroText}>
-                Gérez les personnes qui habitent réellement les lots : propriétaire
-                occupant, locataire, ayant droit ou autre. Ce registre complète la
-                fiche propriétaire sans collecter inutilement le nom de tous les
-                membres du foyer.
-              </p>
-            </div>
+        <ModuleHero
+          eyebrow="Super Admin · Référentiel copropriété"
+          title="Occupants & habitants"
+          subtitle="Gérez les personnes qui habitent réellement les lots : propriétaire occupant, locataire, ayant droit ou autre. Ce registre complète la fiche propriétaire sans collecter inutilement le nom de tous les membres du foyer."
+        >
+          <div className="moduleStatsGrid">
+            <ModuleStatCard
+              label="Fiches occupants"
+              value={formatNumber(stats.total)}
+              hint="Occupations historisées"
+              tone="blue"
+            />
+            <ModuleStatCard
+              label="Actifs"
+              value={formatNumber(stats.actifs)}
+              hint="Habitants actuellement déclarés"
+              tone="green"
+            />
+            <ModuleStatCard
+              label="Clôturés"
+              value={formatNumber(stats.inactifs)}
+              hint="Sorties ou fiches inactives"
+              tone="neutral"
+            />
+            <ModuleStatCard
+              label="Occupants principaux"
+              value={formatNumber(stats.principaux)}
+              hint="Fiches principales par lot"
+              tone="purple"
+            />
+            <ModuleStatCard
+              label="Total déclaré"
+              value={formatNumber(stats.totalOccupantsDeclares)}
+              hint="Nombre d’occupants déclaré"
+              tone="amber"
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Fiches occupants</p>
-              <p style={styles.statValue}>{formatNumber(stats.total)}</p>
-              <p style={styles.statHint}>Occupations historisées</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>Actifs</p>
-              <p style={styles.statValue}>{formatNumber(stats.actifs)}</p>
-              <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                Habitants actuellement déclarés
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#e2e8f0" }}>Clôturés</p>
-              <p style={styles.statValue}>{formatNumber(stats.inactifs)}</p>
-              <p style={styles.statHint}>Sorties ou fiches inactives</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Occupants principaux</p>
-              <p style={styles.statValue}>{formatNumber(stats.principaux)}</p>
-              <p style={styles.statHint}>Fiches principales par lot</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Total déclaré</p>
-              <p style={styles.statValue}>
-                {formatNumber(stats.totalOccupantsDeclares)}
-              </p>
-              <p style={styles.statHint}>Nombre d’occupants déclaré</p>
-            </div>
-          </div>
-        </div>
+        </ModuleHero>
 
         <div style={styles.content}>
           <main style={styles.main}>

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleStatCard from "../../components/ui/ModuleStatCard";
 
 type Lot = {
   id: number;
@@ -781,49 +783,38 @@ export default function PlatformTantiemes() {
   return (
     <div style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.hero}>
-          <div style={styles.heroTop}>
-            <div>
-              <p style={styles.eyebrow}>Super Admin · Référentiel copropriété</p>
-              <h1 style={styles.title}>Tantièmes</h1>
-              <p style={styles.heroText}>
-                Paramétrez les catégories et les valeurs de tantièmes utilisées
-                pour les répartitions, les votes, les appels de fonds et la
-                cohérence des assemblées générales.
-              </p>
-            </div>
+        <ModuleHero
+          eyebrow="Super Admin · Référentiel copropriété"
+          title="Tantièmes"
+          subtitle="Paramétrez les catégories et les valeurs de tantièmes utilisées pour les répartitions, les votes, les appels de fonds et la cohérence des assemblées générales."
+        >
+          <div className="moduleStatsGrid">
+            <ModuleStatCard
+              label="Lots disponibles"
+              value={formatNumber(stats.lots)}
+              hint="Lots pouvant recevoir des tantièmes"
+              tone="blue"
+            />
+            <ModuleStatCard
+              label="Catégories actives"
+              value={formatNumber(stats.activeCategories)}
+              hint="Clés de répartition utilisables"
+              tone="green"
+            />
+            <ModuleStatCard
+              label="Valeurs saisies"
+              value={formatNumber(stats.values)}
+              hint="Affectations lot / catégorie"
+              tone="purple"
+            />
+            <ModuleStatCard
+              label="Total valeurs"
+              value={formatNumber(stats.totalValues)}
+              hint="Somme rapide des tantièmes saisis"
+              tone="amber"
+            />
           </div>
-
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Lots disponibles</p>
-              <p style={styles.statValue}>{formatNumber(stats.lots)}</p>
-              <p style={styles.statHint}>Lots pouvant recevoir des tantièmes</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={{ ...styles.statLabel, color: "#bbf7d0" }}>
-                Catégories actives
-              </p>
-              <p style={styles.statValue}>{formatNumber(stats.activeCategories)}</p>
-              <p style={{ ...styles.statHint, color: "#dcfce7" }}>
-                Clés de répartition utilisables
-              </p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Valeurs saisies</p>
-              <p style={styles.statValue}>{formatNumber(stats.values)}</p>
-              <p style={styles.statHint}>Affectations lot / catégorie</p>
-            </div>
-
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Total valeurs</p>
-              <p style={styles.statValue}>{formatNumber(stats.totalValues)}</p>
-              <p style={styles.statHint}>Somme rapide des tantièmes saisis</p>
-            </div>
-          </div>
-        </div>
+        </ModuleHero>
 
         <div style={styles.content}>
           <main style={styles.main}>
