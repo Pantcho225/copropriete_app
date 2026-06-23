@@ -1,6 +1,7 @@
 // frontend/src/pages/administration/GestionAdministrativeHome.tsx
-import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
+import ModuleHero from "../../components/ui/ModuleHero";
+import ModuleSection from "../../components/ui/ModuleSection";
 
 const cards = [
   {
@@ -55,103 +56,28 @@ const cards = [
 
 export default function GestionAdministrativeHome() {
   return (
-    <div style={page}>
-      <section style={hero}>
-        <div>
-          <p style={eyebrow}>Gestion administrative</p>
-          <h1 style={title}>Centre administratif de la copropriété</h1>
-          <p style={subtitle}>
-            Regroupez les informations institutionnelles, les copropriétaires,
-            les lots, les assemblées générales, les mandats, les réunions et les
-            documents administratifs dans un espace unique et lisible.
-          </p>
-        </div>
-      </section>
+    <div className="modulePageStack">
+      <ModuleHero
+        eyebrow="Gestion administrative"
+        title="Centre administratif de la copropriété"
+        subtitle="Regroupez les informations institutionnelles, les copropriétaires, les lots, les assemblées générales, les mandats, les réunions et les documents administratifs dans un espace unique, lisible et cohérent."
+      />
 
-      <section style={grid}>
-        {cards.map((card) => (
-          <Link key={card.to} to={card.to} style={cardStyle}>
-            <div style={cardTitle}>{card.title}</div>
-            <p style={cardText}>{card.description}</p>
-            <span style={cardAction}>Ouvrir →</span>
-          </Link>
-        ))}
-      </section>
+      <ModuleSection
+        eyebrow="Référentiel administratif"
+        title="Accès aux espaces de gestion"
+        subtitle="Ouvrez rapidement les principales rubriques administratives liées à la copropriété active."
+      >
+        <div className="moduleLinkGrid">
+          {cards.map((card) => (
+            <Link key={card.to} to={card.to} className="moduleNavCard">
+              <div className="moduleNavCard__title">{card.title}</div>
+              <p className="moduleNavCard__text">{card.description}</p>
+              <span className="moduleNavCard__action">Ouvrir →</span>
+            </Link>
+          ))}
+        </div>
+      </ModuleSection>
     </div>
   );
 }
-
-const page: CSSProperties = {
-  display: "grid",
-  gap: 24,
-};
-
-const hero: CSSProperties = {
-  padding: 24,
-  borderRadius: 24,
-  background:
-    "linear-gradient(135deg, #eef2ff 0%, #f8fafc 52%, #ffffff 100%)",
-  border: "1px solid #e5e7eb",
-};
-
-const eyebrow: CSSProperties = {
-  margin: 0,
-  fontSize: 12,
-  fontWeight: 900,
-  letterSpacing: 0.8,
-  textTransform: "uppercase",
-  color: "#4f46e5",
-};
-
-const title: CSSProperties = {
-  margin: "8px 0 0",
-  fontSize: 30,
-  lineHeight: 1.15,
-  letterSpacing: -0.8,
-  color: "#111827",
-};
-
-const subtitle: CSSProperties = {
-  margin: "12px 0 0",
-  maxWidth: 820,
-  fontSize: 15,
-  lineHeight: 1.7,
-  color: "#475569",
-};
-
-const grid: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-  gap: 16,
-};
-
-const cardStyle: CSSProperties = {
-  display: "grid",
-  gap: 10,
-  padding: 20,
-  borderRadius: 20,
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  textDecoration: "none",
-  color: "#111827",
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
-};
-
-const cardTitle: CSSProperties = {
-  fontSize: 16,
-  fontWeight: 900,
-};
-
-const cardText: CSSProperties = {
-  margin: 0,
-  fontSize: 13,
-  lineHeight: 1.6,
-  color: "#64748b",
-};
-
-const cardAction: CSSProperties = {
-  marginTop: 4,
-  fontSize: 13,
-  fontWeight: 900,
-  color: "#4f46e5",
-};

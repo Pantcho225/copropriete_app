@@ -1,0 +1,404 @@
+:root {
+  --module-surface: #ffffff;
+  --module-surface-soft: #f8fafc;
+  --module-border: rgba(15, 23, 42, 0.1);
+  --module-text: #0f172a;
+  --module-muted: #64748b;
+  --module-shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.06);
+  --module-shadow-hero: 0 28px 70px rgba(15, 23, 42, 0.18);
+  --module-radius-lg: 28px;
+  --module-radius-md: 20px;
+  --module-radius-sm: 14px;
+}
+
+/* HERO MODULE UNIFIÉ */
+.moduleHero {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: clamp(20px, 4vw, var(--module-radius-lg));
+  padding: clamp(18px, 4vw, 28px);
+  background: var(--module-hero-gradient);
+  color: var(--module-hero-title);
+  box-shadow: var(--module-shadow-hero);
+  position: relative;
+  isolation: isolate;
+}
+
+.moduleHero::before,
+.moduleHero::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.moduleHero::before {
+  width: min(420px, 80vw);
+  height: min(420px, 80vw);
+  top: -220px;
+  right: -140px;
+  background: radial-gradient(circle, var(--module-hero-glow) 0%, rgba(255,255,255,0) 72%);
+}
+
+.moduleHero::after {
+  width: min(320px, 70vw);
+  height: min(320px, 70vw);
+  bottom: -190px;
+  left: 10%;
+  background: radial-gradient(circle, var(--module-hero-blue-glow) 0%, rgba(59,130,246,0) 72%);
+}
+
+.moduleHero__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: clamp(16px, 3vw, 24px);
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.moduleHero__main {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.moduleHero__eyebrow,
+.moduleSection__eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.moduleHero__eyebrow {
+  padding: 6px 11px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.1);
+  color: var(--module-hero-eyebrow);
+}
+
+.moduleHero__copy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.moduleHero__copy h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(1.55rem, 1.05rem + 1.7vw, 2.45rem);
+  line-height: 1.08;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.moduleHero__copy p {
+  max-width: 820px;
+  margin: 0;
+  color: var(--module-hero-subtitle);
+  font-size: clamp(0.94rem, 0.9rem + 0.18vw, 1.04rem);
+  line-height: 1.65;
+}
+
+.moduleHero__body {
+  width: 100%;
+  min-width: 0;
+}
+
+.moduleHero__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.moduleHero__aside {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.09);
+  border-radius: 20px;
+  padding: clamp(16px, 3vw, 22px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* CARTES STATISTIQUES UNIFIÉES */
+.moduleStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+
+.moduleStatCard {
+  border: 1px solid var(--module-border);
+  background: var(--module-surface);
+  border-radius: var(--module-radius-md);
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.moduleStatCard__label {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.moduleStatCard__value {
+  margin-top: 10px;
+  color: var(--module-text);
+  font-size: clamp(1.45rem, 1.1rem + 1vw, 2rem);
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+}
+
+.moduleStatCard__hint {
+  margin-top: 10px;
+  color: var(--module-muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.moduleStatCard--blue {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.moduleStatCard--green {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+}
+
+.moduleStatCard--amber {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.moduleStatCard--red {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+}
+
+.moduleStatCard--purple {
+  border-color: rgba(124, 58, 237, 0.28);
+  background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+}
+
+/* SECTIONS MODULE UNIFIÉES */
+.moduleSection {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--module-border);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--module-radius-lg);
+  padding: clamp(18px, 3vw, 26px);
+  box-shadow: var(--module-shadow-soft);
+}
+
+.moduleSection__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.moduleSection__copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.moduleSection__eyebrow {
+  color: #2563eb;
+}
+
+.moduleSection__copy h2 {
+  margin: 0;
+  color: var(--module-text);
+  font-size: clamp(1.25rem, 1rem + 0.8vw, 1.85rem);
+  line-height: 1.15;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.moduleSection__copy p {
+  max-width: 820px;
+  margin: 0;
+  color: var(--module-muted);
+  font-size: 0.96rem;
+  line-height: 1.6;
+}
+
+.moduleSection__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.moduleSection__body {
+  width: 100%;
+  min-width: 0;
+}
+
+/* BOUTONS PREMIUM RÉUTILISABLES */
+.moduleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  color: #172033;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.moduleButton:hover {
+  transform: translateY(-1px);
+  color: #172033;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+}
+
+.moduleButton--primary {
+  border-color: rgba(37, 99, 235, 0.32);
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.moduleButton--primary:hover {
+  color: #ffffff;
+}
+
+.moduleButton--hero {
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.92);
+  color: #0f172a;
+}
+
+.moduleButton--heroDark {
+  border-color: rgba(255,255,255,0.14);
+  background: rgba(15,23,42,0.55);
+  color: #ffffff;
+}
+
+.moduleButton--heroDark:hover {
+  color: #ffffff;
+}
+
+@media (max-width: 760px) {
+  .moduleHero,
+  .moduleSection {
+    border-radius: 20px;
+  }
+
+  .moduleHero__actions,
+  .moduleSection__actions {
+    width: 100%;
+  }
+
+  .moduleHero__actions > *,
+  .moduleSection__actions > *,
+  .moduleButton {
+    width: 100%;
+  }
+}
+
+/* PAGES MODULES */
+.modulePageStack {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* CARTES DE NAVIGATION MODULE */
+.moduleLinkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.moduleNavCard {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 150px;
+  padding: 20px;
+  border: 1px solid var(--module-border);
+  border-radius: var(--module-radius-md);
+  background: #ffffff;
+  color: var(--module-text);
+  text-decoration: none;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.moduleNavCard:hover {
+  transform: translateY(-2px);
+  color: var(--module-text);
+  border-color: rgba(37, 99, 235, 0.28);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.moduleNavCard__title {
+  color: var(--module-text);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.moduleNavCard__text {
+  margin: 0;
+  color: var(--module-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.moduleNavCard__action {
+  margin-top: auto;
+  color: #2563eb;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+@media (max-width: 760px) {
+  .modulePageStack {
+    gap: 18px;
+  }
+
+  .moduleNavCard {
+    min-height: auto;
+    padding: 16px;
+  }
+}
