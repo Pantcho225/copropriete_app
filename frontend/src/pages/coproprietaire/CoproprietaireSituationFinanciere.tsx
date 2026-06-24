@@ -309,7 +309,7 @@ export default function CoproprietaireSituationFinanciere() {
 
   if (loading) {
     return (
-      <section style={styles.page}>
+      <section className="coproOwnerPage coproOwnerSituationPage" style={styles.page}>
         <div style={styles.loadingCard}>
           <span style={styles.loadingIcon}>📊</span>
           <p style={styles.loadingTitle}>Chargement de la situation financière…</p>
@@ -324,7 +324,7 @@ export default function CoproprietaireSituationFinanciere() {
 
   if (error) {
     return (
-      <section style={styles.page}>
+      <section className="coproOwnerPage coproOwnerSituationPage" style={styles.page}>
         <div style={styles.errorCard}>
           <p style={styles.errorTitle}>Situation financière indisponible</p>
           <p style={styles.errorText}>{error}</p>
@@ -339,14 +339,14 @@ export default function CoproprietaireSituationFinanciere() {
 
   if (!data) {
     return (
-      <section style={styles.page}>
+      <section className="coproOwnerPage coproOwnerSituationPage" style={styles.page}>
         <div style={styles.emptyBox}>Aucune situation financière disponible.</div>
       </section>
     );
   }
 
   return (
-    <section style={styles.page}>
+    <section className="coproOwnerPage coproOwnerSituationPage" style={styles.page}>
       <div style={styles.hero}>
         <div style={styles.heroContent}>
           <p style={styles.heroEyebrow}>Transparence financière</p>
@@ -534,7 +534,7 @@ const styles: Record<string, CSSProperties> = {
 
   hero: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 280px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
     gap: 18,
     padding: 24,
     borderRadius: 32,
@@ -547,6 +547,8 @@ const styles: Record<string, CSSProperties> = {
 
   heroContent: {
     minWidth: 0,
+    width: "100%",
+    maxWidth: "100%",
   },
 
   heroEyebrow: {
@@ -602,6 +604,9 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
+    width: "100%",
+    maxWidth: "100%",
+    minWidth: 0,
   },
 
   heroScoreLabel: {

@@ -154,7 +154,7 @@ export default function CoproprietaireRelances() {
   }
 
   return (
-    <div style={styles.stack}>
+    <div className="coproOwnerPage coproOwnerRelancesPage" style={styles.stack}>
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.heroBadge}>Suivi des rappels</div>

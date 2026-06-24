@@ -1179,3 +1179,383 @@
     font-size: 0.84rem !important;
   }
 }
+
+/* SOCLE RESPONSIVE GLOBAL — ANTI-CHEVAUCHEMENT */
+.adminContentSurface,
+.modulePage,
+.moduleHero,
+.moduleSection,
+.moduleCard,
+.moduleStatsGrid,
+.adminHarmonizedPage,
+.coproOwnerPage {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.adminContentSurface *,
+.modulePage *,
+.moduleHero *,
+.moduleSection *,
+.moduleCard *,
+.adminHarmonizedPage *,
+.coproOwnerPage * {
+  box-sizing: border-box;
+}
+
+.adminContentSurface section,
+.adminContentSurface article,
+.adminContentSurface div,
+.adminContentSurface form,
+.adminContentSurface header,
+.adminContentSurface footer,
+.modulePage section,
+.modulePage article,
+.modulePage div,
+.modulePage form,
+.adminHarmonizedPage section,
+.adminHarmonizedPage article,
+.adminHarmonizedPage div,
+.adminHarmonizedPage form,
+.coproOwnerPage section,
+.coproOwnerPage article,
+.coproOwnerPage div,
+.coproOwnerPage form {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.adminContentSurface h1,
+.adminContentSurface h2,
+.adminContentSurface h3,
+.adminContentSurface h4,
+.adminContentSurface p,
+.adminContentSurface span,
+.adminContentSurface strong,
+.adminContentSurface small,
+.adminContentSurface label,
+.modulePage h1,
+.modulePage h2,
+.modulePage h3,
+.modulePage h4,
+.modulePage p,
+.modulePage span,
+.modulePage strong,
+.modulePage small,
+.modulePage label,
+.adminHarmonizedPage h1,
+.adminHarmonizedPage h2,
+.adminHarmonizedPage h3,
+.adminHarmonizedPage h4,
+.adminHarmonizedPage p,
+.adminHarmonizedPage span,
+.adminHarmonizedPage strong,
+.adminHarmonizedPage small,
+.adminHarmonizedPage label,
+.coproOwnerPage h1,
+.coproOwnerPage h2,
+.coproOwnerPage h3,
+.coproOwnerPage h4,
+.coproOwnerPage p,
+.coproOwnerPage span,
+.coproOwnerPage strong,
+.coproOwnerPage small,
+.coproOwnerPage label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.adminContentSurface img,
+.adminContentSurface video,
+.adminContentSurface canvas,
+.modulePage img,
+.modulePage video,
+.modulePage canvas,
+.adminHarmonizedPage img,
+.adminHarmonizedPage video,
+.adminHarmonizedPage canvas,
+.coproOwnerPage img,
+.coproOwnerPage video,
+.coproOwnerPage canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+.adminContentSurface input,
+.adminContentSurface select,
+.adminContentSurface textarea,
+.modulePage input,
+.modulePage select,
+.modulePage textarea,
+.adminHarmonizedPage input,
+.adminHarmonizedPage select,
+.adminHarmonizedPage textarea,
+.coproOwnerPage input,
+.coproOwnerPage select,
+.coproOwnerPage textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.adminContentSurface table,
+.modulePage table,
+.adminHarmonizedPage table,
+.coproOwnerPage table {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+.adminContentSurface [style*="overflowX: auto"],
+.adminContentSurface [style*="overflow-x: auto"],
+.modulePage [style*="overflowX: auto"],
+.modulePage [style*="overflow-x: auto"],
+.adminHarmonizedPage [style*="overflowX: auto"],
+.adminHarmonizedPage [style*="overflow-x: auto"],
+.coproOwnerPage [style*="overflowX: auto"],
+.coproOwnerPage [style*="overflow-x: auto"] {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .adminContentSurface [style*="grid-template-columns"],
+  .modulePage [style*="grid-template-columns"],
+  .adminHarmonizedPage [style*="grid-template-columns"],
+  .coproOwnerPage [style*="grid-template-columns"] {
+    min-width: 0 !important;
+  }
+
+  .adminContentSurface [style*="display: flex"],
+  .modulePage [style*="display: flex"],
+  .adminHarmonizedPage [style*="display: flex"],
+  .coproOwnerPage [style*="display: flex"] {
+    min-width: 0 !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .adminContentSurface [style*="grid-template-columns"],
+  .modulePage [style*="grid-template-columns"],
+  .adminHarmonizedPage [style*="grid-template-columns"],
+  .coproOwnerPage [style*="grid-template-columns"],
+  .moduleStatsGrid,
+  .adminHarmonizedStatsGrid,
+  .adminHarmonizedCardGrid,
+  .adminHarmonizedFeatureGrid,
+  .coproOwnerStatsGrid,
+  .coproOwnerDocumentsGrid,
+  .coproOwnerActionGrid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .adminContentSurface [style*="white-space: nowrap"],
+  .modulePage [style*="white-space: nowrap"],
+  .adminHarmonizedPage [style*="white-space: nowrap"],
+  .coproOwnerPage [style*="white-space: nowrap"] {
+    white-space: normal !important;
+  }
+
+  .adminContentSurface button,
+  .adminContentSurface a,
+  .modulePage button,
+  .modulePage a,
+  .adminHarmonizedPage button,
+  .adminHarmonizedPage a,
+  .coproOwnerPage button,
+  .coproOwnerPage a {
+    max-width: 100%;
+  }
+
+  .adminContentSurface [style*="min-width"],
+  .modulePage [style*="min-width"],
+  .adminHarmonizedPage [style*="min-width"],
+  .coproOwnerPage [style*="min-width"] {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .adminContentSurface {
+    padding: 14px !important;
+  }
+
+  .adminContentSurface [style*="padding"],
+  .modulePage [style*="padding"],
+  .adminHarmonizedPage [style*="padding"],
+  .coproOwnerPage [style*="padding"] {
+    max-width: 100% !important;
+  }
+
+  .adminContentSurface button,
+  .modulePage button,
+  .adminHarmonizedPage button,
+  .coproOwnerPage button {
+    white-space: normal !important;
+  }
+}
+
+/* ESPACE COPROPRIÉTAIRE — RELANCES / SITUATION RESPONSIVE */
+.coproOwnerRelancesPage,
+.coproOwnerSituationPage {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.coproOwnerRelancesPage section,
+.coproOwnerRelancesPage article,
+.coproOwnerRelancesPage div,
+.coproOwnerSituationPage section,
+.coproOwnerSituationPage article,
+.coproOwnerSituationPage div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.coproOwnerRelancesPage h1,
+.coproOwnerRelancesPage h2,
+.coproOwnerRelancesPage h3,
+.coproOwnerRelancesPage p,
+.coproOwnerRelancesPage span,
+.coproOwnerRelancesPage strong,
+.coproOwnerSituationPage h1,
+.coproOwnerSituationPage h2,
+.coproOwnerSituationPage h3,
+.coproOwnerSituationPage p,
+.coproOwnerSituationPage span,
+.coproOwnerSituationPage strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .coproOwnerRelancesPage [style*="grid-template-columns"],
+  .coproOwnerSituationPage [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .coproOwnerRelancesPage [style*="justify-content: space-between"],
+  .coproOwnerSituationPage [style*="justify-content: space-between"],
+  .coproOwnerRelancesPage [style*="display: flex"],
+  .coproOwnerSituationPage [style*="display: flex"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .coproOwnerRelancesPage [style*="display: flex"] > *,
+  .coproOwnerSituationPage [style*="display: flex"] > *,
+  .coproOwnerRelancesPage [style*="display: grid"] > *,
+  .coproOwnerSituationPage [style*="display: grid"] > * {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .coproOwnerRelancesPage [style*="padding"],
+  .coproOwnerSituationPage [style*="padding"] {
+    max-width: 100% !important;
+  }
+
+  .coproOwnerRelancesPage button,
+  .coproOwnerSituationPage button,
+  .coproOwnerRelancesPage a,
+  .coproOwnerSituationPage a {
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+}
+
+
+/* ESPACE COPROPRIÉTAIRE — SITUATION FINANCIÈRE MOBILE */
+.coproOwnerSituationPage {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.coproOwnerSituationPage section,
+.coproOwnerSituationPage article,
+.coproOwnerSituationPage div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.coproOwnerSituationPage h1,
+.coproOwnerSituationPage h2,
+.coproOwnerSituationPage h3,
+.coproOwnerSituationPage p,
+.coproOwnerSituationPage span,
+.coproOwnerSituationPage strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .coproOwnerSituationPage section[style*="display: flex"],
+  .coproOwnerSituationPage article[style*="display: flex"],
+  .coproOwnerSituationPage div[style*="display: flex"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .coproOwnerSituationPage section[style*="grid-template-columns"],
+  .coproOwnerSituationPage article[style*="grid-template-columns"],
+  .coproOwnerSituationPage div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .coproOwnerSituationPage article[style*="background: linear-gradient"],
+  .coproOwnerSituationPage section[style*="background: linear-gradient"] {
+    padding: 20px !important;
+    gap: 16px !important;
+  }
+
+  .coproOwnerSituationPage article[style*="background: linear-gradient"] > *,
+  .coproOwnerSituationPage section[style*="background: linear-gradient"] > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .coproOwnerSituationPage h1,
+  .coproOwnerSituationPage h2 {
+    font-size: clamp(1.35rem, 7vw, 1.8rem) !important;
+    line-height: 1.12 !important;
+    letter-spacing: -0.04em !important;
+  }
+
+  .coproOwnerSituationPage [style*="font-size: 26px"] {
+    font-size: 22px !important;
+    line-height: 1.12 !important;
+  }
+
+  .coproOwnerSituationPage [style*="font-size: 44px"],
+  .coproOwnerSituationPage [style*="font-size: 42px"],
+  .coproOwnerSituationPage [style*="font-size: 40px"] {
+    font-size: 32px !important;
+    line-height: 1.05 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .coproOwnerSituationPage article[style*="background: linear-gradient"],
+  .coproOwnerSituationPage section[style*="background: linear-gradient"] {
+    padding: 18px !important;
+    border-radius: 22px !important;
+  }
+
+  .coproOwnerSituationPage h1,
+  .coproOwnerSituationPage h2 {
+    font-size: 1.55rem !important;
+  }
+
+  .coproOwnerSituationPage p {
+    line-height: 1.55 !important;
+  }
+}
