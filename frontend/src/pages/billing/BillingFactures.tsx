@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 type StatTone = "blue" | "green" | "yellow" | "neutral";
 
 function PageShell({ children }: { children: ReactNode }) {
-  return <div style={pageStyle}>{children}</div>;
+  return <div className="adminHarmonizedPage adminBillingFacturesPage" style={pageStyle}>{children}</div>;
 }
 
 function SectionTitle(props: {
@@ -13,7 +13,7 @@ function SectionTitle(props: {
   right?: ReactNode;
 }) {
   return (
-    <section style={heroCard}>
+    <section className="adminHarmonizedHero adminHarmonizedHero--blue" style={heroCard}>
       <div style={heroTextBlock}>
         <div style={eyebrow}>Facturation · Factures</div>
 
@@ -22,7 +22,7 @@ function SectionTitle(props: {
         {props.subtitle ? <p style={subtitle}>{props.subtitle}</p> : null}
       </div>
 
-      {props.right ? <div style={heroActions}>{props.right}</div> : null}
+      {props.right ? <div className="adminHarmonizedHeaderActions" style={heroActions}>{props.right}</div> : null}
     </section>
   );
 }
@@ -34,7 +34,7 @@ function ActionButton(props: {
   disabled?: boolean;
 }) {
   return (
-    <button
+    <button className="adminHarmonizedButton adminHarmonizedButton--soft"
       type="button"
       onClick={props.onClick}
       disabled={props.disabled}
@@ -108,7 +108,7 @@ function StatCard(props: {
 
 function Panel(props: { title: string; children: ReactNode }) {
   return (
-    <section style={panel}>
+    <section className="adminHarmonizedPanel" style={panel}>
       <h2 style={panelTitle}>{props.title}</h2>
       {props.children}
     </section>
@@ -145,7 +145,7 @@ export default function BillingFactures() {
         }
       />
 
-      <section style={grid}>
+      <section className="adminHarmonizedStatsGrid billing-factures-grid" style={grid}>
         <StatCard
           title="Factures émises"
           value="0"
@@ -176,7 +176,7 @@ export default function BillingFactures() {
       </section>
 
       <Panel title="Prévisions fonctionnelles">
-        <div style={featureGrid}>
+        <div className="adminHarmonizedFeatureGrid" style={featureGrid}>
           <InfoBox title="Liste des factures">
             Affichage des factures émises avec numéro, période, montant, statut,
             date d’émission et date d’échéance.

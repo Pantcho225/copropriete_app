@@ -459,7 +459,7 @@ export default function AGForm() {
             : "Renseignez les informations principales pour préparer une nouvelle assemblée générale."
         }
         right={
-          <Link to="/ag/assemblees" style={ghostLink}>
+          <Link className="adminHarmonizedButton adminHarmonizedButton--soft" to="/ag/assemblees" style={ghostLink}>
             Retour à la liste
           </Link>
         }
@@ -488,12 +488,12 @@ export default function AGForm() {
         </AlertBox>
       ) : null}
 
-      <form onSubmit={handleSubmit} style={card}>
-        <div style={requiredInfo}>
+      <form className="adminHarmonizedPanel adminHarmonizedFormPanel" onSubmit={handleSubmit} style={card}>
+        <div className="adminHarmonizedNotice adminHarmonizedNotice--warning" style={requiredInfo}>
           Les champs marqués d’un <span style={requiredMark}>*</span> sont obligatoires.
         </div>
 
-        <div style={grid2}>
+        <div className="adminHarmonizedFormGrid" style={grid2}>
           <div style={field}>
             <label style={label}>
               Titre <RequiredMark />

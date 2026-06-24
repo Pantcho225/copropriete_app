@@ -12,8 +12,8 @@ const documentTypes = [
 
 export default function DocumentsAdministratifs() {
   return (
-    <div style={page}>
-      <section style={hero}>
+    <div className="adminHarmonizedPage adminDocumentsPage" style={page}>
+      <section className="adminHarmonizedHero adminHarmonizedHero--violet" style={hero}>
         <p style={eyebrow}>Documents administratifs</p>
         <h1 style={title}>Bibliothèque administrative de la copropriété</h1>
         <p style={subtitle}>
@@ -23,19 +23,19 @@ export default function DocumentsAdministratifs() {
         </p>
       </section>
 
-      <section style={panel}>
+      <section className="adminHarmonizedPanel" style={panel}>
         <h2 style={panelTitle}>Types de documents prévus</h2>
 
-        <div style={grid}>
+        <div className="adminHarmonizedBadgeGrid" style={grid}>
           {documentTypes.map((item) => (
-            <div key={item} style={documentBadge}>
+            <div className="adminHarmonizedBadge" key={item} style={documentBadge}>
               {item}
             </div>
           ))}
         </div>
       </section>
 
-      <section style={emptyState}>
+      <section className="adminHarmonizedEmptyState" style={emptyState}>
         <h2 style={emptyTitle}>Module documentaire administratif à brancher</h2>
         <p style={emptyText}>
           La prochaine étape consistera à relier cette page au backend documentaire

@@ -138,7 +138,7 @@ function SmallButton(props: {
   primary?: boolean;
 }) {
   return (
-    <button
+    <button className="adminHarmonizedButton adminHarmonizedButton--soft"
       type="button"
       onClick={props.onClick}
       style={{
@@ -164,7 +164,7 @@ function Card(props: {
   right?: ReactNode;
 }) {
   return (
-    <div style={card}>
+    <div className="adminHarmonizedCard" style={card}>
       <div
         style={{
           display: "flex",
@@ -215,7 +215,7 @@ function QuickActionCard(props: {
       </div>
 
       <div>
-        <button
+        <button className="adminHarmonizedButton adminHarmonizedButton--soft"
           type="button"
           onClick={props.onAction}
           disabled={props.disabled}
@@ -276,7 +276,7 @@ export default function BillingHome() {
         }
       />
 
-      <div className="billing-home-stat-grid">
+      <div className="billing-home-stat-grid adminHarmonizedStatsGrid">
         <StatCard
           title="Module Facturation"
           value="Actif"
@@ -307,7 +307,7 @@ export default function BillingHome() {
       </div>
 
       <Card title="Accès rapides du module Facturation">
-        <div className="billing-home-quick-grid">
+        <div className="billing-home-quick-grid adminHarmonizedCardGrid">
           <QuickActionCard
             title="Factures"
             text="Consultez la page dédiée aux factures émises, aux statuts et aux prochaines évolutions de facturation."

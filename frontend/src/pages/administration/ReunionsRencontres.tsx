@@ -58,8 +58,8 @@ const actions = [
 
 export default function ReunionsRencontres() {
   return (
-    <div style={styles.page}>
-      <section style={styles.hero}>
+    <div className="adminHarmonizedPage adminMeetingsPage" style={styles.page}>
+      <section className="adminHarmonizedHero adminHarmonizedHero--cyan" style={styles.hero}>
         <div>
           <p style={styles.eyebrow}>Réunions & rencontres</p>
           <h1 style={styles.title}>Suivre les réunions courantes de la copropriété</h1>
@@ -72,7 +72,7 @@ export default function ReunionsRencontres() {
           </p>
         </div>
 
-        <aside style={styles.notice}>
+        <aside className="adminHarmonizedNotice" style={styles.notice}>
           <strong>Séparation métier</strong>
           <span>
             Les Assemblées Générales restent dans le module AG : convocations,
@@ -81,24 +81,24 @@ export default function ReunionsRencontres() {
         </aside>
       </section>
 
-      <section style={styles.kpiGrid}>
-        <article style={styles.kpiCard}>
+      <section className="adminHarmonizedStatsGrid" style={styles.kpiGrid}>
+        <article className="adminHarmonizedStatCard" style={styles.kpiCard}>
           <strong style={styles.kpiValue}>6</strong>
           <span style={styles.kpiLabel}>familles de réunions</span>
         </article>
-        <article style={styles.kpiCard}>
+        <article className="adminHarmonizedStatCard" style={styles.kpiCard}>
           <strong style={styles.kpiValue}>0</strong>
           <span style={styles.kpiLabel}>vote ou quorum ici</span>
         </article>
-        <article style={styles.kpiCard}>
+        <article className="adminHarmonizedStatCard" style={styles.kpiCard}>
           <strong style={styles.kpiValue}>AG</strong>
           <span style={styles.kpiLabel}>lien facultatif uniquement</span>
         </article>
       </section>
 
-      <section style={styles.grid}>
+      <section className="adminHarmonizedCardGrid" style={styles.grid}>
         {categories.map((item) => (
-          <article key={item.label} style={styles.card}>
+          <article className="adminHarmonizedCard" key={item.label} style={styles.card}>
             <span style={styles.badge}>{item.label}</span>
             <h2 style={styles.cardTitle}>{item.title}</h2>
             <p style={styles.cardText}>{item.text}</p>
@@ -111,8 +111,8 @@ export default function ReunionsRencontres() {
         ))}
       </section>
 
-      <section style={styles.twoColumns}>
-        <article style={styles.panel}>
+      <section className="adminHarmonizedTwoColumns" style={styles.twoColumns}>
+        <article className="adminHarmonizedPanel" style={styles.panel}>
           <h2 style={styles.panelTitle}>Cycle de suivi recommandé</h2>
           <ol style={styles.list}>
             {workflow.map((step) => (
@@ -121,7 +121,7 @@ export default function ReunionsRencontres() {
           </ol>
         </article>
 
-        <article style={styles.panel}>
+        <article className="adminHarmonizedPanel" style={styles.panel}>
           <h2 style={styles.panelTitle}>Actions à suivre</h2>
           <p style={styles.panelText}>
             Une réunion courante peut produire des tâches opérationnelles sans
@@ -135,8 +135,8 @@ export default function ReunionsRencontres() {
         </article>
       </section>
 
-      <section style={styles.twoColumns}>
-        <article style={styles.panelSoft}>
+      <section className="adminHarmonizedTwoColumns" style={styles.twoColumns}>
+        <article className="adminHarmonizedPanel adminHarmonizedPanel--soft" style={styles.panelSoft}>
           <h2 style={styles.panelTitle}>Ce module gère</h2>
           <ul style={styles.list}>
             <li>les réunions courantes de copropriété ;</li>
@@ -146,7 +146,7 @@ export default function ReunionsRencontres() {
           </ul>
         </article>
 
-        <article style={styles.panelSoft}>
+        <article className="adminHarmonizedPanel adminHarmonizedPanel--soft" style={styles.panelSoft}>
           <h2 style={styles.panelTitle}>Le module AG garde</h2>
           <ul style={styles.list}>
             <li>les convocations officielles ;</li>
@@ -157,7 +157,7 @@ export default function ReunionsRencontres() {
         </article>
       </section>
 
-      <section style={styles.panel}>
+      <section className="adminHarmonizedPanel" style={styles.panel}>
         <h2 style={styles.panelTitle}>Fonctionnalités prévues</h2>
         <ul style={styles.list}>
           <li>Créer une réunion avec type, date, lieu, objet et participants.</li>

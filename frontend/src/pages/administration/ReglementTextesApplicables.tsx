@@ -264,8 +264,8 @@ export default function ReglementTextesApplicables() {
   }
 
   return (
-    <div style={styles.page}>
-      <section style={styles.hero}>
+    <div className="adminHarmonizedPage adminReglementPage" style={styles.page}>
+      <section className="adminHarmonizedHero adminHarmonizedHero--amber" style={styles.hero}>
         <div>
           <p style={styles.eyebrow}>Règlement & textes applicables</p>
 
@@ -277,18 +277,18 @@ export default function ReglementTextesApplicables() {
             copropriétaires.
           </p>
 
-          <div style={styles.heroActions}>
-            <button type="button" onClick={loadItems} style={styles.secondaryButton}>
+          <div className="adminHarmonizedHeaderActions" style={styles.heroActions}>
+            <button className="adminHarmonizedButton adminHarmonizedButton--soft" type="button" onClick={loadItems} style={styles.secondaryButton}>
               Actualiser
             </button>
 
-            <button type="button" onClick={resetForm} style={styles.primaryButton}>
+            <button className="adminHarmonizedButton adminHarmonizedButton--primary" type="button" onClick={resetForm} style={styles.primaryButton}>
               Nouveau texte
             </button>
           </div>
         </div>
 
-        <div style={styles.heroCard}>
+        <div className="adminHarmonizedHeroMetric" style={styles.heroCard}>
           <p style={styles.heroCardLabel}>Diffusion copropriétaire</p>
           <p style={styles.heroCardValue}>{stats.visibles}</p>
           <p style={styles.heroCardText}>
@@ -297,7 +297,7 @@ export default function ReglementTextesApplicables() {
         </div>
       </section>
 
-      <section style={styles.statsGrid}>
+      <section className="adminHarmonizedStatsGrid" style={styles.statsGrid}>
         <StatCard label="Total" value={stats.total} tone="blue" />
         <StatCard label="Publiés" value={stats.publies} tone="green" />
         <StatCard label="Brouillons" value={stats.brouillons} tone="amber" />
@@ -318,8 +318,8 @@ export default function ReglementTextesApplicables() {
         </div>
       ) : null}
 
-      <section style={styles.formPanel}>
-        <div style={styles.sectionHeader}>
+      <section className="adminHarmonizedPanel adminHarmonizedFormPanel" style={styles.formPanel}>
+        <div className="adminHarmonizedSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>
               {form.id ? "Modification" : "Création"}
@@ -330,14 +330,14 @@ export default function ReglementTextesApplicables() {
           </div>
 
           {form.id ? (
-            <button type="button" onClick={resetForm} style={styles.lightButton}>
+            <button className="adminHarmonizedButton adminHarmonizedButton--soft" type="button" onClick={resetForm} style={styles.lightButton}>
               Annuler la modification
             </button>
           ) : null}
         </div>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.formGrid}>
+        <form className="adminHarmonizedForm" onSubmit={handleSubmit} style={styles.form}>
+          <div className="adminHarmonizedFormGrid" style={styles.formGrid}>
             <label style={styles.field}>
               <span style={styles.label}>Titre</span>
               <input
@@ -472,8 +472,8 @@ export default function ReglementTextesApplicables() {
             />
           </label>
 
-          <div style={styles.formActions}>
-            <button type="submit" disabled={saving} style={styles.primaryButton}>
+          <div className="adminHarmonizedFormActions" style={styles.formActions}>
+            <button className="adminHarmonizedButton adminHarmonizedButton--primary" type="submit" disabled={saving} style={styles.primaryButton}>
               {saving
                 ? "Enregistrement..."
                 : form.id
@@ -481,15 +481,15 @@ export default function ReglementTextesApplicables() {
                   : "Créer le texte"}
             </button>
 
-            <button type="button" onClick={resetForm} style={styles.secondaryButton}>
+            <button className="adminHarmonizedButton adminHarmonizedButton--soft" type="button" onClick={resetForm} style={styles.secondaryButton}>
               Réinitialiser
             </button>
           </div>
         </form>
       </section>
 
-      <section style={styles.filtersPanel}>
-        <div style={styles.filtersGrid}>
+      <section className="adminHarmonizedPanel adminHarmonizedFiltersPanel" style={styles.filtersPanel}>
+        <div className="adminHarmonizedFiltersGrid" style={styles.filtersGrid}>
           <input
             value={filters.q ?? ""}
             onChange={(event) => updateFilter("q", event.target.value)}
@@ -549,14 +549,14 @@ export default function ReglementTextesApplicables() {
             <option value="false">Masqué copropriétaire</option>
           </select>
 
-          <button type="button" onClick={loadItems} style={styles.primaryButton}>
+          <button className="adminHarmonizedButton adminHarmonizedButton--primary" type="button" onClick={loadItems} style={styles.primaryButton}>
             Filtrer
           </button>
         </div>
       </section>
 
-      <section style={styles.listPanel}>
-        <div style={styles.sectionHeader}>
+      <section className="adminHarmonizedPanel" style={styles.listPanel}>
+        <div className="adminHarmonizedSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Registre</p>
             <h2 style={styles.sectionTitle}>Textes enregistrés</h2>
@@ -572,11 +572,11 @@ export default function ReglementTextesApplicables() {
             Aucun texte ne correspond aux critères sélectionnés.
           </div>
         ) : (
-          <div style={styles.itemsList}>
+          <div className="adminHarmonizedItemsList" style={styles.itemsList}>
             {items.map((item) => (
-              <article key={item.id} style={styles.itemCard}>
+              <article className="adminHarmonizedItemCard" key={item.id} style={styles.itemCard}>
                 <div style={styles.itemMain}>
-                  <div style={styles.itemHeader}>
+                  <div className="adminHarmonizedItemHeader" style={styles.itemHeader}>
                     <div>
                       <p style={styles.itemCategory}>
                         {item.categorie_label || item.categorie}
@@ -584,7 +584,7 @@ export default function ReglementTextesApplicables() {
                       <h3 style={styles.itemTitle}>{item.titre}</h3>
                     </div>
 
-                    <div style={styles.badges}>
+                    <div className="adminHarmonizedBadges" style={styles.badges}>
                       <span style={{ ...styles.badge, ...getStatutTone(item.statut) }}>
                         {item.statut_label || item.statut}
                       </span>
@@ -614,7 +614,7 @@ export default function ReglementTextesApplicables() {
                   </div>
                 </div>
 
-                <div style={styles.itemActions}>
+                <div className="adminHarmonizedItemActions" style={styles.itemActions}>
                   <button type="button" onClick={() => editItem(item)} style={styles.lightButton}>
                     Modifier
                   </button>
@@ -683,7 +683,7 @@ export default function ReglementTextesApplicables() {
         )}
       </section>
 
-      <section style={styles.warningPanel}>
+      <section className="adminHarmonizedNotice adminHarmonizedNotice--warning" style={styles.warningPanel}>
         <h2 style={styles.warningTitle}>Important</h2>
         <p style={styles.warningText}>
           Les contenus juridiques affichés dans cette partie doivent rester
