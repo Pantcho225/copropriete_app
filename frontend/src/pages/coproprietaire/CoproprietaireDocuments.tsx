@@ -191,7 +191,7 @@ export default function CoproprietaireDocuments() {
   }
 
   return (
-    <div style={styles.stack}>
+    <div className="coproOwnerPage coproOwnerDocumentsPage" style={styles.stack}>
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.heroBadge}>Bibliothèque personnelle</div>
@@ -255,8 +255,8 @@ export default function CoproprietaireDocuments() {
         />
       </section>
 
-      <section style={styles.card}>
-        <div style={styles.toolbar}>
+      <section className="coproOwnerMobileSafeCard" style={styles.card}>
+        <div className="coproOwnerToolbar" style={styles.toolbar}>
           <div>
             <p style={styles.sectionEyebrow}>Bibliothèque</p>
             <h3 style={styles.sectionTitle}>
@@ -295,7 +295,7 @@ export default function CoproprietaireDocuments() {
           </div>
         </div>
 
-        <div style={styles.filters}>
+        <div className="coproOwnerFilters" style={styles.filters}>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}

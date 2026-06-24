@@ -652,7 +652,7 @@ export default function CoproprietaireAssemblees() {
   }
 
   return (
-    <div style={styles.stack}>
+    <div className="coproOwnerPage coproOwnerAssemblyPage" style={styles.stack}>
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.heroBadge}>Vie de la copropriété</div>
@@ -724,8 +724,8 @@ export default function CoproprietaireAssemblees() {
         />
       </section>
 
-      <section style={styles.card}>
-        <div style={styles.sectionHeader}>
+      <section className="coproOwnerMobileSafeCard" style={styles.card}>
+        <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
           <div>
             <p style={styles.sectionEyebrow}>Assemblées</p>
             <h3 style={styles.sectionTitle}>Liste de vos assemblées générales</h3>
@@ -743,7 +743,7 @@ export default function CoproprietaireAssemblees() {
           </div>
         </div>
 
-        <div style={styles.filters}>
+        <div className="coproOwnerFilters" style={styles.filters}>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -878,7 +878,7 @@ function AGCard({
   );
 
   return (
-    <article style={styles.agCard}>
+    <article className="coproOwnerMobileSafeCard" style={styles.agCard}>
       <div style={styles.agHeader}>
         <div style={styles.agMain}>
           <div style={styles.badges}>
@@ -1475,10 +1475,11 @@ function ConvocationsPanel({
                   {convocation.document_url ? (
                     <button
                       type="button"
+                      className="coproOwnerPremiumButton coproOwnerPremiumButton--soft coproOwnerConvocationButton"
                       onClick={() => openDocument(convocation.document_url)}
                       style={styles.convocationDocButton}
                     >
-                      Ouvrir le PDF
+                      📄 Ouvrir le PDF
                     </button>
                   ) : (
                     <span style={styles.convocationPdfMissing}>
@@ -1488,6 +1489,11 @@ function ConvocationsPanel({
 
                   <button
                     type="button"
+                    className={`coproOwnerPremiumButton coproOwnerConvocationButton ${
+                      isConsulted || isCanceled || isReplacedVersion || consulting
+                        ? "coproOwnerPremiumButton--soft"
+                        : "coproOwnerPremiumButton--primary"
+                    }`}
                     disabled={isConsulted || isCanceled || isReplacedVersion || consulting}
                     onClick={() => onConsult(convocation)}
                     style={{
@@ -1690,7 +1696,7 @@ function ProcurationModal({
             </p>
           </div>
 
-          <button
+          <button className="coproOwnerPremiumButton coproOwnerPremiumButton--soft"
             type="button"
             onClick={onClose}
             disabled={creating}
@@ -1771,7 +1777,7 @@ function ProcurationModal({
           </p>
 
           <div style={styles.modalActions}>
-            <button
+            <button className="coproOwnerPremiumButton coproOwnerPremiumButton--soft"
               type="button"
               onClick={onClose}
               disabled={creating}
@@ -1780,7 +1786,7 @@ function ProcurationModal({
               Annuler
             </button>
 
-            <button
+            <button className="coproOwnerPremiumButton coproOwnerPremiumButton--primary"
               type="submit"
               disabled={creating}
               style={{
@@ -1816,7 +1822,7 @@ function PresenceButton({
   const isBusy = busyMode === mode;
 
   return (
-    <button
+    <button className="coproOwnerChoiceButton"
       type="button"
       disabled={disabled}
       onClick={onClick}
@@ -1852,7 +1858,7 @@ function VoteButton({
   const isBusy = busyChoice === choix;
 
   return (
-    <button
+    <button className="coproOwnerChoiceButton"
       type="button"
       disabled={disabled}
       onClick={onClick}

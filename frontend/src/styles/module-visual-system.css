@@ -703,3 +703,189 @@
     overflow-wrap: anywhere;
   }
 }
+
+/* ESPACE COPROPRIÉTAIRE — FINITIONS AG / DOCUMENTS / TEXTES */
+.coproOwnerAssemblyPage,
+.coproOwnerDocumentsPage,
+.coproOwnerTextsPage {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.coproOwnerPage section,
+.coproOwnerPage article,
+.coproOwnerPage div,
+.coproOwnerPage header,
+.coproOwnerPage footer {
+  min-width: 0;
+}
+
+.coproOwnerPage h1,
+.coproOwnerPage h2,
+.coproOwnerPage h3,
+.coproOwnerPage h4,
+.coproOwnerPage p,
+.coproOwnerPage span,
+.coproOwnerPage strong,
+.coproOwnerPage small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.coproOwnerMobileSafeCard,
+.coproOwnerResponsiveGrid {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.coproOwnerMobileSafeCard {
+  overflow: hidden;
+}
+
+.coproOwnerPremiumButton {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  max-width: 100% !important;
+  min-height: 42px !important;
+  border-radius: 999px !important;
+  padding: 10px 16px !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  font-size: 0.9rem !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+  white-space: normal !important;
+  text-decoration: none !important;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12) !important;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease !important;
+}
+
+.coproOwnerPremiumButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16) !important;
+}
+
+.coproOwnerPremiumButton:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.62 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.coproOwnerPremiumButton--primary {
+  background: linear-gradient(135deg, #0f172a, #1d4ed8) !important;
+  color: #ffffff !important;
+}
+
+.coproOwnerPremiumButton--soft {
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #0f172a !important;
+}
+
+.coproOwnerPremiumButton--danger {
+  background: rgba(254, 242, 242, 0.96) !important;
+  color: #991b1b !important;
+  border-color: rgba(239, 68, 68, 0.26) !important;
+}
+
+.coproOwnerChoiceButton {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  white-space: normal !important;
+  text-align: center !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 900px) {
+  .coproOwnerAssemblyPage,
+  .coproOwnerDocumentsPage,
+  .coproOwnerTextsPage {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 18px !important;
+  }
+
+  .coproOwnerPage [style*="grid-template-columns"] {
+    min-width: 0 !important;
+  }
+
+  .coproOwnerPage [style*="display: flex"] {
+    min-width: 0 !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .coproOwnerAssemblyPage,
+  .coproOwnerDocumentsPage,
+  .coproOwnerTextsPage {
+    gap: 16px !important;
+  }
+
+  .coproOwnerPage [style*="display: grid"],
+  .coproOwnerPage [style*="grid-template-columns"],
+  .coproOwnerResponsiveGrid,
+  .coproOwnerDocumentsGrid,
+  .coproOwnerActionGrid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .coproOwnerPage [style*="display: flex"],
+  .coproOwnerSectionHeader,
+  .coproOwnerHeaderActions {
+    align-items: stretch !important;
+  }
+
+  .coproOwnerHeaderActions,
+  .coproOwnerActionGrid {
+    width: 100% !important;
+  }
+
+  .coproOwnerPremiumButton,
+  .coproOwnerChoiceButton {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .coproOwnerAssemblyPage,
+  .coproOwnerDocumentsPage,
+  .coproOwnerTextsPage {
+    gap: 14px !important;
+  }
+
+  .coproOwnerPage [style*="padding"] {
+    max-width: 100% !important;
+  }
+
+  .coproOwnerPremiumButton {
+    min-height: 44px !important;
+    padding: 11px 14px !important;
+    font-size: 0.86rem !important;
+  }
+
+  .coproOwnerChoiceButton {
+    min-height: 40px !important;
+  }
+}
+
+
+/* ESPACE COPROPRIÉTAIRE — BOUTONS CONVOCATIONS AG */
+.coproOwnerConvocationButton {
+  min-width: 132px !important;
+  border-radius: 999px !important;
+}
+
+@media (max-width: 760px) {
+  .coproOwnerConvocationButton {
+    width: 100% !important;
+  }
+}

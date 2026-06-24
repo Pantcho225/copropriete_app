@@ -113,7 +113,7 @@ export default function CoproprietaireReglementTextes() {
   }, [textes]);
 
   return (
-    <div style={styles.stack}>
+    <div className="coproOwnerPage coproOwnerTextsPage" style={styles.stack}>
       <section style={styles.hero}>
         <div style={styles.heroContent}>
           <div style={styles.heroBadge}>Lecture seule</div>
@@ -163,7 +163,7 @@ export default function CoproprietaireReglementTextes() {
         </div>
       </section>
 
-      <section style={styles.toolbar}>
+      <section className="coproOwnerToolbar" style={styles.toolbar}>
         <div style={styles.searchBlock}>
           <label style={styles.inputLabel}>Recherche</label>
           <input
@@ -195,7 +195,7 @@ export default function CoproprietaireReglementTextes() {
       {error ? <div style={styles.errorBox}>{error}</div> : null}
 
       {loading ? (
-        <section style={styles.card}>
+        <section className="coproOwnerMobileSafeCard" style={styles.card}>
           <p style={styles.loadingText}>Chargement des textes utiles...</p>
         </section>
       ) : textes.length === 0 ? (
@@ -211,8 +211,8 @@ export default function CoproprietaireReglementTextes() {
       ) : (
         <section style={styles.groupsStack}>
           {groupedTextes.map(([groupLabel, items]) => (
-            <div key={groupLabel} style={styles.card}>
-              <div style={styles.sectionHeader}>
+            <div className="coproOwnerMobileSafeCard" key={groupLabel} style={styles.card}>
+              <div className="coproOwnerSectionHeader" style={styles.sectionHeader}>
                 <div>
                   <p style={styles.sectionEyebrow}>Catégorie</p>
                   <h3 style={styles.sectionTitle}>{groupLabel}</h3>
@@ -249,7 +249,7 @@ function TexteCard({ texte }: { texte: CoproprietaireReglementTexte }) {
   }
 
   return (
-    <article style={styles.texteCard}>
+    <article className="coproOwnerMobileSafeCard" style={styles.texteCard}>
       <div style={styles.texteIcon}>{icon}</div>
 
       <div style={styles.texteBody}>
