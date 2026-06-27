@@ -290,11 +290,63 @@ function normalizeList<T>(value: PaginatedResponse<T> | T[] | unknown): T[] {
   return [];
 }
 
+const ADMINISTRATIVE_DOCUMENT_ID_PREFIX = "ADMINISTRATIF-";
+const HIDDEN_ADMINISTRATIVE_DOCUMENTS_STORAGE_KEY =
+  "coproprietaire.hiddenAdministrativeDocuments";
+
+function isAdministrativeDocumentOwnerId(documentId: string) {
+  return documentId.startsWith(ADMINISTRATIVE_DOCUMENT_ID_PREFIX);
+}
+
+function getHiddenAdministrativeDocumentIds() {
+  if (typeof window === "undefined") return new Set<string>();
+
+  try {
+    const raw = window.localStorage.getItem(
+      HIDDEN_ADMINISTRATIVE_DOCUMENTS_STORAGE_KEY,
+    );
+
+    const parsed = raw ? JSON.parse(raw) : [];
+
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((item): item is string => typeof item === "string"));
+    }
+  } catch {
+    return new Set<string>();
+  }
+
+  return new Set<string>();
+}
+
+function saveHiddenAdministrativeDocumentIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    HIDDEN_ADMINISTRATIVE_DOCUMENTS_STORAGE_KEY,
+    JSON.stringify([...ids]),
+  );
+}
+
+function hideAdministrativeDocumentLocally(documentId: string) {
+  const ids = getHiddenAdministrativeDocumentIds();
+  ids.add(documentId);
+  saveHiddenAdministrativeDocumentIds(ids);
+}
+
+function restoreAdministrativeDocumentLocally(documentId: string) {
+  const ids = getHiddenAdministrativeDocumentIds();
+  ids.delete(documentId);
+  saveHiddenAdministrativeDocumentIds(ids);
+}
+
 function mapAdministrativeDocumentToOwnerDocument(
   item: CoproprietaireAdministrativeDocumentItem,
 ): CoproprietaireDocumentItem {
+  const documentId = `${ADMINISTRATIVE_DOCUMENT_ID_PREFIX}${item.id}`;
+  const hiddenIds = getHiddenAdministrativeDocumentIds();
+
   return {
-    id: `ADMINISTRATIF-${item.id}`,
+    id: documentId,
     titre: item.title,
     categorie: "ADMINISTRATIF",
     source: "Document administratif",
@@ -314,8 +366,8 @@ function mapAdministrativeDocumentToOwnerDocument(
       description: item.description || "",
       category_label: item.category_label || "",
     },
-    is_hidden: false,
-    hidden_at: null,
+    is_hidden: hiddenIds.has(documentId),
+    hidden_at: hiddenIds.has(documentId) ? new Date().toISOString() : null,
   };
 }
 
@@ -343,6 +395,9 @@ export async function getDocumentsCoproprietaire(options?: {
   ).map(mapAdministrativeDocumentToOwnerDocument);
 
   const mergedDocuments = [...administrativeDocuments, ...(baseData.documents ?? [])];
+  const hiddenAdministrativeDocuments = administrativeDocuments.filter(
+    (item) => item.is_hidden,
+  ).length;
 
   return {
     ...baseData,
@@ -351,12 +406,22 @@ export async function getDocumentsCoproprietaire(options?: {
       ...baseData.stats,
       total: mergedDocuments.length,
       autres: (baseData.stats?.autres ?? 0) + administrativeDocuments.length,
+      masques: (baseData.stats?.masques ?? 0) + hiddenAdministrativeDocuments,
     },
     documents: mergedDocuments,
   };
 }
 
 export async function hideDocumentCoproprietaire(documentId: string) {
+  if (isAdministrativeDocumentOwnerId(documentId)) {
+    hideAdministrativeDocumentLocally(documentId);
+    return {
+      ok: true,
+      document_id: documentId,
+      is_hidden: true,
+    };
+  }
+
   const response = await api.post<{
     success: boolean;
     created: boolean;
@@ -370,6 +435,15 @@ export async function hideDocumentCoproprietaire(documentId: string) {
 }
 
 export async function restoreDocumentCoproprietaire(documentId: string) {
+  if (isAdministrativeDocumentOwnerId(documentId)) {
+    restoreAdministrativeDocumentLocally(documentId);
+    return {
+      ok: true,
+      document_id: documentId,
+      is_hidden: false,
+    };
+  }
+
   const response = await api.post<{
     success: boolean;
     restored: boolean;
