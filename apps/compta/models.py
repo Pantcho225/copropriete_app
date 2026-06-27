@@ -781,3 +781,265 @@ class RapprochementBancaire(models.Model):
         )
         rap.apply_side_effects()
         return rap
+
+def entree_argent_upload_to(instance, filename: str) -> str:
+    copro_id = instance.copropriete_id or "global"
+    type_value = (instance.type or "entree").lower()
+    return f"compta/entrees-argent/{copro_id}/{type_value}/{filename}"
+
+
+class EntreeArgent(models.Model):
+    """
+    Entrée d'argent métier hors appels de fonds classiques.
+
+    Exemples :
+    - don ;
+    - subvention ;
+    - remboursement ;
+    - intérêts bancaires ;
+    - régularisation crédit ;
+    - autre entrée d'argent.
+
+    Une entrée validée crée ou référence un MouvementBancaire CREDIT.
+    """
+
+    class Type(models.TextChoices):
+        DON = "DON", "Don"
+        SUBVENTION = "SUBVENTION", "Subvention"
+        REMBOURSEMENT = "REMBOURSEMENT", "Remboursement"
+        INTERET_BANCAIRE = "INTERET_BANCAIRE", "Intérêt bancaire"
+        REGULARISATION_CREDIT = "REGULARISATION_CREDIT", "Régularisation crédit"
+        AUTRE_ENTREE = "AUTRE_ENTREE", "Autre entrée d'argent"
+
+    class Statut(models.TextChoices):
+        BROUILLON = "BROUILLON", "Brouillon"
+        VALIDEE = "VALIDEE", "Validée"
+        ANNULEE = "ANNULEE", "Annulée"
+
+    class ModePaiement(models.TextChoices):
+        VIREMENT = "VIREMENT", "Virement"
+        ESPECES = "ESPECES", "Espèces"
+        CHEQUE = "CHEQUE", "Chèque"
+        MOBILE_MONEY = "MOBILE_MONEY", "Mobile money"
+        CARTE = "CARTE", "Carte"
+        AUTRE = "AUTRE", "Autre"
+
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="entrees_argent",
+    )
+    compte = models.ForeignKey(
+        CompteBancaire,
+        on_delete=models.PROTECT,
+        related_name="entrees_argent",
+    )
+
+    type = models.CharField(
+        max_length=30,
+        choices=Type.choices,
+        default=Type.AUTRE_ENTREE,
+        db_index=True,
+    )
+    statut = models.CharField(
+        max_length=20,
+        choices=Statut.choices,
+        default=Statut.BROUILLON,
+        db_index=True,
+    )
+
+    montant = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    date_operation = models.DateField()
+    reference = models.CharField(max_length=120, blank=True, default="")
+    libelle = models.CharField(max_length=220)
+    source_nom = models.CharField(
+        max_length=180,
+        blank=True,
+        default="",
+        help_text="Nom du donateur, organisme, prestataire ou source du remboursement.",
+    )
+    mode_paiement = models.CharField(
+        max_length=30,
+        choices=ModePaiement.choices,
+        default=ModePaiement.VIREMENT,
+        db_index=True,
+    )
+    note = models.TextField(blank=True, default="")
+
+    justificatif = models.FileField(
+        upload_to=entree_argent_upload_to,
+        null=True,
+        blank=True,
+    )
+    justificatif_nom_original = models.CharField(max_length=255, blank=True, default="")
+    justificatif_mime_type = models.CharField(max_length=120, blank=True, default="")
+    justificatif_taille_octets = models.PositiveBigIntegerField(default=0)
+
+    mouvement = models.OneToOneField(
+        MouvementBancaire,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entree_argent",
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entrees_argent_creees",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entrees_argent_modifiees",
+    )
+    validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entrees_argent_validees",
+    )
+    validated_at = models.DateTimeField(null=True, blank=True)
+
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="entrees_argent_annulees",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_reason = models.CharField(max_length=300, blank=True, default="")
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Entrée d'argent"
+        verbose_name_plural = "Entrées d'argent"
+        ordering = ["-date_operation", "-id"]
+        indexes = [
+            models.Index(fields=["copropriete", "type"]),
+            models.Index(fields=["copropriete", "statut"]),
+            models.Index(fields=["copropriete", "compte", "date_operation"]),
+            models.Index(fields=["copropriete", "mode_paiement"]),
+            models.Index(fields=["date_operation"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def clean(self):
+        if self.compte_id and self.copropriete_id:
+            if int(self.compte.copropriete_id) != int(self.copropriete_id):
+                raise ValidationError({"compte": "Compte bancaire hors copropriété."})
+
+        if self.mouvement_id and self.copropriete_id:
+            if int(self.mouvement.copropriete_id) != int(self.copropriete_id):
+                raise ValidationError({"mouvement": "Mouvement bancaire hors copropriété."})
+
+            if self.mouvement.sens != MouvementBancaire.Sens.CREDIT:
+                raise ValidationError({"mouvement": "Une entrée d'argent doit être liée à un mouvement CREDIT."})
+
+    @property
+    def justificatif_filename(self) -> str:
+        if self.justificatif_nom_original:
+            return self.justificatif_nom_original
+        if not self.justificatif:
+            return ""
+        try:
+            return self.justificatif.name.split("/")[-1]
+        except Exception:
+            return ""
+
+    @property
+    def is_validee(self) -> bool:
+        return self.statut == self.Statut.VALIDEE
+
+    @transaction.atomic
+    def valider(self, *, user=None):
+        if self.statut == self.Statut.ANNULEE:
+            raise ValidationError({"detail": "Impossible de valider une entrée annulée."})
+
+        if self.mouvement_id:
+            self.statut = self.Statut.VALIDEE
+            if not self.validated_at:
+                self.validated_at = timezone.now()
+            if getattr(user, "id", None) and not self.validated_by_id:
+                self.validated_by = user
+            self.save(update_fields=["statut", "validated_at", "validated_by", "updated_at"])
+            return self
+
+        note = (self.note or "").strip()
+        marker = f"EntreeArgent#{self.id}"
+        note_full = f"{note}\n{marker}".strip() if note else marker
+
+        mouvement = MouvementBancaire.objects.create(
+            copropriete=self.copropriete,
+            compte=self.compte,
+            sens=MouvementBancaire.Sens.CREDIT,
+            montant=self.montant,
+            date_operation=self.date_operation,
+            reference=self.reference[:120],
+            libelle=self.libelle[:200],
+            note=note_full,
+            created_by=user if getattr(user, "id", None) else self.created_by,
+        )
+
+        self.mouvement = mouvement
+        self.statut = self.Statut.VALIDEE
+        self.validated_at = timezone.now()
+        if getattr(user, "id", None):
+            self.validated_by = user
+
+        self.save(
+            update_fields=[
+                "mouvement",
+                "statut",
+                "validated_at",
+                "validated_by",
+                "updated_at",
+            ]
+        )
+        return self
+
+    @transaction.atomic
+    def annuler(self, *, user=None, reason: str = "", cancel_mouvement: bool = True):
+        if self.statut == self.Statut.ANNULEE:
+            return self
+
+        if cancel_mouvement and self.mouvement_id and not self.mouvement.is_cancelled:
+            self.mouvement.cancel(
+                user=user,
+                reason=reason or f"Annulation entrée d'argent #{self.id}",
+                kind=MouvementBancaire.CancelKind.ERROR,
+            )
+
+        self.statut = self.Statut.ANNULEE
+        self.cancelled_at = timezone.now()
+        if getattr(user, "id", None):
+            self.cancelled_by = user
+        self.cancelled_reason = (reason or "").strip()[:300]
+
+        self.save(
+            update_fields=[
+                "statut",
+                "cancelled_at",
+                "cancelled_by",
+                "cancelled_reason",
+                "updated_at",
+            ]
+        )
+        return self
+
+    def __str__(self) -> str:
+        return f"Entrée#{self.id} {self.type} {self.montant}"

@@ -12,6 +12,7 @@ from rest_framework import serializers
 
 from .models import (
     CompteBancaire,
+    EntreeArgent,
     MouvementBancaire,
     ReleveImport,
     ReleveLigne,
@@ -880,3 +881,173 @@ class RapprochementCreateSerializer(serializers.Serializer):
 
     def to_representation(self, instance: RapprochementBancaire):
         return RapprochementBancaireSerializer(instance).data
+
+class EntreeArgentSerializer(serializers.ModelSerializer):
+    type_label = serializers.CharField(source="get_type_display", read_only=True)
+    statut_label = serializers.CharField(source="get_statut_display", read_only=True)
+    mode_paiement_label = serializers.CharField(source="get_mode_paiement_display", read_only=True)
+
+    compte_label = serializers.SerializerMethodField()
+    mouvement_label = serializers.SerializerMethodField()
+    justificatif_url = serializers.SerializerMethodField()
+    justificatif_filename = serializers.CharField(read_only=True)
+
+    created_by_label = serializers.SerializerMethodField()
+    updated_by_label = serializers.SerializerMethodField()
+    validated_by_label = serializers.SerializerMethodField()
+    cancelled_by_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EntreeArgent
+        fields = [
+            "id",
+            "copropriete",
+            "compte",
+            "compte_label",
+            "type",
+            "type_label",
+            "statut",
+            "statut_label",
+            "montant",
+            "date_operation",
+            "reference",
+            "libelle",
+            "source_nom",
+            "mode_paiement",
+            "mode_paiement_label",
+            "note",
+            "justificatif",
+            "justificatif_url",
+            "justificatif_filename",
+            "justificatif_nom_original",
+            "justificatif_mime_type",
+            "justificatif_taille_octets",
+            "mouvement",
+            "mouvement_label",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "validated_by",
+            "validated_by_label",
+            "validated_at",
+            "cancelled_by",
+            "cancelled_by_label",
+            "cancelled_at",
+            "cancelled_reason",
+            "metadata",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "copropriete",
+            "type_label",
+            "statut_label",
+            "mode_paiement_label",
+            "compte_label",
+            "justificatif_url",
+            "justificatif_filename",
+            "justificatif_nom_original",
+            "justificatif_mime_type",
+            "justificatif_taille_octets",
+            "mouvement",
+            "mouvement_label",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "validated_by",
+            "validated_by_label",
+            "validated_at",
+            "cancelled_by",
+            "cancelled_by_label",
+            "cancelled_at",
+            "cancelled_reason",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_libelle(self, value: str) -> str:
+        value = (value or "").strip()
+        if len(value) < 3:
+            raise serializers.ValidationError("Le libellé doit contenir au moins 3 caractères.")
+        return value
+
+    def validate_justificatif(self, value):
+        if not value:
+            return value
+
+        allowed_extensions = (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+        allowed_mime_types = {
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        }
+
+        filename = str(getattr(value, "name", "") or "").lower()
+        content_type = str(getattr(value, "content_type", "") or "").lower()
+
+        if not filename.endswith(allowed_extensions) and content_type not in allowed_mime_types:
+            raise serializers.ValidationError(
+                "Format non autorisé. Utilisez PDF ou image JPG/PNG/WEBP."
+            )
+
+        max_size = 15 * 1024 * 1024
+        if int(getattr(value, "size", 0) or 0) > max_size:
+            raise serializers.ValidationError("Le justificatif ne doit pas dépasser 15 Mo.")
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        request = self.context.get("request")
+        copro_id = _require_copro_id(request)
+
+        compte = attrs.get("compte", getattr(self.instance, "compte", None))
+        if not compte:
+            raise serializers.ValidationError({"compte": "Le compte bancaire est obligatoire."})
+
+        if int(compte.copropriete_id) != int(copro_id):
+            raise serializers.ValidationError({"compte": "Compte bancaire hors copropriété."})
+
+        if not getattr(compte, "is_active", True):
+            raise serializers.ValidationError({"compte": "Compte bancaire inactif."})
+
+        if self.instance and self.instance.statut == EntreeArgent.Statut.ANNULEE:
+            raise serializers.ValidationError({"detail": "Une entrée annulée ne peut plus être modifiée."})
+
+        return attrs
+
+    def get_compte_label(self, obj: EntreeArgent) -> str:
+        compte = obj.compte
+        return getattr(compte, "nom", "") or str(compte)
+
+    def get_mouvement_label(self, obj: EntreeArgent) -> str:
+        if not obj.mouvement_id:
+            return ""
+        return f"Mouvement #{obj.mouvement_id}"
+
+    def get_justificatif_url(self, obj: EntreeArgent) -> str:
+        if not obj.justificatif:
+            return ""
+
+        request = self.context.get("request")
+        try:
+            url = obj.justificatif.url
+        except Exception:
+            return ""
+
+        return request.build_absolute_uri(url) if request else url
+
+    def get_created_by_label(self, obj: EntreeArgent) -> str:
+        return str(obj.created_by) if obj.created_by else ""
+
+    def get_updated_by_label(self, obj: EntreeArgent) -> str:
+        return str(obj.updated_by) if obj.updated_by else ""
+
+    def get_validated_by_label(self, obj: EntreeArgent) -> str:
+        return str(obj.validated_by) if obj.validated_by else ""
+
+    def get_cancelled_by_label(self, obj: EntreeArgent) -> str:
+        return str(obj.cancelled_by) if obj.cancelled_by else ""

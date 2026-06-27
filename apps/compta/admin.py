@@ -305,3 +305,45 @@ class RapprochementBancaireAdmin(admin.ModelAdmin):
         if getattr(obj, "is_cancelled", False):
             return _badge("ANNULE", "bad")
         return _badge("ACTIF", "ok")
+from .models import EntreeArgent
+
+
+@admin.register(EntreeArgent)
+class EntreeArgentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "type",
+        "statut",
+        "libelle",
+        "montant",
+        "compte",
+        "copropriete",
+        "date_operation",
+        "mouvement",
+        "created_at",
+    )
+    list_filter = (
+        "type",
+        "statut",
+        "mode_paiement",
+        "date_operation",
+        "created_at",
+    )
+    search_fields = (
+        "reference",
+        "libelle",
+        "source_nom",
+        "note",
+        "compte__nom",
+        "copropriete__nom",
+    )
+    readonly_fields = (
+        "mouvement",
+        "justificatif_nom_original",
+        "justificatif_mime_type",
+        "justificatif_taille_octets",
+        "validated_at",
+        "cancelled_at",
+        "created_at",
+        "updated_at",
+    )

@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from .permissions import IsAdminOrSyndicWriteReadOnly
 from .models import (
     CompteBancaire,
+    EntreeArgent,
     MouvementBancaire,
     ReleveImport,
     ReleveLigne,
@@ -30,6 +31,7 @@ from .models import (
 )
 from .serializers import (
     CompteBancaireSerializer,
+    EntreeArgentSerializer,
     MouvementBancaireSerializer,
     ReleveImportDetailSerializer,
     ReleveImportListSerializer,
@@ -1693,3 +1695,196 @@ class RapprochementBancaireViewSet(viewsets.ReadOnlyModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class EntreeArgentViewSet(viewsets.ModelViewSet):
+    """
+    Entrées d'argent métier : dons, subventions, remboursements, intérêts,
+    régularisations crédit et autres entrées.
+    """
+
+    permission_classes = [IsAdminOrSyndicWriteReadOnly]
+    serializer_class = EntreeArgentSerializer
+    queryset = EntreeArgent.objects.all().order_by("-date_operation", "-id")
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+
+        qs = (
+            super()
+            .get_queryset()
+            .filter(copropriete_id=copro_id)
+            .select_related(
+                "compte",
+                "mouvement",
+                "created_by",
+                "updated_by",
+                "validated_by",
+                "cancelled_by",
+            )
+        )
+
+        type_value = self.request.query_params.get("type")
+        statut = self.request.query_params.get("statut")
+        compte = self.request.query_params.get("compte")
+        mode_paiement = self.request.query_params.get("mode_paiement")
+        q = self.request.query_params.get("q")
+
+        dfrom = _parse_date_param(self.request, "from")
+        dto = _parse_date_param(self.request, "to")
+
+        if type_value:
+            qs = qs.filter(type=type_value)
+
+        if statut:
+            qs = qs.filter(statut=statut)
+
+        if compte:
+            try:
+                qs = qs.filter(compte_id=int(compte))
+            except ValueError:
+                raise ValidationError({"compte": "Doit être un entier."})
+
+        if mode_paiement:
+            qs = qs.filter(mode_paiement=mode_paiement)
+
+        if dfrom:
+            qs = qs.filter(date_operation__gte=dfrom)
+
+        if dto:
+            qs = qs.filter(date_operation__lte=dto)
+
+        if q:
+            qs = qs.filter(
+                Q(reference__icontains=q)
+                | Q(libelle__icontains=q)
+                | Q(source_nom__icontains=q)
+                | Q(note__icontains=q)
+            )
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        uploaded_file = self.request.FILES.get("justificatif")
+        original_filename = getattr(uploaded_file, "name", "") if uploaded_file else ""
+        mime_type = getattr(uploaded_file, "content_type", "") if uploaded_file else ""
+        size_bytes = getattr(uploaded_file, "size", 0) if uploaded_file else 0
+
+        entree = serializer.save(
+            copropriete_id=copro_id,
+            justificatif_nom_original=original_filename,
+            justificatif_mime_type=mime_type,
+            justificatif_taille_octets=size_bytes or 0,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+        if entree.statut == EntreeArgent.Statut.VALIDEE:
+            entree.valider(user=self.request.user)
+
+    def perform_update(self, serializer):
+        copro_id = _require_copro_id(self.request)
+
+        uploaded_file = self.request.FILES.get("justificatif")
+        extra = {"updated_by": self.request.user}
+
+        if uploaded_file:
+            extra.update(
+                {
+                    "justificatif_nom_original": getattr(uploaded_file, "name", ""),
+                    "justificatif_mime_type": getattr(uploaded_file, "content_type", ""),
+                    "justificatif_taille_octets": getattr(uploaded_file, "size", 0) or 0,
+                }
+            )
+
+        entree = serializer.save(**extra)
+
+        if int(entree.copropriete_id) != int(copro_id):
+            raise ValidationError({"detail": "Entrée d'argent hors copropriété."})
+
+    @action(detail=True, methods=["post"], url_path="valider")
+    def valider(self, request, pk=None):
+        entree = self.get_object()
+
+        try:
+            entree.valider(user=request.user)
+        except DjangoValidationError as e:
+            raise ValidationError(_as_drf_error_from_django_validation(e))
+
+        serializer = self.get_serializer(entree)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="annuler")
+    def annuler(self, request, pk=None):
+        entree = self.get_object()
+        reason = (request.data.get("reason") or request.data.get("note") or "").strip()
+        cancel_mouvement = _parse_bool(request.data.get("cancel_mouvement"), default=True)
+
+        try:
+            entree.annuler(
+                user=request.user,
+                reason=reason,
+                cancel_mouvement=cancel_mouvement,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(_as_drf_error_from_django_validation(e))
+
+        serializer = self.get_serializer(entree)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        copro_id = _require_copro_id(request)
+
+        qs = EntreeArgent.objects.filter(copropriete_id=copro_id)
+        effective_qs = qs.filter(statut=EntreeArgent.Statut.VALIDEE)
+
+        total_valide = Decimal(str(effective_qs.aggregate(t=Sum("montant")).get("t") or 0))
+        total_brouillon = Decimal(
+            str(qs.filter(statut=EntreeArgent.Statut.BROUILLON).aggregate(t=Sum("montant")).get("t") or 0)
+        )
+        total_annule = Decimal(
+            str(qs.filter(statut=EntreeArgent.Statut.ANNULEE).aggregate(t=Sum("montant")).get("t") or 0)
+        )
+
+        by_type = (
+            effective_qs.values("type")
+            .annotate(total=Sum("montant"), count=Count("id"))
+            .order_by("type")
+        )
+        by_mode = (
+            effective_qs.values("mode_paiement")
+            .annotate(total=Sum("montant"), count=Count("id"))
+            .order_by("mode_paiement")
+        )
+
+        return Response(
+            {
+                "copropriete_id": int(copro_id),
+                "total_valide": float(total_valide),
+                "total_brouillon": float(total_brouillon),
+                "total_annule": float(total_annule),
+                "count_total": qs.count(),
+                "count_valide": effective_qs.count(),
+                "by_type": [
+                    {
+                        "type": item["type"],
+                        "total": float(item["total"] or 0),
+                        "count": int(item["count"] or 0),
+                    }
+                    for item in by_type
+                ],
+                "by_mode_paiement": [
+                    {
+                        "mode_paiement": item["mode_paiement"],
+                        "total": float(item["total"] or 0),
+                        "count": int(item["count"] or 0),
+                    }
+                    for item in by_mode
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
