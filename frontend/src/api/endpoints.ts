@@ -123,6 +123,19 @@ export const ENDPOINTS = {
   mouvementCancel: (mouvementId: number | string) =>
     `/api/compta/mouvements/${mouvementId}/cancel/`,
 
+  // =========================
+  // COMPTA — Entrées d’argent
+  // =========================
+  comptaComptes: "/api/compta/comptes/",
+  comptaEntreesArgent: "/api/compta/entrees-argent/",
+  comptaEntreeArgentDetail: (entreeId: number | string) =>
+    `/api/compta/entrees-argent/${entreeId}/`,
+  comptaEntreeArgentValider: (entreeId: number | string) =>
+    `/api/compta/entrees-argent/${entreeId}/valider/`,
+  comptaEntreeArgentAnnuler: (entreeId: number | string) =>
+    `/api/compta/entrees-argent/${entreeId}/annuler/`,
+  comptaEntreesArgentStats: "/api/compta/entrees-argent/stats/",
+
   // Ancien objet utilisé par src/features/compta/RapproStatsPage.tsx
   compta: {
     rapprochements: "/api/compta/rapprochements/",

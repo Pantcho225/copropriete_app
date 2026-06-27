@@ -24,6 +24,7 @@ import RelevesImports from "./pages/compta/RelevesImports";
 import ReleveLignes from "./pages/compta/ReleveLignes";
 import ComptaMouvements from "./pages/compta/ComptaMouvements";
 import ComptaStats from "./pages/compta/ComptaStats";
+import ComptaEntreesArgent from "./pages/compta/ComptaEntreesArgent";
 
 // Ressources humaines
 import RHHome from "./pages/rh/RHHome";
@@ -183,6 +184,7 @@ export default function App() {
             <Route path="imports" element={<RelevesImports />} />
             <Route path="imports/:importId/lignes" element={<ReleveLignes />} />
             <Route path="mouvements" element={<ComptaMouvements />} />
+            <Route path="entrees-argent" element={<ComptaEntreesArgent />} />
             <Route path="stats" element={<ComptaStats />} />
           </Route>
 

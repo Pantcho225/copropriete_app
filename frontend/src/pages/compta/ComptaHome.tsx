@@ -450,7 +450,7 @@ export default function ComptaHome() {
             title="Dons, subventions et remboursements"
             text="Préparer le suivi des sommes reçues hors appels classiques : don volontaire, subvention, remboursement ou trop-perçu."
             actionLabel="Suivre en comptabilité"
-            onAction={() => navigate("/compta/mouvements")}
+            onAction={() => navigate("/compta/entrees-argent")}
             tone="info"
           />
 
@@ -458,7 +458,7 @@ export default function ComptaHome() {
             title="Autre entrée d’argent"
             text="Identifier les encaissements qui ne rentrent pas encore dans une catégorie précise, sans forcer un lien avec une AG."
             actionLabel="Préparer le suivi"
-            onAction={() => navigate("/compta/stats")}
+            onAction={() => navigate("/compta/entrees-argent")}
             tone="warning"
           />
         </div>

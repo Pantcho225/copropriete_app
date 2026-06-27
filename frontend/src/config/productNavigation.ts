@@ -69,6 +69,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: "Comptabilité", to: "/compta" },
       { label: "Imports bancaires", to: "/compta/imports" },
       { label: "Mouvements", to: "/compta/mouvements" },
+      { label: "Entrées d’argent", to: "/compta/entrees-argent" },
       { label: "Statistiques", to: "/compta/stats" },
       { label: "Relances & impayés", to: "/relances" },
     ],
@@ -122,6 +123,7 @@ export function getPageTitle(pathname: string): string {
     return "Lignes importées";
   }
   if (pathname === "/compta/mouvements") return "Entrées / Sorties";
+  if (pathname === "/compta/entrees-argent") return "Entrées d’argent";
   if (pathname === "/compta/stats") return "Statistiques comptables";
 
   // Relances
