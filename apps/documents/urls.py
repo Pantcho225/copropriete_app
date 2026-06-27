@@ -3,6 +3,9 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AdministrativeDocumentCategoryViewSet,
+    AdministrativeDocumentViewSet,
+    CoproprietaireAdministrativeDocumentViewSet,
     CoproprietaireGenerateAgMandatAPIView,
     CoproprietaireGeneratedDocumentsAPIView,
     CoproprietaireReglementTexteApplicableViewSet,
@@ -20,6 +23,27 @@ from .views_coproprietaire import (
 app_name = "documents"
 
 router = DefaultRouter()
+
+# Catégories de documents administratifs admin/syndic
+router.register(
+    r"categories",
+    AdministrativeDocumentCategoryViewSet,
+    basename="administrative-document-category",
+)
+
+# Documents administratifs uploadés admin/syndic
+router.register(
+    r"administratifs",
+    AdministrativeDocumentViewSet,
+    basename="administrative-document",
+)
+
+# Documents administratifs visibles côté copropriétaire
+router.register(
+    r"coproprietaire/administratifs",
+    CoproprietaireAdministrativeDocumentViewSet,
+    basename="coproprietaire-administrative-document",
+)
 
 # Registre documentaire généré admin/syndic
 router.register(

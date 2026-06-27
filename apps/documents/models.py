@@ -363,3 +363,172 @@ class DocumentMasqueCoproprietaire(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} - {self.document_id}"
+
+def administrative_document_upload_to(instance, filename: str) -> str:
+    copro_id = instance.copropriete_id or "global"
+    category = getattr(instance, "category", None)
+    category_code = getattr(category, "code", "") or "administratif"
+    return f"documents/administratifs/{copro_id}/{category_code}/{filename}"
+
+
+class AdministrativeDocumentCategory(models.Model):
+    """
+    Catégorie libre de documents administratifs uploadés par l'admin/syndic.
+
+    Exemples :
+    - Contrats ;
+    - Assurances ;
+    - Courriers ;
+    - Plans ;
+    - Factures fournisseurs ;
+    - Documents juridiques ;
+    - Divers.
+    """
+
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="administrative_document_categories",
+    )
+    name = models.CharField(max_length=160)
+    code = models.SlugField(max_length=100, blank=True)
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=100)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administrative_document_categories_created",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administrative_document_categories_updated",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Catégorie de document administratif"
+        verbose_name_plural = "Catégories de documents administratifs"
+        ordering = ["order", "name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["copropriete", "code"],
+                name="uniq_admin_doc_category_code_per_copropriete",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["copropriete", "is_active"]),
+            models.Index(fields=["order"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            from django.utils.text import slugify
+
+            self.code = slugify(self.name)[:100] or "categorie"
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class AdministrativeDocument(models.Model):
+    """
+    Document administratif uploadé manuellement par l'admin/syndic.
+
+    Ce modèle est distinct de GeneratedDocument :
+    - GeneratedDocument = PDF produit automatiquement par le système ;
+    - AdministrativeDocument = fichier déposé par le syndic/admin.
+    """
+
+    copropriete = models.ForeignKey(
+        "core.Copropriete",
+        on_delete=models.CASCADE,
+        related_name="administrative_documents",
+    )
+    category = models.ForeignKey(
+        AdministrativeDocumentCategory,
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
+
+    title = models.CharField(max_length=220)
+    reference = models.CharField(max_length=120, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+
+    file = models.FileField(upload_to=administrative_document_upload_to)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    mime_type = models.CharField(max_length=120, blank=True, default="")
+    size_bytes = models.PositiveBigIntegerField(default=0)
+
+    visible_to_coproprietaires = models.BooleanField(default=False, db_index=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administrative_documents_created",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="administrative_documents_updated",
+    )
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Document administratif"
+        verbose_name_plural = "Documents administratifs"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["copropriete", "visible_to_coproprietaires"]),
+            models.Index(fields=["copropriete", "category"]),
+            models.Index(fields=["published_at"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.visible_to_coproprietaires and self.published_at is None:
+            self.published_at = timezone.now()
+
+        if not self.visible_to_coproprietaires:
+            self.published_at = None
+
+        super().save(*args, **kwargs)
+
+    @property
+    def filename(self) -> str:
+        if self.original_filename:
+            return self.original_filename
+
+        if not self.file:
+            return ""
+
+        try:
+            return self.file.name.split("/")[-1]
+        except Exception:
+            return ""
+
+    @property
+    def is_published_for_owner(self) -> bool:
+        return bool(self.visible_to_coproprietaires and self.file)
+
+    def __str__(self) -> str:
+        return self.title

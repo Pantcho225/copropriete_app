@@ -2,8 +2,14 @@
 from __future__ import annotations
 
 from rest_framework import serializers
+from rest_framework.reverse import reverse
 
-from .models import GeneratedDocument, ReglementTexteApplicable
+from .models import (
+    AdministrativeDocument,
+    AdministrativeDocumentCategory,
+    GeneratedDocument,
+    ReglementTexteApplicable,
+)
 
 
 class GeneratedDocumentSerializer(serializers.ModelSerializer):
@@ -316,3 +322,330 @@ def get_user_label(user) -> str:
     email = getattr(user, "email", "") or ""
 
     return username or email or str(user)
+
+def _request_copro_id_from_serializer(serializer) -> str:
+    request = serializer.context.get("request") if serializer else None
+
+    if not request:
+        return ""
+
+    copro_id = getattr(request, "copropriete_id", None)
+    if not copro_id:
+        copro_id = request.headers.get("X-Copropriete-Id")
+
+    return str(copro_id or "")
+
+
+def _safe_reverse_document_action(view_name: str, request, pk: int) -> str:
+    for candidate in (f"documents:{view_name}", view_name):
+        try:
+            return reverse(candidate, kwargs={"pk": pk}, request=request)
+        except Exception:
+            continue
+    return ""
+
+
+class AdministrativeDocumentCategorySerializer(serializers.ModelSerializer):
+    copropriete_label = serializers.SerializerMethodField()
+    created_by_label = serializers.SerializerMethodField()
+    updated_by_label = serializers.SerializerMethodField()
+    documents_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = AdministrativeDocumentCategory
+        fields = [
+            "id",
+            "copropriete",
+            "copropriete_label",
+            "name",
+            "code",
+            "description",
+            "is_active",
+            "order",
+            "documents_count",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "copropriete",
+            "copropriete_label",
+            "documents_count",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_name(self, value: str) -> str:
+        value = (value or "").strip()
+
+        if len(value) < 2:
+            raise serializers.ValidationError(
+                "Le nom de la catégorie doit contenir au moins 2 caractères."
+            )
+
+        return value
+
+    def validate_code(self, value: str) -> str:
+        value = (value or "").strip().lower()
+
+        if value:
+            from django.utils.text import slugify
+
+            value = slugify(value)[:100]
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        copro_id = _request_copro_id_from_serializer(self)
+        name = attrs.get("name", getattr(self.instance, "name", "")).strip()
+        code = attrs.get("code", getattr(self.instance, "code", "")).strip()
+
+        if not code and name:
+            from django.utils.text import slugify
+
+            code = slugify(name)[:100] or "categorie"
+            attrs["code"] = code
+
+        if copro_id and code:
+            qs = AdministrativeDocumentCategory.objects.filter(
+                copropriete_id=copro_id,
+                code=code,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"code": "Une catégorie avec ce code existe déjà pour cette copropriété."}
+                )
+
+        return attrs
+
+    def get_copropriete_label(self, obj: AdministrativeDocumentCategory) -> str:
+        copropriete = obj.copropriete
+        return getattr(copropriete, "nom", "") or str(copropriete)
+
+    def get_created_by_label(self, obj: AdministrativeDocumentCategory) -> str:
+        return str(obj.created_by) if obj.created_by else ""
+
+    def get_updated_by_label(self, obj: AdministrativeDocumentCategory) -> str:
+        return str(obj.updated_by) if obj.updated_by else ""
+
+
+class AdministrativeDocumentSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="category.name", read_only=True)
+    category_code = serializers.CharField(source="category.code", read_only=True)
+    copropriete_label = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    filename = serializers.CharField(read_only=True)
+    is_published_for_owner = serializers.BooleanField(read_only=True)
+    created_by_label = serializers.SerializerMethodField()
+    updated_by_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AdministrativeDocument
+        fields = [
+            "id",
+            "copropriete",
+            "copropriete_label",
+            "category",
+            "category_label",
+            "category_code",
+            "title",
+            "reference",
+            "description",
+            "file",
+            "file_url",
+            "download_url",
+            "filename",
+            "original_filename",
+            "mime_type",
+            "size_bytes",
+            "visible_to_coproprietaires",
+            "published_at",
+            "is_published_for_owner",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "metadata",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "copropriete",
+            "copropriete_label",
+            "file_url",
+            "download_url",
+            "filename",
+            "original_filename",
+            "mime_type",
+            "size_bytes",
+            "published_at",
+            "is_published_for_owner",
+            "created_by",
+            "created_by_label",
+            "updated_by",
+            "updated_by_label",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_title(self, value: str) -> str:
+        value = (value or "").strip()
+
+        if len(value) < 3:
+            raise serializers.ValidationError(
+                "Le titre du document doit contenir au moins 3 caractères."
+            )
+
+        return value
+
+    def validate_file(self, value):
+        if not value:
+            raise serializers.ValidationError("Le fichier est obligatoire.")
+
+        allowed_extensions = (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+        allowed_mime_types = {
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        }
+
+        filename = str(getattr(value, "name", "") or "").lower()
+        content_type = str(getattr(value, "content_type", "") or "").lower()
+
+        has_allowed_extension = filename.endswith(allowed_extensions)
+        has_allowed_mime_type = content_type in allowed_mime_types
+
+        if not has_allowed_extension and not has_allowed_mime_type:
+            raise serializers.ValidationError(
+                "Format non autorisé. Seuls les fichiers PDF et images JPG, PNG ou WEBP sont acceptés."
+            )
+
+        max_size = 15 * 1024 * 1024
+        size = int(getattr(value, "size", 0) or 0)
+
+        if size > max_size:
+            raise serializers.ValidationError(
+                "Le fichier ne doit pas dépasser 15 Mo."
+            )
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        copro_id = _request_copro_id_from_serializer(self)
+        category = attrs.get("category", getattr(self.instance, "category", None))
+
+        if not category:
+            raise serializers.ValidationError({"category": "La catégorie est obligatoire."})
+
+        if copro_id and str(category.copropriete_id) != str(copro_id):
+            raise serializers.ValidationError(
+                {"category": "La catégorie choisie n’appartient pas à la copropriété courante."}
+            )
+
+        if not getattr(category, "is_active", True):
+            raise serializers.ValidationError(
+                {"category": "La catégorie choisie est inactive."}
+            )
+
+        return attrs
+
+    def get_copropriete_label(self, obj: AdministrativeDocument) -> str:
+        copropriete = obj.copropriete
+        return getattr(copropriete, "nom", "") or str(copropriete)
+
+    def get_file_url(self, obj: AdministrativeDocument) -> str:
+        if not obj.file:
+            return ""
+
+        request = self.context.get("request")
+
+        try:
+            url = obj.file.url
+        except Exception:
+            return ""
+
+        return request.build_absolute_uri(url) if request else url
+
+    def get_download_url(self, obj: AdministrativeDocument) -> str:
+        request = self.context.get("request")
+        if not request:
+            return ""
+
+        return _safe_reverse_document_action(
+            "administrative-document-download",
+            request,
+            obj.pk,
+        )
+
+    def get_created_by_label(self, obj: AdministrativeDocument) -> str:
+        return str(obj.created_by) if obj.created_by else ""
+
+    def get_updated_by_label(self, obj: AdministrativeDocument) -> str:
+        return str(obj.updated_by) if obj.updated_by else ""
+
+
+class CoproprietaireAdministrativeDocumentSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="category.name", read_only=True)
+    category_code = serializers.CharField(source="category.code", read_only=True)
+    file_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    filename = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AdministrativeDocument
+        fields = [
+            "id",
+            "category",
+            "category_label",
+            "category_code",
+            "title",
+            "reference",
+            "description",
+            "file_url",
+            "download_url",
+            "filename",
+            "mime_type",
+            "size_bytes",
+            "published_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_file_url(self, obj: AdministrativeDocument) -> str:
+        if not obj.file:
+            return ""
+
+        request = self.context.get("request")
+
+        try:
+            url = obj.file.url
+        except Exception:
+            return ""
+
+        return request.build_absolute_uri(url) if request else url
+
+    def get_download_url(self, obj: AdministrativeDocument) -> str:
+        request = self.context.get("request")
+        if not request:
+            return ""
+
+        return _safe_reverse_document_action(
+            "coproprietaire-administrative-document-download",
+            request,
+            obj.pk,
+        )

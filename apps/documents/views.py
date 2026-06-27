@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
 
-from rest_framework import status, viewsets
+from rest_framework import parsers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -15,8 +15,16 @@ from rest_framework.views import APIView
 from apps.core.models import CoproMembre
 from apps.owners.models import ProprietaireLot
 
-from .models import GeneratedDocument, ReglementTexteApplicable
+from .models import (
+    AdministrativeDocument,
+    AdministrativeDocumentCategory,
+    GeneratedDocument,
+    ReglementTexteApplicable,
+)
 from .serializers import (
+    AdministrativeDocumentCategorySerializer,
+    AdministrativeDocumentSerializer,
+    CoproprietaireAdministrativeDocumentSerializer,
     CoproprietaireReglementTexteApplicableSerializer,
     GeneratedDocumentSerializer,
     ReglementTexteApplicableSerializer,
@@ -909,3 +917,282 @@ class CoproprietaireGeneratedDocumentsAPIView(APIView):
                 "documents": serializer.data,
             }
         )
+
+def _assert_can_access_copro_documents(request, copro_id: str) -> None:
+    """
+    Sécurité côté espace copropriétaire.
+
+    L'utilisateur doit être authentifié et disposer d'un membership actif
+    sur la copropriété courante. Le filtrage de visibilité est ensuite appliqué
+    dans le queryset.
+    """
+
+    user = request.user
+
+    if not user or not user.is_authenticated:
+        raise PermissionDenied("Authentification requise.")
+
+    if getattr(user, "is_superuser", False):
+        return
+
+    has_membership = CoproMembre.objects.filter(
+        user=user,
+        copropriete_id=copro_id,
+        is_active=True,
+    ).exists()
+
+    if not has_membership:
+        raise PermissionDenied(
+            "Vous n’avez pas accès aux documents de cette copropriété."
+        )
+
+
+class AdministrativeDocumentCategoryViewSet(viewsets.ModelViewSet):
+    """
+    Gestion admin/syndic des catégories de documents administratifs.
+
+    GET    /api/documents/categories/
+    POST   /api/documents/categories/
+    GET    /api/documents/categories/:id/
+    PATCH  /api/documents/categories/:id/
+    DELETE /api/documents/categories/:id/
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AdministrativeDocumentCategorySerializer
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        qs = AdministrativeDocumentCategory.objects.filter(
+            copropriete_id=copro_id,
+        ).order_by("order", "name", "id")
+
+        active = self.request.query_params.get("is_active")
+        q = self.request.query_params.get("q")
+
+        if active is not None and active != "":
+            qs = qs.filter(is_active=_parse_bool(active, default=True))
+
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(code__icontains=q)
+                | Q(description__icontains=q)
+            )
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        serializer.save(
+            copropriete_id=copro_id,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        instance = serializer.save(updated_by=self.request.user)
+        _assert_same_copro(instance, copro_id)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        if instance.documents.exists():
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Cette catégorie contient déjà des documents. "
+                        "Désactivez-la plutôt que de la supprimer."
+                    )
+                }
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
+
+class AdministrativeDocumentViewSet(viewsets.ModelViewSet):
+    """
+    Gestion admin/syndic des documents administratifs uploadés.
+
+    GET    /api/documents/administratifs/
+    POST   /api/documents/administratifs/
+    GET    /api/documents/administratifs/:id/
+    PATCH  /api/documents/administratifs/:id/
+    DELETE /api/documents/administratifs/:id/
+    GET    /api/documents/administratifs/:id/download/
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AdministrativeDocumentSerializer
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        qs = (
+            AdministrativeDocument.objects.select_related(
+                "copropriete",
+                "category",
+                "created_by",
+                "updated_by",
+            )
+            .filter(copropriete_id=copro_id)
+            .order_by("-created_at", "-id")
+        )
+
+        params = self.request.query_params
+
+        category = params.get("category")
+        visible = params.get("visible_to_coproprietaires")
+        q = params.get("q")
+
+        if category:
+            qs = qs.filter(category_id=category)
+
+        if visible is not None and visible != "":
+            qs = qs.filter(
+                visible_to_coproprietaires=_parse_bool(
+                    visible,
+                    default=False,
+                )
+            )
+
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q)
+                | Q(reference__icontains=q)
+                | Q(description__icontains=q)
+                | Q(original_filename__icontains=q)
+                | Q(category__name__icontains=q)
+            )
+
+        return qs
+
+    def perform_create(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        uploaded_file = self.request.FILES.get("file")
+        original_filename = getattr(uploaded_file, "name", "") if uploaded_file else ""
+        mime_type = getattr(uploaded_file, "content_type", "") if uploaded_file else ""
+        size_bytes = getattr(uploaded_file, "size", 0) if uploaded_file else 0
+
+        serializer.save(
+            copropriete_id=copro_id,
+            original_filename=original_filename,
+            mime_type=mime_type,
+            size_bytes=size_bytes or 0,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_manage_copro(self.request, copro_id)
+
+        uploaded_file = self.request.FILES.get("file")
+        extra = {"updated_by": self.request.user}
+
+        if uploaded_file:
+            extra.update(
+                {
+                    "original_filename": getattr(uploaded_file, "name", ""),
+                    "mime_type": getattr(uploaded_file, "content_type", ""),
+                    "size_bytes": getattr(uploaded_file, "size", 0) or 0,
+                }
+            )
+
+        instance = serializer.save(**extra)
+        _assert_same_copro(instance, copro_id)
+
+    @action(detail=True, methods=["get"], url_path="download")
+    def download(self, request, pk=None):
+        document = self.get_object()
+
+        if not document.file:
+            raise NotFound("Fichier introuvable.")
+
+        content_type = document.mime_type or "application/octet-stream"
+        disposition = "attachment" if _parse_bool(request.query_params.get("download")) else "inline"
+
+        response = FileResponse(
+            document.file.open("rb"),
+            content_type=content_type,
+        )
+        response["Content-Disposition"] = (
+            f'{disposition}; filename="{document.filename or "document"}"'
+        )
+        return response
+
+
+class CoproprietaireAdministrativeDocumentViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Consultation côté copropriétaire des documents administratifs visibles.
+
+    GET /api/documents/coproprietaire/administratifs/
+    GET /api/documents/coproprietaire/administratifs/:id/
+    GET /api/documents/coproprietaire/administratifs/:id/download/
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = CoproprietaireAdministrativeDocumentSerializer
+
+    def get_queryset(self):
+        copro_id = _require_copro_id(self.request)
+        _assert_can_access_copro_documents(self.request, copro_id)
+
+        qs = (
+            AdministrativeDocument.objects.select_related(
+                "copropriete",
+                "category",
+            )
+            .filter(
+                copropriete_id=copro_id,
+                visible_to_coproprietaires=True,
+            )
+            .order_by("-published_at", "-created_at", "-id")
+        )
+
+        category = self.request.query_params.get("category")
+        q = self.request.query_params.get("q")
+
+        if category:
+            qs = qs.filter(category_id=category)
+
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q)
+                | Q(reference__icontains=q)
+                | Q(description__icontains=q)
+                | Q(original_filename__icontains=q)
+                | Q(category__name__icontains=q)
+            )
+
+        return qs
+
+    @action(detail=True, methods=["get"], url_path="download")
+    def download(self, request, pk=None):
+        document = self.get_object()
+
+        if not document.file:
+            raise NotFound("Fichier introuvable.")
+
+        content_type = document.mime_type or "application/octet-stream"
+        disposition = "attachment" if _parse_bool(request.query_params.get("download")) else "inline"
+
+        response = FileResponse(
+            document.file.open("rb"),
+            content_type=content_type,
+        )
+        response["Content-Disposition"] = (
+            f'{disposition}; filename="{document.filename or "document"}"'
+        )
+        return response
