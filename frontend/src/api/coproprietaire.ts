@@ -254,19 +254,106 @@ export type CoproprietaireDocumentsResponse = {
   documents: CoproprietaireDocumentItem[];
 };
 
+export type CoproprietaireAdministrativeDocumentItem = {
+  id: number;
+  title: string;
+  category: number;
+  category_label?: string;
+  description?: string | null;
+  file_url?: string;
+  download_url?: string;
+  filename?: string;
+  original_filename?: string;
+  date_document?: string | null;
+  visible_to_coproprietaires?: boolean;
+  created_at?: string;
+};
+
+type PaginatedResponse<T> = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+};
+
+function normalizeList<T>(value: PaginatedResponse<T> | T[] | unknown): T[] {
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as PaginatedResponse<T>).results)
+  ) {
+    return (value as PaginatedResponse<T>).results;
+  }
+
+  if (Array.isArray(value)) return value as T[];
+
+  return [];
+}
+
+function mapAdministrativeDocumentToOwnerDocument(
+  item: CoproprietaireAdministrativeDocumentItem,
+): CoproprietaireDocumentItem {
+  return {
+    id: `ADMINISTRATIF-${item.id}`,
+    titre: item.title,
+    categorie: "ADMINISTRATIF",
+    source: "Document administratif",
+    url: item.download_url || item.file_url || "",
+    filename: item.filename || item.original_filename || "",
+    date_document: item.date_document || item.created_at || null,
+    lot: {
+      id: null,
+      label: "",
+      reference: "",
+      numero: "",
+      type_lot: "",
+      etage: "",
+    },
+    meta: {
+      administrative_document_id: item.id,
+      description: item.description || "",
+      category_label: item.category_label || "",
+    },
+    is_hidden: false,
+    hidden_at: null,
+  };
+}
+
 export async function getDocumentsCoproprietaire(options?: {
   includeHidden?: boolean;
 }) {
-  const response = await api.get<CoproprietaireDocumentsResponse>(
-    "/api/documents/coproprietaire/documents/",
-    {
-      params: {
-        include_hidden: options?.includeHidden ? 1 : undefined,
+  const [documentsResponse, administratifsResponse] = await Promise.all([
+    api.get<CoproprietaireDocumentsResponse>(
+      "/api/documents/coproprietaire/documents/",
+      {
+        params: {
+          include_hidden: options?.includeHidden ? 1 : undefined,
+        },
       },
-    },
-  );
+    ),
+    api.get<
+      PaginatedResponse<CoproprietaireAdministrativeDocumentItem> |
+        CoproprietaireAdministrativeDocumentItem[]
+    >("/api/documents/coproprietaire/administratifs/"),
+  ]);
 
-  return response.data;
+  const baseData = documentsResponse.data;
+  const administrativeDocuments = normalizeList<CoproprietaireAdministrativeDocumentItem>(
+    administratifsResponse.data,
+  ).map(mapAdministrativeDocumentToOwnerDocument);
+
+  const mergedDocuments = [...administrativeDocuments, ...(baseData.documents ?? [])];
+
+  return {
+    ...baseData,
+    count: mergedDocuments.length,
+    stats: {
+      ...baseData.stats,
+      total: mergedDocuments.length,
+      autres: (baseData.stats?.autres ?? 0) + administrativeDocuments.length,
+    },
+    documents: mergedDocuments,
+  };
 }
 
 export async function hideDocumentCoproprietaire(documentId: string) {

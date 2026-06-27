@@ -7,6 +7,8 @@ import {
   type CSSProperties,
 } from "react";
 
+import api from "../../api/axios";
+
 import {
   getDocumentsCoproprietaire,
   hideDocumentCoproprietaire,
@@ -162,6 +164,51 @@ export default function CoproprietaireDocuments() {
     } catch (error) {
       console.error("Erreur restauration document", error);
       setNotice("Impossible de restaurer ce document pour le moment.");
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
+
+  async function handleOpenDocument(
+    documentItem: CoproprietaireDocumentItem,
+    download = false,
+  ) {
+    if (!documentItem.url) {
+      setNotice("Le lien du document est indisponible.");
+      return;
+    }
+
+    setBusyDocumentId(documentItem.id);
+    setNotice(null);
+
+    try {
+      const response = await api.get<Blob>(documentItem.url, {
+        responseType: "blob",
+        params: {
+          download: download ? 1 : 0,
+        },
+      });
+
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const filename =
+        documentItem.filename ||
+        `${documentItem.titre || "document-coproprietaire"}.pdf`;
+
+      if (download) {
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(blobUrl);
+      } else {
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+      }
+    } catch (error) {
+      console.error("Erreur ouverture document copropriétaire", error);
+      setNotice("Impossible d’ouvrir ce document pour le moment.");
     } finally {
       setBusyDocumentId(null);
     }
@@ -344,6 +391,7 @@ export default function CoproprietaireDocuments() {
                 busy={busyDocumentId === documentItem.id}
                 onHide={handleHide}
                 onRestore={handleRestore}
+                onOpen={handleOpenDocument}
               />
             ))}
           </div>
@@ -358,11 +406,13 @@ function DocumentRow({
   busy,
   onHide,
   onRestore,
+  onOpen,
 }: {
   documentItem: CoproprietaireDocumentItem;
   busy: boolean;
   onHide: (documentItem: CoproprietaireDocumentItem) => void;
   onRestore: (documentItem: CoproprietaireDocumentItem) => void;
+  onOpen: (documentItem: CoproprietaireDocumentItem, download?: boolean) => void;
 }) {
   const categoryLabel = formatCategory(documentItem.categorie);
   const categoryIcon = getDocumentIcon(documentItem.categorie);
@@ -396,14 +446,31 @@ function DocumentRow({
 
       <div style={styles.documentActions}>
         {!documentItem.is_hidden ? (
-          <a
-            href={documentItem.url}
-            target="_blank"
-            rel="noreferrer"
-            style={styles.openButton}
-          >
-            Ouvrir
-          </a>
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onOpen(documentItem, false)}
+              style={{
+                ...styles.openButton,
+                ...(busy ? styles.disabledButton : {}),
+              }}
+            >
+              {busy ? "Ouverture..." : "Ouvrir"}
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onOpen(documentItem, true)}
+              style={{
+                ...styles.hideButton,
+                ...(busy ? styles.disabledButton : {}),
+              }}
+            >
+              Télécharger
+            </button>
+          </>
         ) : null}
 
         {documentItem.is_hidden ? (
@@ -491,6 +558,7 @@ function formatCategory(value: string | null | undefined) {
     APPEL: "Appel de charges",
     PAIEMENT: "Paiement",
     AUTRE: "Autre",
+    ADMINISTRATIF: "Document administratif",
   };
 
   return labels[normalized] || value || "Document";
@@ -503,6 +571,7 @@ function getDocumentIcon(value: string | null | undefined) {
   if (normalized === "RELANCE") return "🔔";
   if (normalized === "APPEL") return "📄";
   if (normalized === "PAIEMENT") return "💳";
+  if (normalized === "ADMINISTRATIF") return "ADM";
 
   return "DOC";
 }

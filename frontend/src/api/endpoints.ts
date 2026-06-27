@@ -245,6 +245,21 @@ export const ENDPOINTS = {
     `/api/documents/generate/ag/${agId}/mandat/`,
 
   // =========================
+  // DOCUMENTS ADMINISTRATIFS
+  // =========================
+  documentsAdministrativeCategories: "/api/documents/categories/",
+  documentAdministrativeCategoryDetail: (id: number | string) =>
+    `/api/documents/categories/${id}/`,
+  documentsAdministratifs: "/api/documents/administratifs/",
+  documentAdministratifDetail: (id: number | string) =>
+    `/api/documents/administratifs/${id}/`,
+  documentAdministratifDownload: (id: number | string) =>
+    `/api/documents/administratifs/${id}/download/`,
+  documentsCoproprietaireAdministratifs: "/api/documents/coproprietaire/administratifs/",
+  documentCoproprietaireAdministratifDownload: (id: number | string) =>
+    `/api/documents/coproprietaire/administratifs/${id}/download/`,
+
+  // =========================
   // BILLING
   // =========================
   billingDashboard: "/api/billing/dashboard/",
