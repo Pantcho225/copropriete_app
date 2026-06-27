@@ -38,6 +38,7 @@ urlpatterns = [
     path("api/rh/", include("apps.rh.urls")),
     path("api/relances/", include("apps.relances.urls")),
     path("api/documents/", include("apps.documents.urls")),
+    path("api/reunions/", include("apps.reunions.urls")),
 ]
 
 if settings.DEBUG:

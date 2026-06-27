@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "apps.lots",
     "apps.owners",
     "apps.documents",
+    "apps.reunions",
     "apps.billing.apps.BillingConfig",
     "apps.ag",
     "apps.travaux",
