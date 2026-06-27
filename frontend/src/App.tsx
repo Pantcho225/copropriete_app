@@ -89,6 +89,7 @@ import CoproprietairePaiements from "./pages/coproprietaire/CoproprietairePaieme
 import CoproprietaireSituationFinanciere from "./pages/coproprietaire/CoproprietaireSituationFinanciere";
 import CoproprietaireRelances from "./pages/coproprietaire/CoproprietaireRelances";
 import CoproprietaireDocuments from "./pages/coproprietaire/CoproprietaireDocuments";
+import CoproprietaireReunionsRencontres from "./pages/coproprietaire/CoproprietaireReunionsRencontres";
 import CoproprietaireAssemblees from "./pages/coproprietaire/CoproprietaireAssemblees";
 import CoproprietaireReglementTextes from "./pages/coproprietaire/CoproprietaireReglementTextes";
 import CoproprietaireRoute from "./routes/CoproprietaireRoute";
@@ -124,6 +125,10 @@ export default function App() {
 
             <Route path="relances" element={<CoproprietaireRelances />} />
             <Route path="documents" element={<CoproprietaireDocuments />} />
+            <Route
+              path="reunions-rencontres"
+              element={<CoproprietaireReunionsRencontres />}
+            />
 
             {/* Assemblées générales copropriétaire */}
             <Route path="ag" element={<CoproprietaireAssemblees />} />

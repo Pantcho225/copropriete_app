@@ -56,7 +56,13 @@ const NAV_ITEMS: NavItem[] = [
     label: "Mes documents",
     path: "/coproprietaire/documents",
     icon: "📁",
-    description: "PV et pièces utiles",
+    description: "Consulter les documents partagés, relances et pièces utiles.",
+  },
+  {
+    label: "Réunions & rencontres",
+    path: "/coproprietaire/reunions-rencontres",
+    icon: "🤝",
+    description: "Consulter les réunions publiées, comptes rendus et actions à suivre.",
   },
   {
     label: "Mes assemblées générales",
@@ -107,6 +113,10 @@ const PAGE_META: Record<string, PageMeta> = {
   "/coproprietaire/documents": {
     title: "Mes documents",
     subtitle: "Accédez à vos documents utiles, procès-verbaux et pièces partagées.",
+  },
+  "/coproprietaire/reunions-rencontres": {
+    title: "Réunions & rencontres",
+    subtitle: "Consultez les réunions publiées, documents partagés et actions à suivre.",
   },
   "/coproprietaire/ag": {
     title: "Mes assemblées générales",

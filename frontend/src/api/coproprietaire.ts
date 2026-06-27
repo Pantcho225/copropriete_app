@@ -727,3 +727,76 @@ export async function getSituationFinanciereCoproprietaire(options?: {
 
   return response.data;
 }
+export type CoproprietaireReunionParticipant = {
+  id: number;
+  type: string;
+  type_label?: string;
+  nom_complet: string;
+  organisation?: string;
+  fonction?: string;
+  present?: boolean;
+  ordre?: number;
+};
+
+export type CoproprietaireReunionDocument = {
+  id: number;
+  reunion: number;
+  type: string;
+  type_label?: string;
+  titre: string;
+  description?: string;
+  download_url?: string;
+  filename?: string;
+  visible_coproprietaire?: boolean;
+};
+
+export type CoproprietaireReunionAction = {
+  id: number;
+  titre: string;
+  description?: string;
+  statut: string;
+  statut_label?: string;
+  priorite: string;
+  priorite_label?: string;
+  responsable_nom?: string;
+  echeance?: string | null;
+  date_cloture?: string | null;
+  ordre?: number;
+};
+
+export type CoproprietaireReunionRencontre = {
+  id: number;
+  type: string;
+  type_label?: string;
+  statut: string;
+  statut_label?: string;
+  titre: string;
+  reference?: string;
+  objet?: string;
+  description?: string;
+  date_debut: string;
+  date_fin?: string | null;
+  lieu?: string;
+  compte_rendu?: string;
+  decisions?: string;
+  date_publication?: string | null;
+  participants?: CoproprietaireReunionParticipant[];
+  documents?: CoproprietaireReunionDocument[];
+  actions?: CoproprietaireReunionAction[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export async function getReunionsRencontresCoproprietaire(params?: {
+  type?: string;
+  q?: string;
+}) {
+  const response = await api.get<
+    PaginatedResponse<CoproprietaireReunionRencontre> |
+      CoproprietaireReunionRencontre[]
+  >("/api/reunions/coproprietaire/rencontres/", {
+    params,
+  });
+
+  return normalizeList<CoproprietaireReunionRencontre>(response.data);
+}

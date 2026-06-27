@@ -260,6 +260,28 @@ export const ENDPOINTS = {
     `/api/documents/coproprietaire/administratifs/${id}/download/`,
 
   // =========================
+  // RÉUNIONS & RENCONTRES
+  // =========================
+  reunionsRencontres: "/api/reunions/rencontres/",
+  reunionRencontreDetail: (id: number | string) =>
+    `/api/reunions/rencontres/${id}/`,
+  reunionRencontrePublier: (id: number | string) =>
+    `/api/reunions/rencontres/${id}/publier/`,
+  reunionRencontreArchiver: (id: number | string) =>
+    `/api/reunions/rencontres/${id}/archiver/`,
+
+  reunionParticipants: "/api/reunions/participants/",
+  reunionDocuments: "/api/reunions/documents/",
+  reunionDocumentDownload: (id: number | string) =>
+    `/api/reunions/documents/${id}/download/`,
+  reunionActions: "/api/reunions/actions/",
+
+  coproprietaireReunionsRencontres: "/api/reunions/coproprietaire/rencontres/",
+  coproprietaireReunionDocuments: "/api/reunions/coproprietaire/documents/",
+  coproprietaireReunionDocumentDownload: (id: number | string) =>
+    `/api/reunions/coproprietaire/documents/${id}/download/`,
+
+  // =========================
   // BILLING
   // =========================
   billingDashboard: "/api/billing/dashboard/",
