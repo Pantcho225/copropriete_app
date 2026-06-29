@@ -1,5 +1,5 @@
 // src/pages/Login.tsx
-import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import api from "../api/axios";
@@ -25,6 +25,19 @@ type ApiError = {
   };
   message?: string;
 };
+
+const features = [
+  "Appels, paiements et relances",
+  "Documents administratifs partagés",
+  "AG, votes, convocations et PV",
+  "Réunions, travaux et suivi syndic",
+];
+
+const metrics = [
+  { label: "Modules métier", value: "8+" },
+  { label: "Pilotage", value: "Centralisé" },
+  { label: "Accès", value: "Sécurisé" },
+];
 
 function errorMessage(err: unknown): string {
   const error = err as ApiError;
@@ -56,13 +69,23 @@ export default function Login() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const setCopropriete = useAuthStore((s) => s.setCopropriete);
 
+  useEffect(() => {
+    document.documentElement.classList.add("loginPremiumHtml");
+    document.body.classList.add("loginPremiumBody");
+
+    return () => {
+      document.documentElement.classList.remove("loginPremiumHtml");
+      document.body.classList.remove("loginPremiumBody");
+    };
+  }, []);
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [coproId, setCoproId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState(
-    "Saisissez l’identifiant de la copropriété active pour accéder à votre espace de gestion.",
+    "Renseignez votre identifiant de copropriété pour ouvrir le bon espace de gestion.",
   );
 
   const isFormValid = useMemo(() => {
@@ -83,7 +106,7 @@ export default function Login() {
     const pass = password.trim();
 
     setError("");
-    setInfo("Vérification des informations en cours...");
+    setInfo("Vérification sécurisée des accès en cours...");
 
     if (!cid) {
       setInfo("");
@@ -129,67 +152,72 @@ export default function Login() {
   };
 
   return (
-    <div style={page} className="login-page-responsive">
-      <div style={backgroundGlowTop} />
-      <div style={backgroundGlowBottom} />
+    <main style={page} className="loginPremiumPage">
+      <div style={goldGlow} />
+      <div style={blueGlow} />
+      <div style={gridOverlay} />
 
-      <div style={shell} className="login-shell-responsive">
-        <section style={heroPanel} className="login-hero-responsive">
-          <div style={heroTop}>
-            <div style={heroBadge}>Plateforme de gestion</div>
+      <section style={shell} className="loginPremiumShell">
+        <aside style={heroPanel} className="loginPremiumHero">
+          <div style={brandRow}>
+            <div style={brandMark}>CP</div>
 
-            <h1 style={heroTitle} className="login-hero-title-responsive">
-              Logiciel de gestion de copropriété
+            <div>
+              <div style={brandName}>Copropriété SaaS</div>
+              <div style={brandSubline}>Gestion immobilière professionnelle</div>
+            </div>
+          </div>
+
+          <div style={heroCopy}>
+            <div style={heroBadge}>Plateforme syndic premium</div>
+
+            <h1 style={heroTitle} className="loginPremiumHeroTitle">
+              Une copropriété mieux pilotée, plus claire et plus transparente.
             </h1>
 
             <p style={heroText}>
-              Centralisez la comptabilité, les relances, les travaux, les assemblées
-              générales et les opérations de gestion dans une interface claire,
-              structurée et sécurisée.
+              Centralisez la comptabilité, les appels de fonds, les paiements,
+              les documents, les assemblées générales, les réunions et les travaux
+              dans une interface moderne pensée pour les syndics et les copropriétaires.
             </p>
           </div>
 
-          <div style={heroMiddle}>
-            <div style={heroFeatureList}>
-              <div style={heroFeatureItem}>Comptabilité et rapprochement bancaire</div>
-              <div style={heroFeatureItem}>Relances et avis de régularisation</div>
-              <div style={heroFeatureItem}>Travaux, prestataires et suivi budgétaire</div>
-              <div style={heroFeatureItem}>Assemblées générales et procès-verbaux</div>
-            </div>
+          <div style={featureGrid} className="loginPremiumFeatureGrid">
+            {features.map((feature) => (
+              <div key={feature} style={featureItem}>
+                <span style={featureIcon}>✓</span>
+                <span>{feature}</span>
+              </div>
+            ))}
           </div>
 
-          <div style={heroBottom}>
-            <div style={heroStatGrid} className="login-hero-stats-responsive">
-              <div style={heroStatCard}>
-                <div style={heroStatLabel}>Modules</div>
-                <div style={heroStatValue}>8+</div>
+          <div style={metricGrid} className="loginPremiumMetrics">
+            {metrics.map((metric) => (
+              <div key={metric.label} style={metricCard}>
+                <div style={metricLabel}>{metric.label}</div>
+                <div style={metricValue}>{metric.value}</div>
               </div>
-
-              <div style={heroStatCard}>
-                <div style={heroStatLabel}>Pilotage</div>
-                <div style={heroStatValue}>Centralisé</div>
-              </div>
-
-              <div style={heroStatCard}>
-                <div style={heroStatLabel}>Accès</div>
-                <div style={heroStatValue}>Sécurisé</div>
-              </div>
-            </div>
+            ))}
           </div>
-        </section>
+
+          <div style={heroFooter}>
+            <span style={heroFooterDot} />
+            Données structurées, accès contrôlés et parcours métier prêts pour une gestion syndic professionnelle.
+          </div>
+        </aside>
 
         <section style={formPanel}>
-          <div style={card} className="login-card-responsive">
-            <div style={{ display: "grid", gap: 10 }}>
-              <div style={eyebrow}>Authentification</div>
+          <div style={loginCard} className="loginPremiumCard">
+            <div style={cardHeader}>
+              <div style={eyebrow}>Accès sécurisé</div>
 
-              <h2 style={title} className="login-title-responsive">
+              <h2 style={title} className="loginPremiumTitle">
                 Connexion
               </h2>
 
               <p style={subtitle}>
-                Connectez-vous à votre espace de gestion en renseignant vos
-                identifiants et l’identifiant de la copropriété active.
+                Accédez à votre espace de gestion avec vos identifiants et
+                l’identifiant de la copropriété active.
               </p>
             </div>
 
@@ -204,8 +232,9 @@ export default function Login() {
 
                 <input
                   id="username"
+                  className="loginPremiumInput"
                   style={input}
-                  placeholder="Saisissez votre nom d’utilisateur"
+                  placeholder="Votre nom d’utilisateur"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   autoComplete="username"
@@ -214,12 +243,19 @@ export default function Login() {
               </div>
 
               <div style={fieldGroup}>
-                <label htmlFor="password" style={label}>
-                  Mot de passe
-                </label>
+                <div style={labelRow}>
+                  <label htmlFor="password" style={label}>
+                    Mot de passe
+                  </label>
+
+                  <Link to="/forgot-password" style={forgotPasswordLink}>
+                    Mot de passe oublié ?
+                  </Link>
+                </div>
 
                 <input
                   id="password"
+                  className="loginPremiumInput"
                   type="password"
                   style={input}
                   placeholder="Saisissez votre mot de passe"
@@ -228,21 +264,16 @@ export default function Login() {
                   autoComplete="current-password"
                   disabled={loading}
                 />
-
-                <div style={forgotPasswordRow}>
-                  <Link to="/forgot-password" style={forgotPasswordLink}>
-                    Mot de passe oublié ?
-                  </Link>
-                </div>
               </div>
 
-              <div style={fieldGroup}>
+              <div style={tenantBox}>
                 <label htmlFor="coproprieteId" style={label}>
                   Identifiant de copropriété
                 </label>
 
                 <input
                   id="coproprieteId"
+                  className="loginPremiumInput"
                   style={input}
                   placeholder="Exemple : 11"
                   value={coproId}
@@ -252,272 +283,431 @@ export default function Login() {
                 />
 
                 <div style={helperText}>
-                  Utilisez l’identifiant de la copropriété active pour ouvrir le bon
-                  espace de gestion.
+                  Cet identifiant permet d’isoler les données de la copropriété
+                  sélectionnée et de charger le bon contexte métier.
                 </div>
               </div>
 
               <button
                 type="submit"
+                className="loginPremiumButton"
                 disabled={loading || !isFormValid}
                 style={{
                   ...submitButton,
-                  opacity: loading || !isFormValid ? 0.72 : 1,
+                  opacity: loading || !isFormValid ? 0.62 : 1,
                   cursor: loading || !isFormValid ? "not-allowed" : "pointer",
                 }}
               >
-                {loading ? "Connexion en cours..." : "Se connecter"}
+                {loading ? "Connexion en cours..." : "Se connecter à la plateforme"}
               </button>
             </form>
 
-            <div style={footerNote}>
-              Accès réservé aux utilisateurs autorisés de la plateforme.
+            <div style={secureNote}>
+              <span style={lockIcon}>●</span>
+              Accès réservé aux utilisateurs autorisés : syndic, administrateur,
+              conseil syndical ou copropriétaire.
             </div>
           </div>
         </section>
-      </div>
+      </section>
 
       <style>{`
-        @media (max-width: 1100px) {
-          .login-shell-responsive {
+        html.loginPremiumHtml,
+        body.loginPremiumBody {
+          width: 100%;
+          min-width: 320px;
+          overflow: hidden !important;
+        }
+
+        body.loginPremiumBody {
+          display: block !important;
+          place-items: initial !important;
+          min-height: 100vh !important;
+        }
+
+        body.loginPremiumBody #root {
+          width: 100% !important;
+          max-width: none !important;
+          min-height: 100vh !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          text-align: left !important;
+        }
+
+        .loginPremiumInput::placeholder {
+          color: rgba(100, 116, 139, 0.74);
+        }
+
+        .loginPremiumInput:focus {
+          border-color: rgba(184, 134, 45, 0.72) !important;
+          box-shadow: 0 0 0 4px rgba(184, 134, 45, 0.14) !important;
+          background: #ffffff !important;
+        }
+
+        .loginPremiumButton:not(:disabled):hover {
+          transform: translateY(-1px);
+          box-shadow: 0 22px 42px rgba(120, 79, 18, 0.32) !important;
+        }
+
+        .loginPremiumButton:not(:disabled):active {
+          transform: translateY(0);
+        }
+
+        @media (max-width: 1080px) {
+          .loginPremiumPage {
+            overflow-y: auto !important;
+            align-items: flex-start !important;
+          }
+
+          .loginPremiumShell {
             grid-template-columns: 1fr !important;
+            max-width: 780px !important;
             gap: 18px !important;
-            max-width: 760px !important;
           }
 
-          .login-hero-responsive {
+          .loginPremiumHero {
             min-height: auto !important;
-            padding: 28px !important;
-            gap: 20px !important;
-          }
-
-          .login-card-responsive {
-            max-width: 100% !important;
           }
         }
 
-        @media (max-width: 700px) {
-          .login-page-responsive {
+        @media (max-width: 720px) {
+          .loginPremiumPage {
             padding: 16px !important;
+            align-items: flex-start !important;
           }
 
-          .login-hero-responsive {
+          .loginPremiumHero,
+          .loginPremiumCard {
+            border-radius: 24px !important;
             padding: 22px !important;
-            border-radius: 22px !important;
           }
 
-          .login-card-responsive {
-            padding: 22px !important;
-            border-radius: 22px !important;
+          .loginPremiumHeroTitle {
+            font-size: 2.05rem !important;
           }
 
-          .login-title-responsive {
-            font-size: 26px !important;
+          .loginPremiumTitle {
+            font-size: 1.85rem !important;
           }
 
-          .login-hero-title-responsive {
-            font-size: 30px !important;
-          }
-
-          .login-hero-stats-responsive {
+          .loginPremiumMetrics,
+          .loginPremiumFeatureGrid {
             grid-template-columns: 1fr !important;
           }
         }
       `}</style>
-    </div>
+    </main>
   );
 }
 
 const page: CSSProperties = {
+  position: "fixed",
+  inset: 0,
   minHeight: "100vh",
-  position: "relative",
-  overflow: "hidden",
+  overflowY: "hidden",
+  overflowX: "hidden",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 45%, #f8fafc 100%)",
-  padding: 24,
+  padding: 28,
   boxSizing: "border-box",
+  background:
+    "radial-gradient(circle at 12% 12%, rgba(218, 165, 32, 0.18), transparent 30%), radial-gradient(circle at 85% 18%, rgba(59, 130, 246, 0.18), transparent 34%), linear-gradient(135deg, #07111f 0%, #0f172a 44%, #111827 100%)",
+  color: "#0f172a",
 };
 
-const backgroundGlowTop: CSSProperties = {
+const goldGlow: CSSProperties = {
   position: "absolute",
-  top: -120,
-  left: -80,
-  width: 320,
-  height: 320,
+  top: -160,
+  left: -120,
+  width: 420,
+  height: 420,
   borderRadius: "50%",
-  background: "rgba(99, 102, 241, 0.10)",
-  filter: "blur(40px)",
+  background: "rgba(218, 165, 32, 0.22)",
+  filter: "blur(55px)",
   pointerEvents: "none",
 };
 
-const backgroundGlowBottom: CSSProperties = {
+const blueGlow: CSSProperties = {
   position: "absolute",
-  right: -60,
-  bottom: -100,
-  width: 320,
-  height: 320,
+  right: -120,
+  bottom: -160,
+  width: 460,
+  height: 460,
   borderRadius: "50%",
-  background: "rgba(30, 41, 59, 0.08)",
-  filter: "blur(46px)",
+  background: "rgba(37, 99, 235, 0.18)",
+  filter: "blur(60px)",
+  pointerEvents: "none",
+};
+
+const gridOverlay: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  opacity: 0.16,
+  backgroundImage:
+    "linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)",
+  backgroundSize: "42px 42px",
   pointerEvents: "none",
 };
 
 const shell: CSSProperties = {
   width: "100%",
-  maxWidth: 1200,
+  maxWidth: 1220,
   display: "grid",
-  gridTemplateColumns: "1.04fr 0.96fr",
-  gap: 22,
-  alignItems: "center",
+  gridTemplateColumns: "1.05fr 0.95fr",
+  gap: 24,
+  alignItems: "stretch",
   position: "relative",
   zIndex: 1,
 };
 
 const heroPanel: CSSProperties = {
-  borderRadius: 30,
+  minHeight: 640,
+  borderRadius: 34,
   padding: 34,
-  background: "linear-gradient(135deg, #0b1736 0%, #13264f 55%, #1e293b 100%)",
-  color: "#ffffff",
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.18)",
   display: "grid",
   alignContent: "space-between",
   gap: 28,
-  minHeight: 570,
+  overflow: "hidden",
+  position: "relative",
+  border: "1px solid rgba(255, 255, 255, 0.14)",
+  background:
+    "linear-gradient(145deg, rgba(15, 23, 42, 0.96) 0%, rgba(17, 24, 39, 0.9) 48%, rgba(120, 79, 18, 0.42) 100%)",
+  boxShadow: "0 34px 90px rgba(0, 0, 0, 0.38)",
 };
 
-const heroTop: CSSProperties = {
-  display: "grid",
-  gap: 18,
-};
-
-const heroMiddle: CSSProperties = {
-  display: "grid",
-  gap: 16,
-};
-
-const heroBottom: CSSProperties = {
-  display: "grid",
+const brandRow: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
   gap: 14,
 };
 
-const heroBadge: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "fit-content",
-  padding: "8px 14px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,0.12)",
+const brandMark: CSSProperties = {
+  width: 52,
+  height: 52,
+  borderRadius: 18,
+  display: "grid",
+  placeItems: "center",
+  color: "#0f172a",
+  fontWeight: 950,
+  letterSpacing: "-0.05em",
+  background: "linear-gradient(135deg, #f8e7b1 0%, #c99738 100%)",
+  boxShadow: "0 14px 30px rgba(201, 151, 56, 0.28)",
+};
+
+const brandName: CSSProperties = {
   color: "#ffffff",
+  fontSize: 17,
+  fontWeight: 950,
+  letterSpacing: "-0.03em",
+};
+
+const brandSubline: CSSProperties = {
+  color: "rgba(226, 232, 240, 0.72)",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const heroCopy: CSSProperties = {
+  display: "grid",
+  gap: 16,
+  maxWidth: 760,
+};
+
+const heroBadge: CSSProperties = {
+  width: "fit-content",
+  borderRadius: 999,
+  padding: "7px 12px",
+  border: "1px solid rgba(248, 231, 177, 0.28)",
+  background: "rgba(248, 231, 177, 0.1)",
+  color: "#f8e7b1",
   fontSize: 12,
-  fontWeight: 800,
-  letterSpacing: 0.2,
+  fontWeight: 950,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
 };
 
 const heroTitle: CSSProperties = {
   margin: 0,
-  fontSize: 42,
-  lineHeight: 1.06,
-  fontWeight: 900,
-  letterSpacing: -1,
+  color: "#ffffff",
+  fontSize: "clamp(2.45rem, 4.8vw, 4.8rem)",
+  lineHeight: 0.95,
+  letterSpacing: "-0.075em",
+  fontWeight: 950,
 };
 
 const heroText: CSSProperties = {
   margin: 0,
-  color: "rgba(255,255,255,0.88)",
-  fontSize: 15,
-  lineHeight: 1.8,
-  maxWidth: 620,
+  maxWidth: 680,
+  color: "rgba(226, 232, 240, 0.82)",
+  fontSize: "1.02rem",
+  lineHeight: 1.75,
+  fontWeight: 560,
 };
 
-const heroFeatureList: CSSProperties = {
+const featureGrid: CSSProperties = {
   display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 12,
 };
 
-const heroFeatureItem: CSSProperties = {
-  padding: "14px 16px",
-  borderRadius: 16,
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  color: "#ffffff",
+const featureItem: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  minWidth: 0,
+  borderRadius: 18,
+  padding: "13px 14px",
+  border: "1px solid rgba(255, 255, 255, 0.13)",
+  background: "rgba(255, 255, 255, 0.075)",
+  color: "rgba(248, 250, 252, 0.92)",
   fontSize: 14,
-  fontWeight: 700,
+  fontWeight: 780,
 };
 
-const heroStatGrid: CSSProperties = {
+const featureIcon: CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  flex: "0 0 auto",
+  width: 24,
+  height: 24,
+  borderRadius: 999,
+  background: "rgba(248, 231, 177, 0.14)",
+  color: "#f8e7b1",
+  fontWeight: 950,
+};
+
+const metricGrid: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: 12,
 };
 
-const heroStatCard: CSSProperties = {
-  padding: "14px 16px",
-  borderRadius: 18,
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  display: "grid",
-  gap: 6,
+const metricCard: CSSProperties = {
+  borderRadius: 20,
+  padding: 16,
+  border: "1px solid rgba(255, 255, 255, 0.14)",
+  background: "rgba(255, 255, 255, 0.09)",
+  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
 };
 
-const heroStatLabel: CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.72)",
+const metricLabel: CSSProperties = {
+  color: "rgba(226, 232, 240, 0.68)",
+  fontSize: 11,
+  fontWeight: 920,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
 };
 
-const heroStatValue: CSSProperties = {
-  fontSize: 18,
-  fontWeight: 900,
+const metricValue: CSSProperties = {
+  marginTop: 8,
   color: "#ffffff",
+  fontSize: 22,
+  lineHeight: 1,
+  fontWeight: 950,
+  letterSpacing: "-0.04em",
+};
+
+const heroFooter: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 10,
+  color: "rgba(226, 232, 240, 0.72)",
+  fontSize: 13,
+  lineHeight: 1.55,
+  fontWeight: 680,
+};
+
+const heroFooterDot: CSSProperties = {
+  flex: "0 0 auto",
+  width: 10,
+  height: 10,
+  marginTop: 5,
+  borderRadius: 999,
+  background: "#f8e7b1",
+  boxShadow: "0 0 0 6px rgba(248, 231, 177, 0.1)",
 };
 
 const formPanel: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  minWidth: 0,
 };
 
-const card: CSSProperties = {
+const loginCard: CSSProperties = {
   width: "100%",
-  maxWidth: 580,
-  borderRadius: 30,
-  background: "#ffffff",
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 26px 60px rgba(15, 23, 42, 0.14)",
-  padding: 36,
+  maxWidth: 520,
+  borderRadius: 34,
+  padding: 34,
+  border: "1px solid rgba(255, 255, 255, 0.72)",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.94) 100%)",
+  boxShadow: "0 34px 90px rgba(0, 0, 0, 0.28)",
+  boxSizing: "border-box",
+};
+
+const cardHeader: CSSProperties = {
   display: "grid",
-  gap: 22,
+  gap: 10,
+  marginBottom: 18,
 };
 
 const eyebrow: CSSProperties = {
+  width: "fit-content",
+  borderRadius: 999,
+  padding: "7px 12px",
+  background: "#fef3c7",
+  color: "#92400e",
   fontSize: 12,
-  fontWeight: 800,
-  color: "#4f46e5",
+  fontWeight: 950,
+  letterSpacing: "0.12em",
   textTransform: "uppercase",
-  letterSpacing: 0.6,
 };
 
 const title: CSSProperties = {
   margin: 0,
-  fontSize: 34,
-  lineHeight: 1.08,
-  fontWeight: 900,
-  color: "#111827",
+  color: "#0f172a",
+  fontSize: "2.25rem",
+  lineHeight: 1,
+  fontWeight: 950,
+  letterSpacing: "-0.06em",
 };
 
 const subtitle: CSSProperties = {
   margin: 0,
-  color: "#6b7280",
-  fontSize: 14,
-  lineHeight: 1.7,
+  color: "#64748b",
+  fontSize: 15,
+  lineHeight: 1.6,
+  fontWeight: 560,
+};
+
+const infoBox: CSSProperties = {
+  borderRadius: 16,
+  padding: "12px 14px",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid rgba(37, 99, 235, 0.18)",
+  fontSize: 13,
+  fontWeight: 750,
+  lineHeight: 1.55,
+  marginBottom: 16,
+};
+
+const errorBox: CSSProperties = {
+  borderRadius: 16,
+  padding: "12px 14px",
+  background: "#fef2f2",
+  color: "#b91c1c",
+  border: "1px solid rgba(220, 38, 38, 0.18)",
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.55,
+  marginBottom: 16,
 };
 
 const form: CSSProperties = {
   display: "grid",
-  gap: 18,
+  gap: 15,
 };
 
 const fieldGroup: CSSProperties = {
@@ -525,78 +715,83 @@ const fieldGroup: CSSProperties = {
   gap: 8,
 };
 
+const labelRow: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
 const label: CSSProperties = {
+  color: "#172033",
   fontSize: 13,
-  fontWeight: 800,
-  color: "#111827",
+  fontWeight: 900,
 };
 
 const input: CSSProperties = {
   width: "100%",
-  borderRadius: 14,
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  padding: "15px 16px",
-  fontSize: 14,
-  color: "#111827",
+  border: "1px solid rgba(100, 116, 139, 0.24)",
+  background: "rgba(255, 255, 255, 0.92)",
+  color: "#0f172a",
+  borderRadius: 16,
+  padding: "14px 15px",
   outline: "none",
   boxSizing: "border-box",
-};
-
-const forgotPasswordRow: CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  marginTop: -2,
+  fontSize: 15,
+  fontWeight: 720,
+  transition: "border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease",
 };
 
 const forgotPasswordLink: CSSProperties = {
-  color: "#4f46e5",
+  color: "#b7791f",
   fontSize: 13,
-  fontWeight: 850,
+  fontWeight: 900,
   textDecoration: "none",
 };
 
+const tenantBox: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  borderRadius: 20,
+  padding: 15,
+  background: "#f8fafc",
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+};
+
 const helperText: CSSProperties = {
+  color: "#64748b",
   fontSize: 12,
-  color: "#6b7280",
-  lineHeight: 1.55,
+  lineHeight: 1.5,
+  fontWeight: 620,
 };
 
 const submitButton: CSSProperties = {
-  marginTop: 6,
-  border: "none",
-  borderRadius: 16,
-  background: "#111827",
-  color: "#ffffff",
+  width: "100%",
+  border: 0,
+  borderRadius: 18,
   padding: "15px 18px",
-  fontSize: 14,
-  fontWeight: 800,
-  boxShadow: "0 10px 22px rgba(17, 24, 39, 0.16)",
+  background: "linear-gradient(135deg, #f8e7b1 0%, #c99738 46%, #8b5e16 100%)",
+  color: "#0f172a",
+  fontSize: 15,
+  fontWeight: 950,
+  letterSpacing: "-0.01em",
+  boxShadow: "0 18px 34px rgba(120, 79, 18, 0.24)",
+  transition: "transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease",
 };
 
-const errorBox: CSSProperties = {
-  borderRadius: 16,
-  border: "1px solid #fecaca",
-  background: "#fef2f2",
-  color: "#991b1b",
-  padding: "12px 14px",
-  fontSize: 13,
-  lineHeight: 1.5,
-};
-
-const infoBox: CSSProperties = {
-  borderRadius: 16,
-  border: "1px solid #bfdbfe",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  padding: "12px 14px",
-  fontSize: 13,
-  lineHeight: 1.5,
-};
-
-const footerNote: CSSProperties = {
+const secureNote: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 9,
+  marginTop: 18,
+  color: "#64748b",
   fontSize: 12,
-  color: "#6b7280",
-  lineHeight: 1.5,
-  textAlign: "center",
+  lineHeight: 1.55,
+  fontWeight: 650,
+};
+
+const lockIcon: CSSProperties = {
+  color: "#16a34a",
+  fontSize: 10,
+  marginTop: 4,
 };
