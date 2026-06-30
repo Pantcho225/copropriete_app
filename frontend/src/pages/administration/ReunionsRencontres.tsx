@@ -8,6 +8,7 @@ import {
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -669,25 +670,20 @@ export default function ReunionsRencontres() {
 
   return (
     <div className="adminHarmonizedPage adminMeetingsPage" style={styles.page}>
-      <section className="adminHarmonizedHero adminHarmonizedHero--cyan" style={styles.hero}>
-        <div>
-          <p style={styles.eyebrow}>Réunions & rencontres</p>
-          <h1 style={styles.title}>Suivre les réunions courantes de la copropriété</h1>
-          <p style={styles.subtitle}>
-            Créez, documentez, publiez et archivez les réunions du conseil
-            syndical, rencontres prestataires, médiations, visites techniques et
-            échanges institutionnels sans les confondre avec les Assemblées Générales.
-          </p>
-        </div>
-
-        <aside className="adminHarmonizedNotice" style={styles.notice}>
-          <strong>Séparation métier</strong>
-          <span>
-            Les AG conservent les convocations, votes, quorum et PV officiel. Ici,
-            on historise les échanges opérationnels et les actions à suivre.
-          </span>
-        </aside>
-      </section>
+      <ModuleHero
+        eyebrow="Réunions & rencontres"
+        title="Suivre les réunions courantes de la copropriété"
+        subtitle="Créez, documentez, publiez et archivez les réunions du conseil syndical, rencontres prestataires, médiations, visites techniques et échanges institutionnels sans les confondre avec les Assemblées Générales."
+        aside={
+          <div className="adminHarmonizedNotice" style={styles.notice}>
+            <strong>Séparation métier</strong>
+            <span>
+              Les AG conservent les convocations, votes, quorum et PV officiel. Ici,
+              on historise les échanges opérationnels et les actions à suivre.
+            </span>
+          </div>
+        }
+      />
 
       {message ? (
         <div

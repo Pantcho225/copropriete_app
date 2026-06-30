@@ -6,6 +6,7 @@ import {
   type CoproprietaireReglementTexte,
   type ReglementTexteCategorie,
 } from "../../api/reglementTextes";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 type FilterItem = {
   label: string;
@@ -114,35 +115,27 @@ export default function CoproprietaireReglementTextes() {
 
   return (
     <div className="coproOwnerPage coproOwnerTextsPage" style={styles.stack}>
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Lecture seule</div>
-
-          <h2 style={styles.heroTitle}>Règlement & textes utiles</h2>
-
-          <p style={styles.heroText}>
-            Retrouvez les règles, notes, documents et textes publiés par le
-            syndic ou l’administration de votre copropriété. Seuls les contenus
-            officiellement publiés et rendus visibles aux copropriétaires
-            apparaissent ici.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>Publication syndic</span>
-            <span style={styles.metaPill}>Consultation copropriétaire</span>
-            <span style={styles.metaPill}>Documents utiles</span>
+      <ModuleHero
+        eyebrow="Lecture seule"
+        title="Règlement & textes utiles"
+        subtitle="Retrouvez les règles, notes, documents et textes publiés par le syndic ou l’administration de votre copropriété. Seuls les contenus officiellement publiés et rendus visibles aux copropriétaires apparaissent ici."
+        aside={
+          <div style={styles.secureBox}>
+            <div style={styles.secureIcon}>📚</div>
+            <p style={styles.secureTitle}>Textes publiés</p>
+            <p style={styles.secureText}>
+              Cette page est alimentée par les textes ajoutés et publiés depuis
+              l’espace admin/syndic.
+            </p>
           </div>
+        }
+      >
+        <div className="moduleHero__infoPills" style={styles.heroMeta}>
+          <span style={styles.metaPill}>Publication syndic</span>
+          <span style={styles.metaPill}>Consultation copropriétaire</span>
+          <span style={styles.metaPill}>Documents utiles</span>
         </div>
-
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>📚</div>
-          <p style={styles.secureTitle}>Textes publiés</p>
-          <p style={styles.secureText}>
-            Cette page est alimentée par les textes ajoutés et publiés depuis
-            l’espace admin/syndic.
-          </p>
-        </div>
-      </section>
+      </ModuleHero>
 
       <section style={styles.statsGrid}>
         <StatCard label="Textes visibles" value={stats.total} helper="Publiés pour vous" />
@@ -334,53 +327,10 @@ const styles: Record<string, CSSProperties> = {
     gap: 22,
   },
 
-  hero: {
-    borderRadius: 34,
-    padding: 30,
-    background:
-      "linear-gradient(135deg, rgba(15,23,42,0.97), rgba(51,65,85,0.94)), radial-gradient(circle at top right, rgba(148,163,184,0.45), transparent 36%)",
-    color: "white",
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 320px",
-    gap: 24,
-    boxShadow: "0 30px 85px rgba(15,23,42,0.22)",
-    overflow: "hidden",
-  },
 
-  heroContent: {
-    minWidth: 0,
-  },
 
-  heroBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    borderRadius: 999,
-    padding: "7px 11px",
-    background: "rgba(255,255,255,0.13)",
-    border: "1px solid rgba(255,255,255,0.18)",
-    color: "#e2e8f0",
-    fontSize: 11,
-    fontWeight: 950,
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
-  },
 
-  heroTitle: {
-    margin: "14px 0 0",
-    fontSize: 36,
-    lineHeight: 1.08,
-    fontWeight: 950,
-    letterSpacing: "-0.04em",
-  },
 
-  heroText: {
-    margin: "14px 0 0",
-    maxWidth: 820,
-    color: "#e2e8f0",
-    fontSize: 15,
-    lineHeight: 1.75,
-    fontWeight: 550,
-  },
 
   heroMeta: {
     display: "flex",

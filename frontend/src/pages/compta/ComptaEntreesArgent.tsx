@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
 import BackButton from "../../components/ui/BackButton";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -376,27 +377,31 @@ export default function ComptaEntreesArgent() {
 
   return (
     <div style={pageShell}>
-      <section style={heroCard}>
-        <div className="pageBackRow">
-          <BackButton to="/compta" label="Retour à la comptabilité" />
-        </div>
-
-        <div style={eyebrow}>Comptabilité · Entrées d’argent</div>
-        <h1 style={title}>Entrées d’argent</h1>
-        <p style={subtitle}>
-          Enregistrez les dons, subventions, remboursements, intérêts bancaires,
-          régularisations crédit et autres encaissements hors appels de fonds.
-        </p>
-
-        <div style={heroActions}>
-          <button type="button" style={secondaryButton} onClick={() => navigate("/compta/mouvements")}>
-            Voir les mouvements
-          </button>
-          <button type="button" style={primaryButton} onClick={() => void loadData()} disabled={isBusy}>
-            Actualiser
-          </button>
-        </div>
-      </section>
+      <ModuleHero
+        eyebrow="Comptabilité · Entrées d’argent"
+        title="Entrées d’argent"
+        subtitle="Enregistrez les dons, subventions, remboursements, intérêts bancaires, régularisations crédit et autres encaissements hors appels de fonds."
+        actions={
+          <>
+            <BackButton to="/compta" label="Retour à la comptabilité" />
+            <button
+              type="button"
+              className="moduleButton moduleButton--heroDark"
+              onClick={() => navigate("/compta/mouvements")}
+            >
+              Voir les mouvements
+            </button>
+            <button
+              type="button"
+              className="moduleButton moduleButton--hero"
+              onClick={() => void loadData()}
+              disabled={isBusy}
+            >
+              Actualiser
+            </button>
+          </>
+        }
+      />
 
       {message ? (
         <div
@@ -737,42 +742,10 @@ const pageShell: CSSProperties = {
   width: "100%",
 };
 
-const heroCard: CSSProperties = {
-  borderRadius: 28,
-  padding: "28px 30px",
-  color: "#fff",
-  background:
-    "linear-gradient(135deg, rgba(15,23,42,0.98), rgba(30,41,59,0.96), rgba(37,99,235,0.88))",
-  boxShadow: "0 30px 70px rgba(15,23,42,0.18)",
-};
 
-const eyebrow: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 900,
-  letterSpacing: 0.9,
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.72)",
-  marginTop: 8,
-};
 
-const title: CSSProperties = {
-  margin: "8px 0 0",
-  fontSize: 32,
-  lineHeight: 1.08,
-};
 
-const subtitle: CSSProperties = {
-  maxWidth: 820,
-  color: "rgba(255,255,255,0.84)",
-  lineHeight: 1.65,
-};
 
-const heroActions: CSSProperties = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-  marginTop: 18,
-};
 
 const statsGrid: CSSProperties = {
   display: "grid",

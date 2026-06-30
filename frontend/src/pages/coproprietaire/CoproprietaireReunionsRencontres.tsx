@@ -13,6 +13,7 @@ import {
   type CoproprietaireReunionRencontre,
 } from "../../api/coproprietaire";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -199,23 +200,17 @@ export default function CoproprietaireReunionsRencontres() {
 
   return (
     <div className="coproOwnerPage coproOwnerMeetingsPage" style={styles.stack}>
-      <section className="coproOwnerMobileSafeCard" style={styles.hero}>
-        <div>
-          <p style={styles.eyebrow}>Réunions & rencontres</p>
-          <h2 style={styles.heroTitle}>Réunions publiées par le syndic</h2>
-          <p style={styles.heroText}>
-            Consultez les réunions courantes, rencontres prestataires, comptes
-            rendus, documents partagés et actions de suivi publiés dans votre
-            espace copropriétaire.
-          </p>
-        </div>
-
-        <div style={styles.heroPills}>
+      <ModuleHero
+        eyebrow="Réunions & rencontres"
+        title="Réunions publiées par le syndic"
+        subtitle="Consultez les réunions courantes, rencontres prestataires, comptes rendus, documents partagés et actions de suivi publiés dans votre espace copropriétaire."
+      >
+        <div className="moduleHero__infoPills" style={styles.heroPills}>
           <span style={styles.pill}>{formatNumber(stats.total)} réunion(s)</span>
           <span style={styles.pill}>{formatNumber(stats.documents)} document(s)</span>
           <span style={styles.pill}>{formatNumber(stats.actions)} action(s)</span>
         </div>
-      </section>
+      </ModuleHero>
 
       {notice ? <div style={styles.notice}>{notice}</div> : null}
 

@@ -121,6 +121,21 @@
   flex-wrap: wrap;
 }
 
+.moduleHero__infoPills {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  width: 100% !important;
+  margin-top: 2px !important;
+  text-align: left !important;
+}
+
+.moduleHero__infoPills > * {
+  margin: 0 !important;
+}
+
 .moduleHero__aside {
   min-width: 0;
   border: 1px solid rgba(255,255,255,0.16);

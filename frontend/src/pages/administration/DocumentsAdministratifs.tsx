@@ -8,6 +8,7 @@ import {
 
 import api from "../../api/axios";
 import { ENDPOINTS } from "../../api/endpoints";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
@@ -522,21 +523,21 @@ export default function DocumentsAdministratifs() {
 
   return (
     <div className="adminHarmonizedPage adminDocumentsPage" style={page}>
-      <section className="adminHarmonizedHero adminHarmonizedHero--violet" style={hero}>
-        <p style={eyebrow}>Documents administratifs</p>
-        <h1 style={title}>Bibliothèque administrative de la copropriété</h1>
-        <p style={subtitle}>
-          Téléversez, classez, publiez ou conservez en interne les documents
-          administratifs : règlements, courriers, comptes rendus, PV de rencontre,
-          pièces institutionnelles et documents de référence.
-        </p>
-
-        <div style={heroActions}>
-          <button type="button" style={primaryButton} onClick={() => void loadData()} disabled={isBusy}>
+      <ModuleHero
+        eyebrow="Documents administratifs"
+        title="Bibliothèque administrative de la copropriété"
+        subtitle="Téléversez, classez, publiez ou conservez en interne les documents administratifs : règlements, courriers, comptes rendus, PV de rencontre, pièces institutionnelles et documents de référence."
+        actions={
+          <button
+            type="button"
+            className="moduleButton moduleButton--hero"
+            onClick={() => void loadData()}
+            disabled={isBusy}
+          >
             Actualiser
           </button>
-        </div>
-      </section>
+        }
+      />
 
       {message ? (
         <div
@@ -895,45 +896,10 @@ const page: CSSProperties = {
   gap: 18,
 };
 
-const hero: CSSProperties = {
-  padding: 26,
-  borderRadius: 26,
-  border: "1px solid #e5e7eb",
-  background:
-    "linear-gradient(135deg, #f5f3ff 0%, #f8fafc 55%, #ffffff 100%)",
-  boxShadow: "0 18px 45px rgba(15, 23, 42, 0.06)",
-};
 
-const eyebrow: CSSProperties = {
-  margin: 0,
-  fontSize: 12,
-  fontWeight: 900,
-  letterSpacing: 0.8,
-  textTransform: "uppercase",
-  color: "#6d28d9",
-};
 
-const title: CSSProperties = {
-  margin: "8px 0 0",
-  fontSize: 30,
-  letterSpacing: -0.7,
-  color: "#0f172a",
-};
 
-const subtitle: CSSProperties = {
-  margin: "12px 0 0",
-  maxWidth: 900,
-  fontSize: 15,
-  lineHeight: 1.7,
-  color: "#475569",
-};
 
-const heroActions: CSSProperties = {
-  marginTop: 18,
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
 
 const statsGrid: CSSProperties = {
   display: "grid",

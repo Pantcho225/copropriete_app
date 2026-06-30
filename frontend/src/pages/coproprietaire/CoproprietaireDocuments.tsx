@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import api from "../../api/axios";
+import ModuleHero from "../../components/ui/ModuleHero";
 
 import {
   getDocumentsCoproprietaire,
@@ -239,39 +240,33 @@ export default function CoproprietaireDocuments() {
 
   return (
     <div className="coproOwnerPage coproOwnerDocumentsPage" style={styles.stack}>
-      <section style={styles.hero}>
-        <div style={styles.heroContent}>
-          <div style={styles.heroBadge}>Bibliothèque personnelle</div>
-
-          <h2 style={styles.heroTitle}>Vos documents</h2>
-
-          <p style={styles.heroText}>
-            Consultez vos procès-verbaux, relances et documents partagés. Vous
-            pouvez masquer un document de votre vue sans le supprimer du système.
-          </p>
-
-          <div style={styles.heroMeta}>
-            <span style={styles.metaPill}>
-              Visibles : {formatNumber(visibleCount)}
-            </span>
-            <span style={styles.metaPill}>
-              Masqués : {formatNumber(hiddenCount)}
-            </span>
-            <span style={styles.metaPill}>
-              PV AG : {formatNumber(stats?.ag ?? 0)}
-            </span>
+      <ModuleHero
+        eyebrow="Bibliothèque personnelle"
+        title="Vos documents"
+        subtitle="Consultez vos procès-verbaux, relances et documents partagés. Vous pouvez masquer un document de votre vue sans le supprimer du système."
+        aside={
+          <div style={styles.secureBox}>
+            <div style={styles.secureIcon}>🔐</div>
+            <p style={styles.secureTitle}>Documents sécurisés</p>
+            <p style={styles.secureText}>
+              Les documents officiels restent conservés. Le masquage concerne
+              uniquement votre affichage personnel.
+            </p>
           </div>
+        }
+      >
+        <div className="moduleHero__infoPills" style={styles.heroMeta}>
+          <span style={styles.metaPill}>
+            Visibles : {formatNumber(visibleCount)}
+          </span>
+          <span style={styles.metaPill}>
+            Masqués : {formatNumber(hiddenCount)}
+          </span>
+          <span style={styles.metaPill}>
+            PV AG : {formatNumber(stats?.ag ?? 0)}
+          </span>
         </div>
-
-        <div style={styles.secureBox}>
-          <div style={styles.secureIcon}>🔐</div>
-          <p style={styles.secureTitle}>Documents sécurisés</p>
-          <p style={styles.secureText}>
-            Les documents officiels restent conservés. Le masquage concerne
-            uniquement votre affichage personnel.
-          </p>
-        </div>
-      </section>
+      </ModuleHero>
 
       {notice ? <div style={styles.notice}>{notice}</div> : null}
 
