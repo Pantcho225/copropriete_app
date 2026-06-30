@@ -53,6 +53,8 @@ export default function ForgotPassword() {
     return identifier.trim().length >= 2 && !submitting;
   }, [identifier, submitting]);
 
+  const canShowDebugReset = import.meta.env.DEV && Boolean(debugToken);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -144,7 +146,7 @@ export default function ForgotPassword() {
             <div style={styles.errorBox}>{errorMessage}</div>
           ) : null}
 
-          {debugToken ? (
+          {canShowDebugReset ? (
             <div style={styles.debugBox}>
               <div style={styles.debugTitle}>Mode développement</div>
 

@@ -1,7 +1,11 @@
 # apps/core/auth_views.py
 
+import logging
+from urllib.parse import quote
+
 from django.apps import apps
 from django.conf import settings
+from django.core.mail import send_mail
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -14,6 +18,63 @@ from .auth_serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
 )
+
+
+
+logger = logging.getLogger(__name__)
+
+
+def _build_password_reset_url(request, raw_token: str) -> str:
+    """
+    Construit l'URL frontend de réinitialisation.
+    Priorité :
+    - settings.FRONTEND_BASE_URL si défini ;
+    - Origin HTTP du frontend ;
+    - fallback absolute URI backend.
+    """
+    token = quote(str(raw_token or ""), safe="")
+    frontend_base_url = str(getattr(settings, "FRONTEND_BASE_URL", "") or "").strip().rstrip("/")
+
+    if frontend_base_url:
+        return f"{frontend_base_url}/reset-password?token={token}"
+
+    origin = str(request.headers.get("Origin", "") or "").strip().rstrip("/")
+    if origin:
+        return f"{origin}/reset-password?token={token}"
+
+    return request.build_absolute_uri(f"/reset-password?token={token}")
+
+
+def _send_password_reset_email(*, user, reset_url: str) -> bool:
+    """
+    Envoie le lien de réinitialisation à l'email du compte.
+    Retourne False si aucun email n'est disponible.
+    """
+    email = str(getattr(user, "email", "") or "").strip()
+
+    if not email:
+        return False
+
+    subject = "Réinitialisation de votre mot de passe"
+    body = (
+        "Bonjour,\n\n"
+        "Une demande de réinitialisation de mot de passe a été effectuée pour votre compte.\n\n"
+        f"Pour définir un nouveau mot de passe, ouvrez ce lien :\n{reset_url}\n\n"
+        "Ce lien est temporaire. Si vous n'êtes pas à l'origine de cette demande, "
+        "vous pouvez ignorer ce message.\n\n"
+        "Cordialement,\n"
+        "Plateforme de gestion de copropriété"
+    )
+
+    send_mail(
+        subject,
+        body,
+        getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"),
+        [email],
+        fail_silently=False,
+    )
+
+    return True
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -64,16 +125,30 @@ class PasswordResetRequestAPIView(APIView):
         response_data = {
             "detail": (
                 "Si un compte actif correspond à ces informations, "
-                "un lien de récupération va être préparé."
+                "un lien de réinitialisation a été envoyé à l’adresse email associée."
             )
         }
 
+        user = result.get("user")
         reset_token = result.get("reset_token")
         throttled = bool(result.get("throttled"))
+        reset_url = ""
+
+        if user and reset_token and not throttled:
+            reset_url = _build_password_reset_url(request, reset_token)
+
+            try:
+                email_sent = _send_password_reset_email(user=user, reset_url=reset_url)
+            except Exception:
+                logger.exception("Erreur lors de l'envoi du lien de réinitialisation.")
+                email_sent = False
+
+            if settings.DEBUG:
+                response_data["debug_email_sent"] = email_sent
 
         if settings.DEBUG and reset_token and not throttled:
             response_data["debug_reset_token"] = reset_token
-            response_data["debug_reset_url"] = f"/reset-password?token={reset_token}"
+            response_data["debug_reset_url"] = reset_url or f"/reset-password?token={quote(str(reset_token), safe='')}"
 
         if settings.DEBUG and throttled:
             response_data["debug_throttled"] = True
