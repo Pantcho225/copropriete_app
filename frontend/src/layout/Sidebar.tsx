@@ -45,6 +45,18 @@ function SidebarLink({ to, children, end = true }: SidebarLinkProps) {
   );
 }
 
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+
+  return initials || "CP";
+}
+
 function SectionTitle({ children }: { children: ReactNode }) {
   return <div style={sectionTitleStyle}>{children}</div>;
 }
@@ -53,10 +65,13 @@ export default function Sidebar() {
   const navigate = useNavigate();
 
   const coproprieteId = useAuthStore((s) => s.coproprieteId);
+  const coproprieteName = useAuthStore((s) => s.coproprieteName);
+  const coproprieteLogoUrl = useAuthStore((s) => s.coproprieteLogoUrl);
   const logout = useAuthStore((s) => s.logout);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Non sélectionnée";
+  const activeCoproLabel = coproprieteName || (coproprieteId ? `#${coproprieteId}` : "Non sélectionnée");
+  const activeCoproDetail = coproprieteName && coproprieteId ? `#${coproprieteId}` : "";
 
   const doLogout = () => {
     logout();
@@ -90,9 +105,68 @@ export default function Sidebar() {
       </div>
 
       <div style={coproCardStyle}>
-        <div style={coproEyebrowStyle}>Copropriété active</div>
-        <div style={coproIdStyle}>{activeCoproLabel}</div>
-        <div style={coproNoteStyle}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              width: 42,
+              height: 42,
+              flex: "0 0 auto",
+              borderRadius: 14,
+              border: "1px solid #2A3650",
+              background: "#0B1320",
+              display: "grid",
+              placeItems: "center",
+              overflow: "hidden",
+            }}
+            aria-hidden="true"
+          >
+            {coproprieteLogoUrl ? (
+              <img
+                src={coproprieteLogoUrl}
+                alt=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                }}
+              />
+            ) : (
+              <span
+                style={{
+                  color: "#F3E9D6",
+                  fontSize: 12,
+                  fontWeight: 950,
+                }}
+              >
+                {getInitials(activeCoproLabel)}
+              </span>
+            )}
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <div style={coproEyebrowStyle}>Copropriété active</div>
+            <div style={coproIdStyle}>{activeCoproLabel}</div>
+            {activeCoproDetail ? (
+              <div
+                style={{
+                  color: "#C7CBDA",
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                }}
+              >
+                {activeCoproDetail}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ ...coproNoteStyle, marginTop: 10 }}>
           Contexte de travail actuellement chargé dans l’interface.
         </div>
       </div>

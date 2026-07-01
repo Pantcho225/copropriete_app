@@ -7,8 +7,75 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import api from "../api/axios";
+import { ENDPOINTS } from "../api/endpoints";
 import { getPageSubtitle, getPageTitle } from "../config/productNavigation";
 import { useAuthStore } from "../store/authStore";
+
+type ActiveCoproprieteResponse = {
+  id: number;
+  nom?: string | null;
+  logo_url?: string | null;
+};
+
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+
+  return initials || "CP";
+}
+
+function BrandingMark(props: {
+  value: string;
+  logoUrl?: string | null;
+  size?: number;
+}) {
+  const size = props.size ?? 34;
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        flex: "0 0 auto",
+        borderRadius: 12,
+        border: "1px solid #e5e7eb",
+        background: "#f8fafc",
+        display: "grid",
+        placeItems: "center",
+        overflow: "hidden",
+      }}
+      aria-hidden="true"
+    >
+      {props.logoUrl ? (
+        <img
+          src={props.logoUrl}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            color: "#334155",
+            fontSize: 11,
+            fontWeight: 950,
+          }}
+        >
+          {getInitials(props.value)}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function isValidCoproId(value: string) {
   const normalized = (value ?? "").trim();
@@ -64,11 +131,38 @@ function SmallButton(props: {
   );
 }
 
-function ContextBadge(props: { label: string; value: string }) {
+function ContextBadge(props: {
+  label: string;
+  value: string;
+  detail?: string;
+  logoUrl?: string | null;
+}) {
   return (
-    <div style={contextBadge}>
-      <div style={contextBadgeLabel}>{props.label}</div>
-      <div style={contextBadgeValue}>{props.value}</div>
+    <div
+      style={{
+        ...contextBadge,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <BrandingMark value={props.value} logoUrl={props.logoUrl} />
+      <div style={{ minWidth: 0 }}>
+        <div style={contextBadgeLabel}>{props.label}</div>
+        <div style={contextBadgeValue}>{props.value}</div>
+        {props.detail ? (
+          <div
+            style={{
+              marginTop: 2,
+              color: "#64748b",
+              fontSize: 10,
+              fontWeight: 800,
+            }}
+          >
+            {props.detail}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -78,7 +172,10 @@ export default function Topbar() {
   const location = useLocation();
 
   const coproprieteId = useAuthStore((s) => s.coproprieteId);
+  const coproprieteName = useAuthStore((s) => s.coproprieteName);
+  const coproprieteLogoUrl = useAuthStore((s) => s.coproprieteLogoUrl);
   const setCopropriete = useAuthStore((s) => s.setCopropriete);
+  const setCoproprieteBranding = useAuthStore((s) => s.setCoproprieteBranding);
   const logout = useAuthStore((s) => s.logout);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -89,7 +186,45 @@ export default function Topbar() {
 
   const pageSubtitle = useMemo(() => getPageSubtitle(location.pathname), [location.pathname]);
 
-  const activeCoproLabel = coproprieteId ? `#${coproprieteId}` : "Aucune copropriété active";
+  const activeCoproLabel =
+    coproprieteName || (coproprieteId ? `#${coproprieteId}` : "Aucune copropriété active");
+
+  const activeCoproDetail = coproprieteName && coproprieteId ? `#${coproprieteId}` : "";
+
+  useEffect(() => {
+    if (!coproprieteId) {
+      setCoproprieteBranding({ name: null, logoUrl: null });
+      return undefined;
+    }
+
+    const activeCoproprieteId = coproprieteId;
+
+    let ignore = false;
+
+    async function loadActiveCoproprieteBranding() {
+      try {
+        const response = await api.get(ENDPOINTS.coproprieteDetail(activeCoproprieteId));
+        const data = response.data as ActiveCoproprieteResponse;
+
+        if (ignore) return;
+
+        setCoproprieteBranding({
+          name: data.nom ?? null,
+          logoUrl: data.logo_url ?? null,
+        });
+      } catch {
+        if (ignore) return;
+
+        setCoproprieteBranding({ name: null, logoUrl: null });
+      }
+    }
+
+    void loadActiveCoproprieteBranding();
+
+    return () => {
+      ignore = true;
+    };
+  }, [coproprieteId, setCoproprieteBranding]);
 
   useEffect(() => {
     if (isModalOpen) return;
@@ -173,7 +308,7 @@ export default function Topbar() {
           </div>
 
           <div style={actionsBlock}>
-            <ContextBadge label="Copropriété active" value={activeCoproLabel} />
+            <ContextBadge label="Copropriété active" value={activeCoproLabel} detail={activeCoproDetail} logoUrl={coproprieteLogoUrl} />
 
             <SmallButton
               onClick={openChangeCoproModal}
