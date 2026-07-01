@@ -27,6 +27,7 @@ type DossierItem = {
   statut?: string | null;
   niveau_relance?: number | null;
   relances_count?: number | null;
+  auto_relance_active?: boolean | null;
   est_regularise?: boolean;
 };
 
@@ -517,6 +518,30 @@ function KpiCard(props: { label: string; value: string; hint?: string; accent?: 
   );
 }
 
+function GuidanceBox(props: { tone: AccentKind; title: string; children: ReactNode }) {
+  const tone = getTone(props.tone);
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        color: tone.text,
+        borderRadius: 20,
+        padding: "15px 17px",
+        display: "grid",
+        gap: 5,
+        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.04)",
+      }}
+    >
+      <div style={{ color: tone.strongText, fontWeight: 900 }}>
+        {props.title}
+      </div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>{props.children}</div>
+    </div>
+  );
+}
+
 function InfoStrip() {
   return (
     <div style={infoStrip}>
@@ -676,7 +701,8 @@ export default function DossiersImpayesList() {
 
   const stats = useMemo(() => {
     const total = filtered.length;
-    const totalReste = filtered.reduce((sum, item) => sum + toNumber(item.reste_a_payer), 0);
+    const actifs = filtered.filter((item) => toNumber(item.reste_a_payer) > 0);
+    const totalReste = actifs.reduce((sum, item) => sum + toNumber(item.reste_a_payer), 0);
     const enRetard = filtered.filter((item) => normalizeStatut(item.statut) === "EN_RETARD").length;
 
     const regularises = filtered.filter(
@@ -689,6 +715,28 @@ export default function DossiersImpayesList() {
       (item) => normalizeStatut(item.statut) === "PARTIELLEMENT_PAYE",
     ).length;
 
+    const sansRelance = actifs.filter(
+      (item) => toNumber(item.relances_count) <= 0 && toNumber(item.niveau_relance) <= 0,
+    ).length;
+
+    const couvertureRelance = actifs.length
+      ? Math.min(100, Math.round(((actifs.length - sansRelance) / actifs.length) * 100))
+      : 100;
+
+    let prochaineAction = "Aucun dossier actif à relancer dans la vue courante.";
+    let prochaineActionTone: AccentKind = "success";
+
+    if (sansRelance > 0) {
+      prochaineAction = `${sansRelance} dossier(s) actif(s) n’ont encore aucune relance : ouvrez-les en priorité pour déclencher une première action.`;
+      prochaineActionTone = "danger";
+    } else if (niveauEleve > 0) {
+      prochaineAction = `${niveauEleve} dossier(s) sont déjà au niveau 2 ou plus : vérifiez l’historique et préparez l’escalade adaptée.`;
+      prochaineActionTone = "warning";
+    } else if (actifs.length > 0) {
+      prochaineAction = `${actifs.length} dossier(s) restent à suivre : contrôlez les paiements partiels et les prochaines échéances.`;
+      prochaineActionTone = "info";
+    }
+
     return {
       total,
       totalReste,
@@ -696,6 +744,10 @@ export default function DossiersImpayesList() {
       regularises,
       niveauEleve,
       partiels,
+      sansRelance,
+      couvertureRelance,
+      prochaineAction,
+      prochaineActionTone,
     };
   }, [filtered]);
 
@@ -779,12 +831,23 @@ export default function DossiersImpayesList() {
           accent="warning"
         />
         <KpiCard
+          label="À relancer"
+          value={String(stats.sansRelance)}
+          hint={`Dossiers actifs sans relance · couverture ${stats.couvertureRelance}%`}
+          accent={stats.sansRelance > 0 ? "danger" : "success"}
+        />
+
+        <KpiCard
           label="Relance élevée"
           value={String(stats.niveauEleve)}
           hint="Dossiers ayant atteint un niveau de relance 2 ou plus."
           accent="info"
         />
       </div>
+
+      <GuidanceBox tone={stats.prochaineActionTone} title="Prochaine action conseillée">
+        {stats.prochaineAction}
+      </GuidanceBox>
 
       <Panel style={{ padding: 18 }}>
         <div style={filtersHeader}>
