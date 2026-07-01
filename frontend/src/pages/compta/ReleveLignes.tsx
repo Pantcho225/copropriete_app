@@ -10,13 +10,16 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 import BackButton from "../../components/ui/BackButton";
 import api from "../../api/axios";
+import { ENDPOINTS } from "../../api/endpoints";
 
 type LoadState = "idle" | "loading" | "success" | "error";
 type FlashKind = "success" | "error" | "info";
 type ToneKind = "neutral" | "success" | "warning" | "info" | "danger";
 
+type RapprochementTargetType = "PAIEMENT_APPEL" | "PAIEMENT_TRAVAUX" | "MOUVEMENT";
+
 type SuggestionItem = {
-  type_cible: "paiement_appel" | "paiement_travaux" | "mouvement";
+  type_cible: RapprochementTargetType;
   cible_id: number;
   label: string;
   montant?: number | string;
@@ -493,7 +496,7 @@ export default function ReleveLignes() {
 
   const [rapprocherModalOpen, setRapprocherModalOpen] = useState(false);
   const [targetType, setTargetType] =
-    useState<"paiement_appel" | "paiement_travaux" | "mouvement">("paiement_appel");
+    useState<RapprochementTargetType>("PAIEMENT_APPEL");
   const [targetId, setTargetId] = useState("");
   const [rapprocheNote, setRapprocheNote] = useState("");
   const [forceRapprochement, setForceRapprochement] = useState(false);
@@ -507,7 +510,7 @@ export default function ReleveLignes() {
   });
 
   const resetRapprocherForm = useCallback(() => {
-    setTargetType("paiement_appel");
+    setTargetType("PAIEMENT_APPEL");
     setTargetId("");
     setRapprocheNote("");
     setForceRapprochement(false);
@@ -546,8 +549,8 @@ export default function ReleveLignes() {
 
     try {
       const [detailRes, lignesRes] = await Promise.all([
-        api.get(`/api/compta/releves/imports/${importId}/`),
-        api.get(`/api/compta/releves/imports/${importId}/lignes/`),
+        api.get(ENDPOINTS.releveImportDetail(importId)),
+        api.get(ENDPOINTS.releveImportLignes(importId)),
       ]);
 
       setImportDetail(detailRes.data ?? null);
@@ -585,7 +588,7 @@ export default function ReleveLignes() {
       setSuggestionsLoading(true);
 
       try {
-        const res = await api.get(`/api/compta/releves/lignes/${line.id}/suggestions/`);
+        const res = await api.get(ENDPOINTS.releveLigneSuggestions(line.id));
         const items = normalizeSuggestionsPayload(res.data);
 
         setSuggestions(items);
@@ -653,11 +656,14 @@ export default function ReleveLignes() {
       setSubmitLoading(true);
 
       try {
-        await api.post(`/api/compta/releves/lignes/${selectedLine.id}/rapprocher/`, {
+        await api.post(ENDPOINTS.releveLigneRapprocher(selectedLine.id), {
           type_cible: targetType,
           cible_id: cibleId,
           note: rapprocheNote || "",
-          force: forceRapprochement,
+          allow_retarget: forceRapprochement,
+          retarget_reason: forceRapprochement
+            ? rapprocheNote || "Rapprochement forcé depuis l’interface."
+            : "",
         });
 
         closeRapprocherModal();
@@ -690,12 +696,10 @@ export default function ReleveLignes() {
 
     try {
       if (confirmAction.type === "ignore") {
-        await api.post(`/api/compta/releves/lignes/${confirmAction.line.id}/ignorer/`);
+        await api.post(ENDPOINTS.releveLigneIgnorer(confirmAction.line.id));
         showFlash("success", "Ligne ignorée avec succès.");
       } else if (confirmAction.type === "cancel_rapprochement") {
-        await api.post(
-          `/api/compta/releves/lignes/${confirmAction.line.id}/annuler-rapprochement/`,
-        );
+        await api.post(ENDPOINTS.releveLigneAnnulerRapprochement(confirmAction.line.id));
         showFlash("success", "Rapprochement annulé avec succès.");
       }
 
@@ -715,7 +719,7 @@ export default function ReleveLignes() {
   const handleCreateMouvement = useCallback(
     async (line: ReleveLigneItem) => {
       try {
-        await api.post(`/api/compta/releves/lignes/${line.id}/creer-mouvement/`);
+        await api.post(ENDPOINTS.releveLigneCreerMouvement(line.id));
         showFlash("success", "Mouvement comptable créé avec succès.");
         await fetchData();
       } catch {
@@ -1087,14 +1091,14 @@ export default function ReleveLignes() {
                   value={targetType}
                   onChange={(e) =>
                     setTargetType(
-                      e.target.value as "paiement_appel" | "paiement_travaux" | "mouvement",
+                      e.target.value as RapprochementTargetType,
                     )
                   }
                   style={fieldInput}
                 >
-                  <option value="paiement_appel">Paiement appel</option>
-                  <option value="paiement_travaux">Paiement travaux</option>
-                  <option value="mouvement">Mouvement comptable</option>
+                  <option value="PAIEMENT_APPEL">Paiement appel</option>
+                  <option value="PAIEMENT_TRAVAUX">Paiement travaux</option>
+                  <option value="MOUVEMENT">Mouvement comptable</option>
                 </select>
               </div>
 
