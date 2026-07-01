@@ -78,3 +78,6 @@ package-lock.json
 
 frontend/test-files/
 backups/
+
+# Media uploads locaux
+coproprietes/
