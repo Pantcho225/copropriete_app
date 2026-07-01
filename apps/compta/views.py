@@ -293,7 +293,13 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             super()
             .get_queryset()
             .filter(copropriete_id=copro_id)
-            .select_related("compte", "paiement_travaux", "paiement_appel", "cancelled_by")
+            .select_related(
+                "compte",
+                "paiement_travaux",
+                "paiement_appel",
+                "entree_argent",
+                "cancelled_by",
+            )
         )
 
         compte = self.request.query_params.get("compte")

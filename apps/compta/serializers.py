@@ -509,6 +509,12 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
     releve_ligne_id = serializers.SerializerMethodField()
     releve_import_id = serializers.SerializerMethodField()
 
+    source_type = serializers.SerializerMethodField()
+    source_label = serializers.SerializerMethodField()
+    entree_argent_id = serializers.SerializerMethodField()
+    entree_argent_type = serializers.SerializerMethodField()
+    entree_argent_type_label = serializers.SerializerMethodField()
+
     class Meta:
         model = MouvementBancaire
         fields = [
@@ -523,6 +529,11 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
             "note",
             "paiement_travaux",
             "paiement_appel",
+            "source_type",
+            "source_label",
+            "entree_argent_id",
+            "entree_argent_type",
+            "entree_argent_type_label",
             "is_rapproche",
             "created_by",
             "created_at",
@@ -545,6 +556,11 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
             "rapprochement_id",
             "releve_ligne_id",
             "releve_import_id",
+            "source_type",
+            "source_label",
+            "entree_argent_id",
+            "entree_argent_type",
+            "entree_argent_type_label",
             "is_cancelled",
             "cancel_kind",
             "cancelled_at",
@@ -568,6 +584,52 @@ class MouvementBancaireSerializer(serializers.ModelSerializer):
         rl = getattr(rap, "releve_ligne", None)
         ri = getattr(rl, "releve_import", None) if rl else None
         return getattr(ri, "id", None) if ri else None
+
+    def _get_entree_argent(self, obj: MouvementBancaire):
+        try:
+            return obj.entree_argent
+        except Exception:
+            return None
+
+    def get_entree_argent_id(self, obj: MouvementBancaire):
+        entree = self._get_entree_argent(obj)
+        return getattr(entree, "id", None) if entree else None
+
+    def get_entree_argent_type(self, obj: MouvementBancaire):
+        entree = self._get_entree_argent(obj)
+        return getattr(entree, "type", "") if entree else ""
+
+    def get_entree_argent_type_label(self, obj: MouvementBancaire):
+        entree = self._get_entree_argent(obj)
+        if not entree:
+            return ""
+        try:
+            return entree.get_type_display()
+        except Exception:
+            return getattr(entree, "type", "") or ""
+
+    def get_source_type(self, obj: MouvementBancaire) -> str:
+        if self._get_entree_argent(obj):
+            return "ENTREE_ARGENT"
+        if getattr(obj, "paiement_appel_id", None):
+            return "PAIEMENT_APPEL"
+        if getattr(obj, "paiement_travaux_id", None):
+            return "PAIEMENT_TRAVAUX"
+        return "MOUVEMENT_MANUEL"
+
+    def get_source_label(self, obj: MouvementBancaire) -> str:
+        entree = self._get_entree_argent(obj)
+        if entree:
+            type_label = self.get_entree_argent_type_label(obj)
+            return f"Entrée d’argent · {type_label}" if type_label else "Entrée d’argent"
+
+        if getattr(obj, "paiement_appel_id", None):
+            return f"Paiement appel #{obj.paiement_appel_id}"
+
+        if getattr(obj, "paiement_travaux_id", None):
+            return f"Paiement travaux #{obj.paiement_travaux_id}"
+
+        return "Mouvement manuel"
 
     def validate_montant(self, value):
         try:

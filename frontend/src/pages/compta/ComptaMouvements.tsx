@@ -39,6 +39,12 @@ type MouvementItem = {
   cancelled_at?: string | null;
   cancelled_reason?: string | null;
   impacts_balance?: boolean | null;
+
+  source_type?: string | null;
+  source_label?: string | null;
+  entree_argent_id?: number | null;
+  entree_argent_type?: string | null;
+  entree_argent_type_label?: string | null;
 };
 
 type Paginated<T> = {
@@ -574,7 +580,7 @@ export default function ComptaMouvements() {
 
     return items.filter((item) => {
       const haystack =
-        `${item.libelle ?? ""} ${item.reference ?? ""} ${item.note ?? ""} ${item.sens ?? ""} ${item.cancel_kind ?? ""}`.toLowerCase();
+        `${item.libelle ?? ""} ${item.reference ?? ""} ${item.note ?? ""} ${item.sens ?? ""} ${item.cancel_kind ?? ""} ${item.source_label ?? ""} ${item.entree_argent_type_label ?? ""}`.toLowerCase();
 
       return haystack.includes(normalizedQuery);
     });
@@ -899,6 +905,20 @@ export default function ComptaMouvements() {
                       ) : (
                         <Badge text="Non rapproché" kind="warning" />
                       )}
+
+                      {mouvement.source_type === "ENTREE_ARGENT" ? (
+                        <Badge
+                          text={
+                            mouvement.source_label ||
+                            `Entrée d’argent${
+                              mouvement.entree_argent_type_label
+                                ? ` · ${mouvement.entree_argent_type_label}`
+                                : ""
+                            }`
+                          }
+                          kind="success"
+                        />
+                      ) : null}
 
                       {isCancelled ? (
                         <Badge
