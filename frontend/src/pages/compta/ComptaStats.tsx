@@ -33,6 +33,24 @@ type DashboardSerie = {
   cumul_net?: number;
 };
 
+type EntreeArgentTypeStat = {
+  type: string;
+  type_label?: string;
+  total?: number;
+  count?: number;
+};
+
+type DashboardEntreesArgent = {
+  total_valide?: number;
+  total_brouillon?: number;
+  total_annule?: number;
+  count_total?: number;
+  count_valide?: number;
+  count_brouillon?: number;
+  count_annule?: number;
+  by_type?: EntreeArgentTypeStat[];
+};
+
 type DashboardResponse = {
   copropriete_id: number;
   totaux: {
@@ -47,6 +65,7 @@ type DashboardResponse = {
   };
   comptes: DashboardCompte[];
   series: DashboardSerie[];
+  entrees_argent?: DashboardEntreesArgent;
 };
 
 type SeriesPointWithNumbers = DashboardSerie & {
@@ -443,6 +462,13 @@ export default function ComptaStats() {
     };
   }, [data, dashboardComptes.length, seriesDays]);
 
+  const entreesArgent = data?.entrees_argent ?? null;
+
+  const entreesArgentByType = useMemo(
+    () => entreesArgent?.by_type ?? [],
+    [entreesArgent],
+  );
+
   const seriesInsights = useMemo(() => {
     const list: SeriesPointWithNumbers[] = latestSeries.map((item) => ({
       ...item,
@@ -649,6 +675,74 @@ export default function ComptaStats() {
           tone="neutral"
         />
       </div>
+
+      <Card
+        title="Entrées d’argent"
+        subtitle="Suivi spécifique des dons, subventions, remboursements, intérêts bancaires et régularisations crédit."
+        right={
+          <SmallButton onClick={() => navigate("/compta/entrees-argent")} primary>
+            Gérer les entrées
+          </SmallButton>
+        }
+      >
+        <div className="stats-mini-grid" style={{ marginBottom: entreesArgentByType.length ? 14 : 0 }}>
+          <MiniKpiCard
+            title="Validées"
+            value={fmtMoney(entreesArgent?.total_valide)}
+            sub={`${fmtInt(entreesArgent?.count_valide)} entrée(s) validée(s).`}
+            tone="success"
+          />
+          <MiniKpiCard
+            title="Brouillons"
+            value={fmtMoney(entreesArgent?.total_brouillon)}
+            sub={`${fmtInt(entreesArgent?.count_brouillon)} entrée(s) à valider.`}
+            tone="warning"
+          />
+          <MiniKpiCard
+            title="Annulées"
+            value={fmtMoney(entreesArgent?.total_annule)}
+            sub={`${fmtInt(entreesArgent?.count_annule)} entrée(s) annulée(s).`}
+            tone="danger"
+          />
+          <MiniKpiCard
+            title="Total enregistré"
+            value={fmtInt(entreesArgent?.count_total)}
+            sub="Toutes les entrées d’argent du périmètre actif."
+            tone="info"
+          />
+        </div>
+
+        {entreesArgentByType.length > 0 ? (
+          <div style={tableWrap}>
+            <table style={tableStyle}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th style={th}>Type</th>
+                  <th style={th}>Nombre</th>
+                  <th style={th}>Total validé</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {entreesArgentByType.map((item) => (
+                  <tr key={item.type}>
+                    <td style={tdStrong}>{item.type_label || item.type}</td>
+                    <td style={td}>{fmtInt(item.count)}</td>
+                    <td style={{ ...td, color: "#166534", fontWeight: 800 }}>
+                      {fmtMoney(item.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="Aucune entrée validée par type"
+            text="Les dons, subventions, remboursements ou autres entrées validées apparaîtront ici."
+          />
+        )}
+      </Card>
 
       <Card
         title="Lecture rapide de la période"

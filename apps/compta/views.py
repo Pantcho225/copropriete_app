@@ -438,6 +438,59 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
             cancel_kind=MouvementBancaire.CancelKind.BUSINESS,
         ).count()
 
+        entrees_qs = EntreeArgent.objects.filter(copropriete_id=copro_id)
+        entrees_validees_qs = entrees_qs.filter(statut=EntreeArgent.Statut.VALIDEE)
+        entree_type_labels = dict(EntreeArgent.Type.choices)
+
+        entrees_total_valide = Decimal(
+            str(entrees_validees_qs.aggregate(t=Sum("montant")).get("t") or 0)
+        )
+        entrees_total_brouillon = Decimal(
+            str(
+                entrees_qs.filter(statut=EntreeArgent.Statut.BROUILLON)
+                .aggregate(t=Sum("montant"))
+                .get("t")
+                or 0
+            )
+        )
+        entrees_total_annule = Decimal(
+            str(
+                entrees_qs.filter(statut=EntreeArgent.Statut.ANNULEE)
+                .aggregate(t=Sum("montant"))
+                .get("t")
+                or 0
+            )
+        )
+
+        entrees_by_type_rows = (
+            entrees_validees_qs.values("type")
+            .annotate(total=Sum("montant"), count=Count("id"))
+            .order_by("type")
+        )
+
+        entrees_argent_out = {
+            "total_valide": float(entrees_total_valide),
+            "total_brouillon": float(entrees_total_brouillon),
+            "total_annule": float(entrees_total_annule),
+            "count_total": int(entrees_qs.count()),
+            "count_valide": int(entrees_validees_qs.count()),
+            "count_brouillon": int(
+                entrees_qs.filter(statut=EntreeArgent.Statut.BROUILLON).count()
+            ),
+            "count_annule": int(
+                entrees_qs.filter(statut=EntreeArgent.Statut.ANNULEE).count()
+            ),
+            "by_type": [
+                {
+                    "type": row["type"],
+                    "type_label": entree_type_labels.get(row["type"], row["type"]),
+                    "total": float(row["total"] or 0),
+                    "count": int(row["count"] or 0),
+                }
+                for row in entrees_by_type_rows
+            ],
+        }
+
         return Response(
             {
                 "copropriete_id": int(copro_id),
@@ -455,6 +508,7 @@ class MouvementBancaireViewSet(viewsets.ModelViewSet):
                 },
                 "comptes": comptes_out,
                 "series": series,
+                "entrees_argent": entrees_argent_out,
             },
             status=status.HTTP_200_OK,
         )
