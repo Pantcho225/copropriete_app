@@ -201,6 +201,34 @@ CSRF_TRUSTED_ORIGINS = [
 # ===============================
 PUBLIC_BASE_URL = "https://ton-domaine.com"
 
+# ===============================
+# Email / reset password
+# ===============================
+FRONTEND_BASE_URL = config(
+    "FRONTEND_BASE_URL",
+    default="http://localhost:5173",
+).strip().rstrip("/")
+
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default=(
+        "django.core.mail.backends.console.EmailBackend"
+        if DEBUG
+        else "django.core.mail.backends.smtp.EmailBackend"
+    ),
+)
+
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", cast=int, default=587)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool, default=True)
+EMAIL_USE_SSL = config("EMAIL_USE_SSL", cast=bool, default=False)
+
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="no-reply@localhost")
+SERVER_EMAIL = config("SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
+
+
 PDF_SHOW_BRUT_PAYMENT = False
 # PDF_SHOW_BRUT_PAYMENT = True  # si tu veux afficher le brut
 
