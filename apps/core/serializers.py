@@ -51,6 +51,7 @@ class CoproprieteSerializer(serializers.ModelSerializer):
 
     display_name = serializers.CharField(read_only=True)
     is_available = serializers.BooleanField(read_only=True)
+    logo_url = serializers.SerializerMethodField()
 
     membres_count = serializers.SerializerMethodField()
     membres_actifs_count = serializers.SerializerMethodField()
@@ -67,6 +68,8 @@ class CoproprieteSerializer(serializers.ModelSerializer):
             "description",
             "telephone",
             "email_contact",
+            "logo",
+            "logo_url",
             "statut",
             "is_active",
             "display_name",
@@ -81,11 +84,24 @@ class CoproprieteSerializer(serializers.ModelSerializer):
             "slug",
             "display_name",
             "is_available",
+            "logo_url",
             "membres_count",
             "membres_actifs_count",
             "created_at",
             "updated_at",
         )
+
+    def get_logo_url(self, obj):
+        if not obj.logo:
+            return ""
+
+        request = self.context.get("request")
+        url = obj.logo.url
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
 
     def get_membres_count(self, obj):
         return obj.membres.count()
@@ -130,6 +146,7 @@ class CoproprieteListSerializer(serializers.ModelSerializer):
 
     display_name = serializers.CharField(read_only=True)
     is_available = serializers.BooleanField(read_only=True)
+    logo_url = serializers.SerializerMethodField()
     membres_actifs_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -144,11 +161,24 @@ class CoproprieteListSerializer(serializers.ModelSerializer):
             "is_active",
             "display_name",
             "is_available",
+            "logo_url",
             "membres_actifs_count",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_logo_url(self, obj):
+        if not obj.logo:
+            return ""
+
+        request = self.context.get("request")
+        url = obj.logo.url
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
 
     def get_membres_actifs_count(self, obj):
         return obj.membres.filter(is_active=True).count()

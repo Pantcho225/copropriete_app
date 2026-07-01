@@ -58,6 +58,13 @@ class Copropriete(TimeStampedModel):
     telephone = models.CharField(max_length=50, blank=True)
     email_contact = models.EmailField(blank=True)
 
+    logo = models.ImageField(
+        upload_to="coproprietes/logos/",
+        blank=True,
+        null=True,
+        help_text="Logo officiel de la copropriété, utilisé dans l'interface et les documents.",
+    )
+
     statut = models.CharField(
         max_length=20,
         choices=Statut.choices,
