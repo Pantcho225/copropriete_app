@@ -1,5 +1,5 @@
 // frontend/src/pages/platform-admin/PlatformCoproprieteForm.tsx
-import type { CSSProperties, FormEvent } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -16,6 +16,11 @@ type FormState = {
   email_contact: string;
   statut: "ACTIVE" | "SUSPENDUE" | "ARCHIVEE";
   is_active: boolean;
+};
+
+type CoproprieteFormResponse = Partial<FormState> & {
+  logo?: string | null;
+  logo_url?: string | null;
 };
 
 const initialForm: FormState = {
@@ -519,6 +524,8 @@ export default function PlatformCoproprieteForm() {
   const [loading, setLoading] = useState(Boolean(id));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
 
   const canSubmit = useMemo(() => {
     return form.nom.trim().length > 0 && isValidEmail(form.email_contact);
@@ -550,7 +557,7 @@ export default function PlatformCoproprieteForm() {
 
         try {
           const response = await api.get(ENDPOINTS.platform.coproprieteDetail(coproprieteId));
-          const data = response.data as Partial<FormState>;
+          const data = response.data as CoproprieteFormResponse;
 
           setForm({
             nom: data.nom ?? "",
@@ -563,6 +570,8 @@ export default function PlatformCoproprieteForm() {
             statut: data.statut ?? "ACTIVE",
             is_active: data.is_active ?? true,
           });
+          setLogoPreviewUrl(data.logo_url ?? "");
+          setLogoFile(null);
         } catch (err) {
           setError(getErrorMessage(err));
         } finally {
@@ -583,6 +592,16 @@ export default function PlatformCoproprieteForm() {
     }));
   }
 
+  function onLogoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+
+    setLogoFile(file);
+
+    if (file) {
+      setLogoPreviewUrl(URL.createObjectURL(file));
+    }
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -600,17 +619,21 @@ export default function PlatformCoproprieteForm() {
     setError("");
 
     try {
-      const payload: FormState = {
-        nom: form.nom.trim(),
-        adresse: form.adresse.trim(),
-        ville: form.ville.trim(),
-        pays: form.pays.trim(),
-        description: form.description.trim(),
-        telephone: form.telephone.trim(),
-        email_contact: form.email_contact.trim(),
-        statut: form.statut,
-        is_active: form.statut === "ACTIVE",
-      };
+      const payload = new FormData();
+
+      payload.append("nom", form.nom.trim());
+      payload.append("adresse", form.adresse.trim());
+      payload.append("ville", form.ville.trim());
+      payload.append("pays", form.pays.trim());
+      payload.append("description", form.description.trim());
+      payload.append("telephone", form.telephone.trim());
+      payload.append("email_contact", form.email_contact.trim());
+      payload.append("statut", form.statut);
+      payload.append("is_active", form.statut === "ACTIVE" ? "true" : "false");
+
+      if (logoFile) {
+        payload.append("logo", logoFile);
+      }
 
       if (id) {
         await api.put(ENDPOINTS.platform.coproprieteDetail(id), payload);
@@ -809,6 +832,69 @@ export default function PlatformCoproprieteForm() {
                         Facultatif, mais recommandé pour une fiche complète.
                       </p>
                     </label>
+                  </div>
+                </section>
+
+                <section style={styles.sectionSoft}>
+                  <h3 style={styles.sectionTitle}>Logo officiel</h3>
+                  <p style={styles.sectionText}>
+                    Ajoutez le logo qui identifiera la copropriété dans l’interface
+                    et, progressivement, dans les documents officiels.
+                  </p>
+
+                  <div style={styles.gridOne}>
+                    <label style={styles.field}>
+                      <span style={styles.label}>Logo de la copropriété</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={onLogoChange}
+                        style={styles.input}
+                      />
+                      <p style={styles.helpText}>
+                        Formats recommandés : PNG, JPG ou WebP. Privilégiez un
+                        logo lisible sur fond clair.
+                      </p>
+                    </label>
+
+                    {logoPreviewUrl ? (
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 14,
+                          border: "1px solid #dbeafe",
+                          borderRadius: 20,
+                          background: "#ffffff",
+                          padding: 14,
+                        }}
+                      >
+                        <img
+                          src={logoPreviewUrl}
+                          alt="Logo de la copropriété"
+                          style={{
+                            width: 72,
+                            height: 72,
+                            objectFit: "contain",
+                            borderRadius: 18,
+                            border: "1px solid #e2e8f0",
+                            background: "#f8fafc",
+                          }}
+                        />
+                        <div>
+                          <p style={{ ...styles.label, margin: 0 }}>
+                            Aperçu du logo
+                          </p>
+                          <p style={styles.helpText}>
+                            Ce logo sera enregistré avec la fiche copropriété.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={styles.helpText}>
+                        Aucun logo n’est encore associé à cette copropriété.
+                      </p>
+                    )}
                   </div>
                 </section>
 

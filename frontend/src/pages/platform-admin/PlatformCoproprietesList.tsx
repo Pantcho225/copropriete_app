@@ -16,6 +16,7 @@ type Copropriete = {
   pays?: string | null;
   statut?: string | null;
   is_active?: boolean;
+  logo_url?: string | null;
   membres_actifs_count?: number;
   membres_count?: number;
   created_at?: string | null;
@@ -595,6 +596,18 @@ function includesText(value: string | number | null | undefined, query: string):
     .includes(query.toLowerCase());
 }
 
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+
+  return initials || "CP";
+}
+
 export default function PlatformCoproprietesList() {
   const [rows, setRows] = useState<Copropriete[]>([]);
   const [loading, setLoading] = useState(true);
@@ -848,16 +861,63 @@ export default function PlatformCoproprietesList() {
                         return (
                           <tr key={item.id}>
                             <td style={styles.td}>
-                              <Link
-                                to={`/platform-admin/coproprietes/${item.id}`}
-                                style={styles.nameLink}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 12,
+                                }}
                               >
-                                {item.nom}
-                              </Link>
-                              <p style={styles.muted}>
-                                ID #{item.id}
-                                {item.slug ? ` · ${item.slug}` : ""}
-                              </p>
+                                <div
+                                  style={{
+                                    width: 44,
+                                    height: 44,
+                                    flex: "0 0 auto",
+                                    borderRadius: 14,
+                                    border: "1px solid #e2e8f0",
+                                    background: "#f8fafc",
+                                    display: "grid",
+                                    placeItems: "center",
+                                    overflow: "hidden",
+                                  }}
+                                  aria-hidden="true"
+                                >
+                                  {item.logo_url ? (
+                                    <img
+                                      src={item.logo_url}
+                                      alt=""
+                                      style={{
+                                        width: "100%",
+                                        height: "100%",
+                                        objectFit: "contain",
+                                      }}
+                                    />
+                                  ) : (
+                                    <span
+                                      style={{
+                                        color: "#475569",
+                                        fontSize: 12,
+                                        fontWeight: 950,
+                                      }}
+                                    >
+                                      {getInitials(item.nom)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <Link
+                                    to={`/platform-admin/coproprietes/${item.id}`}
+                                    style={styles.nameLink}
+                                  >
+                                    {item.nom}
+                                  </Link>
+                                  <p style={styles.muted}>
+                                    ID #{item.id}
+                                    {item.slug ? ` · ${item.slug}` : ""}
+                                  </p>
+                                </div>
+                              </div>
                             </td>
 
                             <td style={styles.td}>

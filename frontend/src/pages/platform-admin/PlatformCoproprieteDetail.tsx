@@ -16,6 +16,7 @@ type Copropriete = {
   description?: string | null;
   telephone?: string | null;
   email_contact?: string | null;
+  logo_url?: string | null;
   statut?: string | null;
   is_active?: boolean;
   membres_actifs_count?: number;
@@ -581,6 +582,18 @@ function displayValue(value?: string | number | null): string {
   return String(value);
 }
 
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+
+  return initials || "CP";
+}
+
 export default function PlatformCoproprieteDetail() {
   const { id } = useParams();
 
@@ -747,9 +760,55 @@ export default function PlatformCoproprieteDetail() {
                     </p>
                   </div>
 
-                  <span style={badgeStyle(statusTone)}>
-                    {statutLabel(copropriete.statut, copropriete.is_active)}
-                  </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 62,
+                        height: 62,
+                        borderRadius: 20,
+                        border: "1px solid #e2e8f0",
+                        background: "#f8fafc",
+                        display: "grid",
+                        placeItems: "center",
+                        overflow: "hidden",
+                      }}
+                      aria-label="Logo de la copropriété"
+                    >
+                      {copropriete.logo_url ? (
+                        <img
+                          src={copropriete.logo_url}
+                          alt={`Logo ${copropriete.nom}`}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "contain",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            color: "#475569",
+                            fontSize: 14,
+                            fontWeight: 950,
+                          }}
+                        >
+                          {getInitials(copropriete.nom)}
+                        </span>
+                      )}
+                    </div>
+
+                    <span style={badgeStyle(statusTone)}>
+                      {statutLabel(copropriete.statut, copropriete.is_active)}
+                    </span>
+                  </div>
                 </div>
 
                 <div style={styles.cardBody}>
