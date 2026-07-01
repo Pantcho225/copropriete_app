@@ -354,6 +354,35 @@ function FlashMessage({
   );
 }
 
+function GuidanceBox({
+  tone,
+  title,
+  children,
+}: {
+  tone: ToneKind;
+  title: string;
+  children: ReactNode;
+}) {
+  const palette = getTone(tone);
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${palette.border}`,
+        background: palette.softBg,
+        borderRadius: 18,
+        padding: "14px 16px",
+        color: palette.text,
+        display: "grid",
+        gap: 4,
+      }}
+    >
+      <strong style={{ color: palette.strongText }}>{title}</strong>
+      <span style={{ fontSize: 14, lineHeight: 1.5 }}>{children}</span>
+    </div>
+  );
+}
+
 function getLineStatusBadge(line: ReleveLigneItem): { label: string; style: CSSProperties } {
   if (line.is_ignored || line.ignored) {
     return {
@@ -575,9 +604,29 @@ export default function ReleveLignes() {
     const total = lignes.length;
     const rapprochees = lignes.filter((line) => line.rapproche || line.rapprochement).length;
     const ignorees = lignes.filter((line) => line.is_ignored || line.ignored).length;
-    const aTraiter = total - rapprochees - ignorees;
+    const aTraiter = Math.max(total - rapprochees - ignorees, 0);
+    const tauxRapprochement = total ? Math.round((rapprochees / total) * 100) : 0;
 
-    return { total, rapprochees, ignorees, aTraiter };
+    let priorite = "Import vide ou aucune ligne bancaire à analyser.";
+    let prioriteTone: ToneKind = "neutral";
+
+    if (aTraiter > 0) {
+      priorite = `${aTraiter} ligne(s) restent à traiter : ouvrez les suggestions, rapprochez la ligne, créez un mouvement ou ignorez-la si elle n’a pas d’impact métier.`;
+      prioriteTone = "warning";
+    } else if (total > 0) {
+      priorite = "Toutes les lignes sont traitées : l’import bancaire est prêt pour le suivi comptable.";
+      prioriteTone = "success";
+    }
+
+    return {
+      total,
+      rapprochees,
+      ignorees,
+      aTraiter,
+      tauxRapprochement,
+      priorite,
+      prioriteTone,
+    };
   }, [lignes]);
 
   const openSuggestions = useCallback(
@@ -815,10 +864,22 @@ export default function ReleveLignes() {
           tone="neutral"
         />
         <StatCard title="Total des lignes" value={stats.total} tone="neutral" />
-        <StatCard title="Lignes rapprochées" value={stats.rapprochees} tone="success" />
+        <StatCard
+          title="Lignes rapprochées"
+          value={`${stats.rapprochees} · ${stats.tauxRapprochement}%`}
+          tone="success"
+        />
         <StatCard title="Ignorées métier" value={stats.ignorees} tone="neutral" />
-        <StatCard title="À traiter" value={stats.aTraiter} tone="warning" />
+        <StatCard
+          title="À traiter"
+          value={stats.aTraiter}
+          tone={stats.aTraiter > 0 ? "warning" : "success"}
+        />
       </div>
+
+      <GuidanceBox tone={stats.prioriteTone} title="Prochaine action conseillée">
+        {stats.priorite}
+      </GuidanceBox>
 
       <Card
         title="Lignes bancaires"
