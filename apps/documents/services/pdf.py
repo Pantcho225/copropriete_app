@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from hashlib import sha256
 from html import escape
 from uuid import uuid4
@@ -148,6 +149,38 @@ def _copro_email(copropriete) -> str:
     return _value(copropriete, "email", "contact_email")
 
 
+def _file_field_pdf_src(file_field) -> str:
+    """
+    Retourne une source image exploitable par WeasyPrint.
+
+    En génération backend locale, file:// est le plus fiable.
+    En dernier recours, on renvoie l'URL du champ fichier.
+    """
+    if not file_field:
+        return ""
+
+    try:
+        file_path = Path(file_field.path)
+    except Exception:
+        file_path = None
+
+    if file_path and file_path.exists():
+        return file_path.resolve().as_uri()
+
+    try:
+        return str(file_field.url or "")
+    except Exception:
+        return ""
+
+
+def _copro_logo_src(copropriete) -> str:
+    if not copropriete:
+        return ""
+
+    logo = getattr(copropriete, "logo", None)
+    return _file_field_pdf_src(logo)
+
+
 def _cell(value: str | None) -> str:
     if value is None:
         return "&nbsp;"
@@ -164,7 +197,16 @@ def _html_base(*, title: str, copropriete, reference: str, body_html: str) -> st
     copro_address = escape(_copro_address(copropriete))
     copro_phone = escape(_copro_phone(copropriete))
     copro_email = escape(_copro_email(copropriete))
+    copro_logo_src = escape(_copro_logo_src(copropriete), quote=True)
     generated_at = timezone.localtime(timezone.now()).strftime("%d/%m/%Y à %H:%M")
+
+    logo_html = (
+        f'<div class="brand-logo-wrap">'
+        f'<img class="brand-logo" src="{copro_logo_src}" alt="Logo copropriété">'
+        f'</div>'
+        if copro_logo_src
+        else ""
+    )
 
     contact_line = " | ".join(
         part
@@ -200,6 +242,19 @@ def _html_base(*, title: str, copropriete, reference: str, body_html: str) -> st
       padding-bottom: 12px;
       margin-bottom: 24px;
       text-align: center;
+    }}
+
+    .brand-logo-wrap {{
+      margin-bottom: 8px;
+      text-align: center;
+    }}
+
+    .brand-logo {{
+      max-width: 72px;
+      max-height: 72px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
     }}
 
     .copro-name {{
@@ -309,6 +364,7 @@ def _html_base(*, title: str, copropriete, reference: str, body_html: str) -> st
 </head>
 <body>
   <div class="header">
+    {logo_html}
     <div class="copro-name">{copro_name}</div>
     <div class="contact">{contact_line}</div>
     <div class="doc-title">{escape(title)}</div>
