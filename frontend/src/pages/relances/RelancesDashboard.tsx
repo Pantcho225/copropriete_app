@@ -23,6 +23,8 @@ type DossierItem = {
   reference_appel?: string | null;
   date_echeance?: string | null;
   niveau_relance?: number | null;
+  relances_count?: number | null;
+  auto_relance_active?: boolean | null;
   est_regularise?: boolean | null;
 };
 
@@ -34,10 +36,15 @@ type DashboardStatsResponse = {
 
 type Stats = {
   dossiersImpayes: number;
+  dossiersATraiter: number;
+  dossiersSansRelance: number;
   relancesEnvoyees: number;
   dossiersRegularises: number;
   relancesNiveauEleve: number;
   montantTotalImpayes: number;
+  couvertureRelance: number;
+  priorite: string;
+  prioriteTone: AccentKind;
 };
 
 type RelanceItem = {
@@ -364,6 +371,27 @@ function AlertBox(props: { kind: "error" | "info"; children: ReactNode }) {
   );
 }
 
+function GuidanceBox(props: { tone: AccentKind; title: string; children: ReactNode }) {
+  const tone = getTone(props.tone);
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${tone.border}`,
+        background: tone.softBg,
+        color: tone.text,
+        borderRadius: 18,
+        padding: "14px 16px",
+        display: "grid",
+        gap: 4,
+      }}
+    >
+      <div style={{ color: tone.strongText, fontWeight: 900 }}>{props.title}</div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>{props.children}</div>
+    </div>
+  );
+}
+
 function EmptyState(props: {
   title: string;
   description?: string;
@@ -467,7 +495,11 @@ export default function RelancesDashboard() {
   }, [loadData]);
 
   const stats = useMemo<Stats>(() => {
-    const dossiersImpayes = dossiers.filter((d) => toNumber(d.reste_a_payer) > 0).length;
+    const dossiersActifs = dossiers.filter((d) => toNumber(d.reste_a_payer) > 0);
+    const dossiersImpayes = dossiersActifs.length;
+    const dossiersSansRelance = dossiersActifs.filter(
+      (d) => toNumber(d.relances_count) <= 0 && toNumber(d.niveau_relance) <= 0,
+    ).length;
 
     const dossiersRegularisesFromList = dossiers.filter((d) => {
       const statut = normalizeStatut(d.statut);
@@ -480,15 +512,38 @@ export default function RelancesDashboard() {
         ? toNumber(statsData?.regularises)
         : dossiersRegularisesFromList;
 
-    const relancesEnvoyees = relances.filter((r) => normalizeStatut(r.statut) === "ENVOYE").length;
+    const relancesEnvoyees = relances.filter((r) => {
+      const statut = normalizeStatut(r.statut);
+      return statut === "ENVOYEE" || statut === "ENVOYE";
+    }).length;
+
     const relancesNiveauEleve = relances.filter((r) => toNumber(r.niveau) >= 2).length;
+    const couvertureRelance = dossiersImpayes
+      ? Math.min(100, Math.round((relancesEnvoyees / dossiersImpayes) * 100))
+      : 100;
+
+    let priorite = "Aucun impayé actif : le portefeuille de recouvrement est sous contrôle.";
+    let prioriteTone: AccentKind = "success";
+
+    if (dossiersSansRelance > 0) {
+      priorite = `${dossiersSansRelance} dossier(s) impayé(s) n’ont encore aucune relance : démarrez par ces dossiers pour éviter l’accumulation du retard.`;
+      prioriteTone = "danger";
+    } else if (dossiersImpayes > 0) {
+      priorite = `${dossiersImpayes} dossier(s) restent à suivre : contrôlez les niveaux de relance, les paiements partiels et les régularisations.`;
+      prioriteTone = "warning";
+    }
 
     return {
       dossiersImpayes,
+      dossiersATraiter: dossiersActifs.length,
+      dossiersSansRelance,
       relancesEnvoyees,
       dossiersRegularises,
       relancesNiveauEleve,
-      montantTotalImpayes: dossiers.reduce((acc, d) => acc + toNumber(d.reste_a_payer), 0),
+      montantTotalImpayes: dossiersActifs.reduce((acc, d) => acc + toNumber(d.reste_a_payer), 0),
+      couvertureRelance,
+      priorite,
+      prioriteTone,
     };
   }, [statsData, dossiers, relances]);
 
@@ -566,9 +621,17 @@ export default function RelancesDashboard() {
         />
 
         <StatCard
+          title="À relancer"
+          value={stats.dossiersSansRelance}
+          sub="Dossiers impayés sans relance enregistrée."
+          isLoading={isLoading}
+          accent={stats.dossiersSansRelance > 0 ? "danger" : "success"}
+        />
+
+        <StatCard
           title="Relances envoyées"
-          value={stats.relancesEnvoyees}
-          sub="Relances dont le statut officiel est envoyé."
+          value={`${stats.relancesEnvoyees} · ${stats.couvertureRelance}%`}
+          sub="Relances envoyées et couverture des dossiers impayés."
           isLoading={isLoading}
           accent="info"
         />
@@ -589,6 +652,10 @@ export default function RelancesDashboard() {
           accent="success"
         />
       </div>
+
+      <GuidanceBox tone={stats.prioriteTone} title="Prochaine action conseillée">
+        {stats.priorite}
+      </GuidanceBox>
 
       <Card
         title="Dossiers prioritaires"
