@@ -1,6 +1,8 @@
-import { useState, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import api from "../api/axios";
+import { ENDPOINTS } from "../api/endpoints";
 import { useAuthStore } from "../store/authStore";
 
 type NavItem = {
@@ -13,6 +15,12 @@ type NavItem = {
 type PageMeta = {
   title: string;
   subtitle: string;
+};
+
+type ActiveCoproprieteResponse = {
+  id: number;
+  nom?: string | null;
+  logo_url?: string | null;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -130,6 +138,18 @@ const PAGE_META: Record<string, PageMeta> = {
   },
 };
 
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+
+  return initials || "CP";
+}
+
 function getPageMeta(pathname: string): PageMeta {
   return (
     PAGE_META[pathname] ?? {
@@ -143,9 +163,57 @@ export default function CoproprietaireLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const logout = useAuthStore((state) => state.logout);
+  const coproprieteId = useAuthStore((state) => state.coproprieteId);
+  const coproprieteName = useAuthStore((state) => state.coproprieteName);
+  const coproprieteLogoUrl = useAuthStore((state) => state.coproprieteLogoUrl);
+  const setCoproprieteBranding = useAuthStore(
+    (state) => state.setCoproprieteBranding,
+  );
+
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const pageMeta = getPageMeta(location.pathname);
+
+  const activeCoproLabel =
+    coproprieteName || (coproprieteId ? `#${coproprieteId}` : "Copropriété active");
+
+  const activeCoproDetail = coproprieteName && coproprieteId ? `#${coproprieteId}` : "";
+
+  useEffect(() => {
+    if (!coproprieteId) {
+      setCoproprieteBranding({ name: null, logoUrl: null });
+      return undefined;
+    }
+
+    const activeCoproprieteId = coproprieteId;
+    let ignore = false;
+
+    async function loadActiveCoproprieteBranding() {
+      try {
+        const response = await api.get(
+          ENDPOINTS.coproprieteDetail(activeCoproprieteId),
+        );
+        const data = response.data as ActiveCoproprieteResponse;
+
+        if (ignore) return;
+
+        setCoproprieteBranding({
+          name: data.nom ?? null,
+          logoUrl: data.logo_url ?? null,
+        });
+      } catch {
+        if (ignore) return;
+
+        setCoproprieteBranding({ name: null, logoUrl: null });
+      }
+    }
+
+    void loadActiveCoproprieteBranding();
+
+    return () => {
+      ignore = true;
+    };
+  }, [coproprieteId, setCoproprieteBranding]);
 
   function handleLogout() {
     logout();
@@ -176,7 +244,7 @@ export default function CoproprietaireLayout() {
           ☰ Menu
         </button>
 
-        <span className="coproOwnerMobileBrand">Espace copropriétaire</span>
+        <span className="coproOwnerMobileBrand">{activeCoproLabel}</span>
       </div>
 
       <div
@@ -187,13 +255,30 @@ export default function CoproprietaireLayout() {
         <aside className="coproOwnerSidebar" style={styles.sidebar}>
         <div style={styles.brandBlock}>
           <div style={styles.logoWrap}>
-            <div style={styles.logo}>C</div>
+            {coproprieteLogoUrl ? (
+              <img
+                src={coproprieteLogoUrl}
+                alt={`Logo ${activeCoproLabel}`}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 14,
+                  objectFit: "contain",
+                  background: "#0f1b31",
+                  border: "1px solid rgba(255,255,255,0.16)",
+                }}
+              />
+            ) : (
+              <div style={styles.logo}>{getInitials(activeCoproLabel)}</div>
+            )}
             <span style={styles.logoPulse} />
           </div>
 
           <div style={styles.brandTexts}>
-            <p style={styles.brandTitle}>Espace copropriétaire</p>
-            <p style={styles.brandSub}>Portail personnel sécurisé</p>
+            <p style={styles.brandTitle}>{activeCoproLabel}</p>
+            <p style={styles.brandSub}>
+              {activeCoproDetail || "Portail personnel sécurisé"}
+            </p>
           </div>
         </div>
 
@@ -201,7 +286,8 @@ export default function CoproprietaireLayout() {
           <p style={styles.profileEyebrow}>Compte personnel</p>
           <p style={styles.profileTitle}>Accès copropriétaire</p>
           <p style={styles.profileText}>
-            Vos données sont filtrées selon votre compte et vos lots rattachés.
+            Vos données sont filtrées selon votre compte, vos lots rattachés et
+            la copropriété active.
           </p>
         </div>
 
@@ -267,6 +353,32 @@ export default function CoproprietaireLayout() {
           </div>
 
           <div className="coproOwnerTopbarRight" style={styles.topbarRight}>
+            <div
+              style={{
+                ...styles.securityPill,
+                background: "#eff6ff",
+                borderColor: "#bfdbfe",
+                color: "#1e3a8a",
+              }}
+            >
+              {coproprieteLogoUrl ? (
+                <img
+                  src={coproprieteLogoUrl}
+                  alt=""
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 6,
+                    objectFit: "contain",
+                  }}
+                />
+              ) : (
+                <span style={styles.securityDot} />
+              )}
+              <span>{activeCoproLabel}</span>
+              {activeCoproDetail ? <span>{activeCoproDetail}</span> : null}
+            </div>
+
             <div style={styles.securityPill}>
               <span style={styles.securityDot} />
               <span>Session sécurisée</span>
