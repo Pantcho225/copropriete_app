@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 from urllib.parse import quote
 
 from django.conf import settings
@@ -77,16 +78,45 @@ def _build_base_url(request=None) -> str | None:
 
 def _media_url(request, file_field) -> str | None:
     """
-    Retourne une URL absolue pour un FileField/ImageField si possible.
+    Retourne une URL exploitable par WeasyPrint pour un FileField/ImageField.
+
+    - Avec request : URL absolue HTTP, utile en contexte API.
+    - Sans request : URI fichier locale file://..., utile pour les générations shell
+      ou les tâches backend.
     """
     if not file_field:
         return None
+
+    if request:
+        try:
+            return request.build_absolute_uri(file_field.url)
+        except Exception:
+            return None
+
     try:
-        url = file_field.url
+        file_path = Path(file_field.path)
+    except Exception:
+        file_path = None
+
+    if file_path and file_path.exists():
+        return file_path.resolve().as_uri()
+
+    try:
+        return file_field.url
     except Exception:
         return None
 
-    return request.build_absolute_uri(url) if request else url
+
+
+def _copropriete_logo_url(request, copropriete) -> str | None:
+    """
+    Retourne l'URL du logo de la copropriété pour les PDF générés par WeasyPrint.
+    """
+    if not copropriete:
+        return None
+
+    logo = getattr(copropriete, "logo", None)
+    return _media_url(request, logo)
 
 
 def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
@@ -127,6 +157,10 @@ def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
     signature_president_url = _media_url(request, getattr(ag, "signature_president", None))
     signature_secretaire_url = _media_url(request, getattr(ag, "signature_secretaire", None))
     cachet_image_url = _media_url(request, getattr(ag, "cachet_image", None))
+    copropriete_logo_url = _copropriete_logo_url(
+        request,
+        getattr(ag, "copropriete", None),
+    )
 
     generated_at = timezone.now()
 
@@ -167,6 +201,7 @@ def generate_ag_pv_pdf_bytes(ag, request=None) -> bytes:
 
         # Entête
         "copropriete_label": copropriete_label,
+        "copropriete_logo_url": copropriete_logo_url,
         "exercice_label": exercice_label,
 
         # État signature / traçabilité

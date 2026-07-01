@@ -42,6 +42,39 @@
       margin: 10px 0 12px 0;
     }
 
+    .brand-line {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .brand-logo-cell {
+      display: table-cell;
+      width: 70px;
+      vertical-align: middle;
+    }
+
+    .brand-logo {
+      max-width: 58px;
+      max-height: 58px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .brand-text-cell {
+      display: table-cell;
+      vertical-align: middle;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
     .header-top {
       display: table;
       width: 100%;
@@ -191,6 +224,18 @@
   </div>
 
   <div class="header">
+    <div class="brand-line">
+      {% if copropriete_logo_url %}
+        <div class="brand-logo-cell">
+          <img class="brand-logo" src="{{ copropriete_logo_url }}" alt="Logo copropriété">
+        </div>
+      {% endif %}
+      <div class="brand-text-cell">
+        <div class="brand-title">{{ copropriete_label|default:"Copropriété" }}</div>
+        <div class="muted small">Document officiel généré par la plateforme de gestion de copropriété</div>
+      </div>
+    </div>
+
     <div class="header-top">
       <div class="header-col">
         <div><strong>Copropriété :</strong> {{ copropriete_label|default:"-" }}</div>
