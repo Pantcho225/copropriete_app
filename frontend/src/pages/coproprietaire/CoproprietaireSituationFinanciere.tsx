@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -120,6 +121,114 @@ function StatCard(props: {
       <p style={styles.statValue}>{props.value}</p>
       <p style={styles.statHelper}>{props.helper}</p>
     </article>
+  );
+}
+
+function GuidanceCard(props: {
+  title: string;
+  text: string;
+  tone: "success" | "warning" | "danger" | "info";
+}) {
+  const toneStyle: CSSProperties =
+    props.tone === "success"
+      ? { background: "#ecfdf5", borderColor: "#86efac" }
+      : props.tone === "danger"
+        ? { background: "#fef2f2", borderColor: "#fca5a5" }
+        : props.tone === "warning"
+          ? { background: "#fffbeb", borderColor: "#fcd34d" }
+          : { background: "#eff6ff", borderColor: "#93c5fd" };
+
+  const linkBase: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    padding: "10px 14px",
+    background: "#ffffff",
+    color: "#1e3a8a",
+    border: "1px solid #bfdbfe",
+    textDecoration: "none",
+    fontSize: 13,
+    fontWeight: 850,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div
+      style={{
+        ...toneStyle,
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 18,
+        flexWrap: "wrap",
+        alignItems: "center",
+        borderRadius: 24,
+        padding: 20,
+        border: "1px solid",
+        boxShadow: "0 18px 45px rgba(15, 23, 42, 0.06)",
+      }}
+    >
+      <div style={{ display: "grid", gap: 4, minWidth: 260, flex: 1 }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11,
+            fontWeight: 950,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "#475569",
+          }}
+        >
+          Votre prochaine action
+        </p>
+
+        <h3
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 950,
+            color: "#0f172a",
+            letterSpacing: "-0.03em",
+          }}
+        >
+          {props.title}
+        </h3>
+
+        <p
+          style={{
+            margin: 0,
+            color: "#475569",
+            fontSize: 14,
+            lineHeight: 1.65,
+            fontWeight: 650,
+          }}
+        >
+          {props.text}
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Link to="/coproprietaire/appels" style={linkBase}>
+          Voir mes appels
+        </Link>
+
+        <Link to="/coproprietaire/paiements" style={linkBase}>
+          Mes paiements
+        </Link>
+
+        <Link
+          to="/coproprietaire/relances"
+          style={{
+            ...linkBase,
+            background: "#1d4ed8",
+            color: "#ffffff",
+            borderColor: "#1d4ed8",
+          }}
+        >
+          Mes relances
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -306,6 +415,45 @@ export default function CoproprietaireSituationFinanciere() {
   const courbeMensuelle = data?.courbe_mensuelle ?? [];
   const solde = parseAmount(data?.solde_bancaire_estime);
   const reste = parseAmount(data?.reste_a_recouvrer);
+  const lignesASuivre =
+    (data?.nb_lignes_impayees ?? 0) + (data?.nb_lignes_partielles ?? 0);
+  const totalLignes = data?.nb_lignes_appel ?? 0;
+  const lignesPayees = data?.nb_lignes_payees ?? 0;
+  const tauxLignesPayees = totalLignes
+    ? Math.round((lignesPayees / totalLignes) * 100)
+    : 100;
+
+  const guidance = useMemo(() => {
+    if (!data) {
+      return {
+        title: "Situation financière indisponible",
+        text: "Les données financières ne sont pas encore disponibles pour votre espace.",
+        tone: "info" as const,
+      };
+    }
+
+    if (reste > 0 && data.nb_lignes_impayees > 0) {
+      return {
+        title: "Un règlement reste attendu",
+        text: `${formatCurrency(reste)} restent à régulariser sur ${lignesASuivre} ligne(s). Consultez vos appels et vos relances pour identifier les échéances concernées.`,
+        tone: "danger" as const,
+      };
+    }
+
+    if (reste > 0) {
+      return {
+        title: "Paiement partiel à compléter",
+        text: `${formatCurrency(reste)} restent à suivre. Vérifiez les paiements déjà enregistrés et le solde de chaque appel.`,
+        tone: "warning" as const,
+      };
+    }
+
+    return {
+      title: "Situation à jour",
+      text: "Aucun reste à recouvrer n’apparaît sur la période. Continuez à consulter régulièrement vos appels, paiements et documents.",
+      tone: "success" as const,
+    };
+  }, [data, lignesASuivre, reste]);
 
   if (loading) {
     return (
@@ -382,6 +530,12 @@ export default function CoproprietaireSituationFinanciere() {
         </div>
       </div>
 
+      <GuidanceCard
+        title={guidance.title}
+        text={guidance.text}
+        tone={guidance.tone}
+      />
+
       <div style={styles.statsGrid}>
         <StatCard
           icon="📄"
@@ -408,6 +562,14 @@ export default function CoproprietaireSituationFinanciere() {
               : "Aucun reste à recouvrer sur la période"
           }
           tone={reste > 0 ? "warning" : "success"}
+        />
+
+        <StatCard
+          icon="📌"
+          label="Lignes à suivre"
+          value={String(lignesASuivre)}
+          helper={`${tauxLignesPayees}% des lignes d’appel sont soldées`}
+          tone={lignesASuivre > 0 ? "warning" : "success"}
         />
 
         <StatCard
