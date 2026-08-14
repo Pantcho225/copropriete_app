@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
 from decouple import config
 
 # ✅ CORS headers defaults
@@ -23,16 +24,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-&pb=-(oxnxt!6mk@&sb=2k076c0ai=@d#+vv!qxvn53gfc$)9b'
+# Security / environment
+SECRET_KEY = config("SECRET_KEY")
+DEBUG = config("DEBUG", cast=bool, default=True)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-# ✅ Dev: autoriser localhost/127.0.0.1
 ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
+    host.strip()
+    for host in config(
+        "ALLOWED_HOSTS",
+        default="127.0.0.1,localhost",
+    ).split(",")
+    if host.strip()
 ]
 
 
@@ -137,6 +139,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # ===============================
@@ -147,6 +150,19 @@ STATIC_URL = "/static/"
 # ag/pv_signed/...
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR
+
+
+# ===============================
+# JWT / SimpleJWT
+# ===============================
+SIMPLE_JWT = {
+    "SIGNING_KEY": SECRET_KEY,
+    "ALGORITHM": "HS256",
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+}
 
 
 # ===============================
@@ -166,8 +182,12 @@ REST_FRAMEWORK = {
 # ✅ CORS (React/Vite -> Django API)
 # ===============================
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in config(
+        "CORS_ALLOWED_ORIGINS",
+        default="http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
 ]
 
 CORS_ALLOW_METHODS = [
@@ -191,15 +211,62 @@ CORS_ALLOW_CREDENTIALS = True
 # ✅ CSRF / Trusted origins
 # ===============================
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in config(
+        "CSRF_TRUSTED_ORIGINS",
+        default="http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
 ]
+ # ===============================
+# Sécurité HTTP / HTTPS
+# ===============================
+SECURE_SSL_REDIRECT = config(
+    "SECURE_SSL_REDIRECT",
+    cast=bool,
+    default=False,
+)
 
+SESSION_COOKIE_SECURE = config(
+    "SESSION_COOKIE_SECURE",
+    cast=bool,
+    default=False,
+)
+
+CSRF_COOKIE_SECURE = config(
+    "CSRF_COOKIE_SECURE",
+    cast=bool,
+    default=False,
+)
+
+SECURE_HSTS_SECONDS = config(
+    "SECURE_HSTS_SECONDS",
+    cast=int,
+    default=0,
+)
+
+SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    cast=bool,
+    default=False,
+)
+
+SECURE_HSTS_PRELOAD = config(
+    "SECURE_HSTS_PRELOAD",
+    cast=bool,
+    default=False,
+)
+
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https")
+    if config("USE_PROXY_SSL_HEADER", cast=bool, default=False)
+    else None
+)
 
 # ===============================
 # App custom
 # ===============================
-PUBLIC_BASE_URL = "https://ton-domaine.com"
+PUBLIC_BASE_URL = config("PUBLIC_BASE_URL", default="http://localhost:5173").strip().rstrip("/")
 
 # ===============================
 # Email / reset password
