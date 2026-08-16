@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import filters, status, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -340,6 +341,10 @@ class CoproprietaireMesLotsAPIView(APIView):
             status=status.HTTP_200_OK,
         )
 
+class CoproprietairePagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 class CoproprietaireViewSet(viewsets.ModelViewSet):
     """
@@ -362,6 +367,7 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated]
+    pagination_class = CoproprietairePagination
 
     filter_backends = [
         filters.SearchFilter,
@@ -397,8 +403,6 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
     ordering = ["nom", "prenom", "id"]
 
     def get_queryset(self):
-        user = self.request.user
-
         qs = (
             Coproprietaire.objects.all()
             .select_related("copropriete", "user_account")
@@ -406,34 +410,46 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
             .order_by("nom", "prenom", "id")
         )
 
+        user = self.request.user
+
         if not _is_platform_admin(user):
-            allowed_copro_ids = CoproMembre.objects.filter(
-                user=user,
-                is_active=True,
-                role__in=_referentiel_admin_roles(),
-            ).values_list("copropriete_id", flat=True)
+            allowed_copro_ids = list(
+                CoproMembre.objects.filter(
+                    user=user,
+                    is_active=True,
+                    role__in=_referentiel_admin_roles(),
+                ).values_list("copropriete_id", flat=True)
+            )
 
             qs = qs.filter(copropriete_id__in=allowed_copro_ids)
 
         copropriete_id = self.request.query_params.get("copropriete")
+
         if copropriete_id:
             qs = qs.filter(copropriete_id=copropriete_id)
 
-        actif = _parse_bool_param(self.request.query_params.get("actif"))
+        actif = _parse_bool_param(
+            self.request.query_params.get("actif")
+        )
+
         if actif is not None:
             qs = qs.filter(actif=actif)
 
         type_personne = self.request.query_params.get("type_personne")
+
         if type_personne:
             qs = qs.filter(type_personne=type_personne)
 
         ville = self.request.query_params.get("ville")
+
         if ville:
             qs = qs.filter(ville__icontains=ville.strip())
 
         q = self.request.query_params.get("q")
+
         if q:
             q = q.strip()
+
             qs = qs.filter(
                 Q(nom__icontains=q)
                 | Q(prenom__icontains=q)
@@ -452,6 +468,47 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
             return CoproprietaireListSerializer
 
         return CoproprietaireSerializer
+
+    def list(self, request, *args, **kwargs):
+        """
+        Liste du référentiel des copropriétaires.
+
+        Règles :
+        - Super Admin plateforme : accès global ;
+        - ADMIN / SYNDIC / GESTIONNAIRE : accès aux copropriétés autorisées ;
+        - COPROPRIETAIRE : interdit du référentiel administratif ;
+        - utilisateur administratif d'une autre copropriété :
+          réponse 200 avec une liste vide.
+        """
+        requested_copropriete_id = request.query_params.get("copropriete")
+
+        if requested_copropriete_id and not _is_platform_admin(request.user):
+            membership = _get_active_membership(
+                request.user,
+                requested_copropriete_id,
+            )
+
+            if membership and membership.role not in _referentiel_admin_roles():
+                raise PermissionDenied(
+                    "Vous n'avez pas accès au référentiel administratif "
+                    "des copropriétaires."
+                )
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -511,15 +568,33 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
         return Response(output.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
+        """
+        Désactivation logique d'un copropriétaire.
 
-        _require_manage_referentiel(request.user, instance.copropriete_id)
+        Important :
+        on récupère directement l'objet par son PK afin qu'un utilisateur
+        sans droit de gestion obtienne 403 et non 404.
+        """
+        try:
+            instance = Coproprietaire.objects.get(pk=kwargs.get("pk"))
+        except Coproprietaire.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Copropriétaire introuvable.")
+
+        _require_manage_referentiel(
+            request.user,
+            instance.copropriete_id,
+        )
 
         instance.actif = False
         instance.save(update_fields=["actif", "updated_at"])
 
         output = CoproprietaireSerializer(instance)
-        return Response(output.data, status=status.HTTP_200_OK)
+
+        return Response(
+            output.data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"])
     def activer(self, request, pk=None):
@@ -598,9 +673,22 @@ class CoproprietaireViewSet(viewsets.ModelViewSet):
         - générer un mot de passe temporaire ;
         - forcer le changement du mot de passe à la prochaine connexion.
         """
-        instance = self.get_object()
+        # On récupère directement l'objet par son PK.
+        #
+        # Pourquoi ?
+        # get_object() utilise get_queryset(), qui masque volontairement
+        # les copropriétaires du référentiel administratif. Sans cela,
+        # un copropriétaire recevrait 404 au lieu de 403.
+        try:
+            instance = Coproprietaire.objects.get(pk=pk)
+        except Coproprietaire.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Copropriétaire introuvable.")
 
-        _require_manage_referentiel(request.user, instance.copropriete_id)
+        _require_manage_referentiel(
+            request.user,
+            instance.copropriete_id,
+        )
 
         if not instance.actif:
             raise ValidationError(

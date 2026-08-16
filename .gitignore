@@ -81,3 +81,4 @@ backups/
 
 # Media uploads locaux
 coproprietes/
+*.backup
