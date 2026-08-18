@@ -45,3 +45,5 @@ urllib3==2.6.3
 weasyprint==68.1
 webencodings==0.5.1
 zopfli==0.4.1
+django-cors-headers==4.9.0
+gunicorn==26.1.0
