@@ -47,3 +47,4 @@ webencodings==0.5.1
 zopfli==0.4.1
 django-cors-headers==4.9.0
 gunicorn==26.1.0
+django-extensions==4.1
